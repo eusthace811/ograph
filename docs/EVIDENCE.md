@@ -124,7 +124,7 @@ The published baselines come from the TORAI paper's Table 2, averaged over all 9
 
 - **Top-1.** The most similar past incident's accepted cause is the true root cause for 0.92 (82 of 89), against about 0.20 by chance. On the held-out reps 2-3 it is 59 of 60; on the tuning rep 1 it is 23 of 29.
 - **Top-3.** It is among the top three for 0.94.
-- **The signature sums strengths.** It used to keep the maximum strength per application. Strength saturates at 1, so the root application and its callers looked alike, and 0.74 (66 of 89) was the result. Summing over a 900 s window fixed 16 of 23 misses. The window was picked on rep 1, averaged over simulated gaps of 120 to 900 s between fault and incident, so it does not fit the benchmark's fixed 300 s gap. Four of the 7 remaining misses have no earlier incident with the same root cause, so 85 of 89 is the ceiling. Delay faults went from 15 to 13 hits.
+- **The signature sums strengths.** It used to keep the maximum strength per application. Strength saturates at 1, so the root application and its callers looked alike, and 0.74 (66 of 89) was the result. Summing over a 900 s window fixed 16 of 23 misses. The window was picked on rep 1, averaged over simulated gaps of 120 to 900 s between fault and incident, so it does not fit the benchmark's fixed 300 s gap. Four of the 7 remaining misses have no earlier incident with the same root cause, so 85 of 89 is the ceiling. Delay faults went from 15 to 13 hits. Each service and fault repeats three times in RE2-OB, so a stricter check removes every past incident with the same service and fault: the old signature gets 62 of 85 and the summed one 79 of 85, so the gain is not near-duplicate matching.
 
 ## Phase 6: model enrichers (`llm-gate.txt`)
 
