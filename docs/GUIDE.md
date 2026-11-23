@@ -1,0 +1,165 @@
+# Using ograph
+
+ograph turns your service catalog and operational exports into one knowledge graph, then
+answers the questions an incident raises: what changed before it, what it affects, whether it
+happened before, and which vendor news matters. This guide takes you from install to a first
+investigation. `docs/REFERENCE.md` has every option and format.
+
+## 1. Install
+
+```bash
+cargo install --path ograph-cli      # puts `ograph` in ~/.cargo/bin
+ograph --version
+```
+
+The `catalog` source also needs `ogrep` 0.2 or newer on `PATH` (or `OGRAPH_OGREP=/path/to/ogrep`).
+
+## 2. Try it on the demo
+
+The demo is a small company with four incidents, already configured.
+
+```bash
+cd examples/demo
+ograph harvest              # reads every source, then correlates
+ograph before INC-5377      # what happened in the 10 minutes before
+ograph chains INC-5377      # likely root causes, with their evidence
+ograph similar INC-5377     # past incidents like it, and what fixed them
+ograph blast ledger-db      # what ledger-db failing affects
+ograph lab --out lab.html   # one page over everything; open it in a browser
+```
+
+## 3. Set up your own workspace
+
+```bash
+mkdir ops-graph && cd ops-graph
+ograph init                 # creates .ograph/config.toml, ontology.ttl, shapes.ttl
+```
+
+Add one `[[source]]` per input to `.ograph/config.toml`. Start with the catalog and incidents,
+then add the rest:
+
+```toml
+[[source]]
+kind = "catalog"            # git repo with Backstage, Compose, Kubernetes or Prometheus files
+path = "catalog"
+
+[[source]]
+kind = "incidents"          # JSON: id, title, service, opened, severity, status, mitigation
+path = "exports/incidents"
+
+[[source]]
+kind = "alerts"             # Alertmanager webhook JSON
+path = "exports/alerts"
+
+[[source]]
+kind = "deployments"        # JSON: service, version, at
+path = "exports/deploys"
+```
+
+Other kinds: `ownership`, `docs`, `config_changes`, `logs`, `metrics`, `traces`, `discussions`,
+`news`. Their formats are in `docs/REFERENCE.md`, "Input formats".
+
+Harvest and check the result:
+
+```bash
+ograph harvest
+ograph validate             # expect "0 violations"
+ograph sparql 'SELECT ?fact ?reason WHERE { GRAPH ?g { ?q a harv:Quarantined ; harv:fact ?fact ; harv:reason ?reason } }'
+```
+
+The last command lists facts the gateway refused and why. The usual cause is a service name
+the catalog does not know: add it to the catalog, or declare an alias in `ownership` or a runbook.
+
+Harvest again whenever exports change. Unchanged files cost nothing, deleted files are pruned,
+and a source that cannot be read keeps its last good facts.
+
+## 4. Investigate an incident
+
+```bash
+ograph before INC-5377                  # the timeline; add --window 30m if it is empty
+ograph chains INC-5377                  # ranked candidates, each a hypothesis with its chain
+ograph similar INC-5377                 # past incidents, confirmed causes, mitigations that worked
+ograph blast ledger-db                  # dependents, business processes, open incidents
+ograph why id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000   # where a fact came from
+```
+
+Read `chains` as suggestions. When a person confirms the cause, record it with the chain id
+that `chains` printed:
+
+```bash
+ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept --evidence PM-5377 --by "jane (oncall)"
+```
+
+From then on, `similar` shows that cause for any incident that looks like this one.
+
+For vendor news: `ograph news --since 7d`.
+
+## 5. Ask anything else
+
+Everything is queryable with SPARQL. The prefixes `ops:`, `evt:`, `inc:`, `corr:`, `rca:`,
+`harv:` and `id:` are predeclared.
+
+```bash
+ograph sparql 'SELECT ?app WHERE { ?a ops:dependsOn+ id:app\/ledger-db ; ops:name ?app }'
+ograph sparql 'SELECT ?id ?status WHERE { ?i a inc:Incident ; inc:id ?id ; inc:status ?status }'
+```
+
+Two things to know: write `/` in ids as `\/` inside a query, and match event types by their
+specific class (`evt:Alert`, `evt:Deployment`, ...), since `evt:Event` itself is not stored.
+A misspelled name is an error that suggests the right one. More recipes:
+`skills/ograph/references/sparql.md`.
+
+Add `--json` to any command for machine-readable output. Exit codes: 0 found, 1 nothing found,
+2 error.
+
+## 6. Keep it fresh
+
+```bash
+ograph serve --addr 127.0.0.1:7474
+```
+
+`serve` re-harvests within 5 seconds of any change to a source file or to `.ograph/`
+settings, and answers JSON-RPC on that address. A scheduled `ograph harvest` (cron, CI) works
+too. Both can run while people and agents query.
+
+## 7. Use it from an agent
+
+**Any agent with a shell.** Install the skill in `skills/ograph/`, which teaches the commands,
+the investigation order and the rules (chains are hypotheses; verdicts only after a person
+confirms):
+
+```bash
+cp -R skills/ograph ~/.claude/skills/          # Claude Code, all projects
+cp -R skills/ograph .claude/skills/            # or one project
+```
+
+Agents that read Agent Skills folders from another directory take the same folder.
+
+**MCP clients.** Point them at `ograph serve --mcp --root /path/to/workspace`. The tools are
+`before`, `chains`, `blast`, `similar`, `why`, `news`, `sparql` and `verdict`.
+
+**pi.** `python3 scripts/agent/install.py --bin "$(which ograph)" --root /path/to/workspace --out ~/.pi/agent/extensions/ograph.ts`.
+
+## 8. Maintain
+
+```bash
+ograph stats                    # store size and contents
+ograph compact                  # shrink the store file
+ograph export --out all.trig    # every graph as TriG, for archive or another triple store
+ograph ontology check           # after upgrading ograph
+ograph ontology diff new.ttl    # before changing the ontology; BREAKING lines need care
+```
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `no .ograph/ here or above; run ograph init` | Run from inside the workspace, or pass `--root DIR` |
+| `nothing in the graph is called INC-...` | Wrong id, or incidents not harvested yet. `ograph harvest`, then check the id |
+| `before` or `chains` shows nothing | Widen `--window`, check the incident's service matches the catalog, check quarantine |
+| Many facts quarantined as "not in the ops:Application catalog" | Sources use names the catalog lacks. Add aliases via `ownership` or runbooks |
+| `DEGRADED: ...` on a harvest line | That file or directory could not be read; its previous facts were kept. Fix it and harvest again |
+| `unknown field ...` on any command | A typo in `.ograph/config.toml`. The message names the expected keys |
+| `the ontology declares no X (did you mean Y?)` | A misspelled name in a SPARQL query |
+| `verdict not recorded: the ontology refuses ...` | `.ograph/ontology.ttl` is older than the binary. Run `ograph ontology check` and update it |
+| Catalog harvest fails | `ogrep` is not on `PATH`; install it or set `OGRAPH_OGREP` |

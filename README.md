@@ -8,6 +8,8 @@ ograph builds an ontology-driven observability knowledge graph and queries it fr
 - **Questions.** It answers four investigation questions on native indexes.
 - **SPARQL and agents.** Everything else is SPARQL, available to people and to agents through pi or MCP.
 
+New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md). Agents use the skill in [`skills/ograph/`](skills/ograph/SKILL.md).
+
 ```sh
 ograph init
 ograph harvest                     # one named graph per source file, then correlation
@@ -66,5 +68,6 @@ Every number comes from a script in `scripts/eval/` or a binary in `ograph-bench
 | `ograph-bench/` | `store_bench`, `gateway_eval`, `confirm_eval`, `shacl_case`, `purekg_bench` and `profile_query` |
 | `ontology/` | `ograph.ttl` (classes, properties, closed vocabularies with definitions) and `shapes.ttl` |
 | `scripts/eval/` | The RCAEval export and scoring, the similar-incident eval, the model, alias and coverage gates, and the SHACL suite runner |
-| `scripts/agent/` | The pi extension, the agent skill, the installer and the contract test |
+| `skills/ograph/` | The agent skill: `SKILL.md` and task references (investigation, verdicts, SPARQL, sources, data quality, serving, ontology) |
+| `scripts/agent/` | The pi extension, its tool instructions, the installer and the contract test |
 | `examples/demo/` | A deterministic demo company for the four questions |
