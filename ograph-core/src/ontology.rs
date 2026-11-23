@@ -242,11 +242,28 @@ impl Ontology {
             }
         }
         for (p, vals) in &newer.vocabularies {
+            if !self.vocabularies.contains_key(p) {
+                // Every value the old ontology accepted outside the new list is now refused.
+                out.push(format!("BREAKING vocabulary closed: {}", vocab::compact(p)));
+            }
             let old: BTreeSet<&str> = self.vocabularies.get(p).map(|v| v.iter().map(|t| t.value.as_str()).collect()).unwrap_or_default();
             for v in vals.iter().filter(|v| !old.contains(v.value.as_str())) {
                 out.push(format!("added vocabulary value: {} \"{}\"", vocab::compact(p), v.value));
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_a_free_property_is_breaking() {
+        let old = Ontology::load_default().unwrap();
+        let ttl = format!("{DEFAULT_TTL}\ninc:faultType og:vocabulary [ og:value \"cpu\" ] .\n");
+        let new = Ontology::load(&ttl, DEFAULT_SHAPES).unwrap();
+        assert!(old.diff(&new).iter().any(|d| d == "BREAKING vocabulary closed: inc:faultType"));
     }
 }

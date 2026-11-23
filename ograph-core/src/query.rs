@@ -105,10 +105,13 @@ pub fn blast(s: &Snapshot, app: &str, depth: usize) -> anyhow::Result<Blast> {
                 processes.entry(app_name(s, &ids, proc_)).or_default().push(app_name(s, &ids, x));
             }
         }
-        if let (Some(c), Some(st)) = (ids.incident, status) {
+        if let Some(c) = ids.incident {
             for i in s.subjects(ids.on, x)? {
                 if s.contains([i, ids.ty, c])? {
-                    let state = s.object(i, st)?.and_then(|v| literal(s, v));
+                    let state = match status {
+                        Some(st) => s.object(i, st)?.and_then(|v| literal(s, v)),
+                        None => None,
+                    };
                     if state.as_deref() != Some("resolved") {
                         open.push(vocab::compact(&literal(s, i).unwrap_or_default()));
                     }

@@ -343,6 +343,15 @@ impl Workspace {
         if accept {
             b.add(EntityRef::Known(incident), inc::CAUSE, obj(root), &ev, &m);
         }
+        // A verdict replaces its graph, so one the gateway would cut short is refused instead.
+        let snap = self.store.snapshot()?;
+        let replaced = snap.iri(b.graph().as_str())?;
+        let (_, rejected, _) = gateway::check(&snap, &self.ontology, &b, replaced, &gateway::Catalog::from_snapshot(&snap, replaced)?);
+        drop(snap);
+        if !rejected.is_empty() {
+            let why: Vec<String> = rejected.iter().map(|r| format!("{} ({})", r.fact, r.reason)).collect();
+            anyhow::bail!("verdict not recorded: the ontology refuses {} of its facts: {}; run `ograph ontology check`", rejected.len(), why.join("; "));
+        }
         gateway::submit(&self.store, &self.ontology, &b, now_ms())
     }
 }

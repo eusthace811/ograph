@@ -169,8 +169,8 @@ pub fn ownership(path: &Path, key: &str) -> anyhow::Result<Batch> {
     Ok(b)
 }
 
-/// News items: `{"at", "title", "summary", "mentions": [names]}`. A mention resolves to a
-/// catalog application or a known vendor; anything else stays out of the graph.
+/// News items: `{"at", "title", "summary", "mentions": [names]}`. Each mention becomes a vendor
+/// node `id:vendor/<name>`; `ograph news` reports the items whose vendors an application uses.
 pub fn news(path: &Path, key: &str) -> anyhow::Result<Batch> {
     let mut b = Batch::new("news", key, "news-v1");
     let m = rule("news-feed");
