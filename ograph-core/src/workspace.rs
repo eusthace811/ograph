@@ -132,7 +132,16 @@ impl Workspace {
         // failed batch and keeps every graph it had.
         let mut unreadable = Vec::new();
         let mut batches = Vec::new();
+        // Every incident source is one batch, so an incident's fields merge across all of them.
+        let incidents: Vec<&Path> = ran.iter().filter(|s| matches!(s, Source::Incidents { .. })).map(|s| s.path()).collect();
+        let mut incidents_done = false;
         for src in &ran {
+            if let Source::Incidents { .. } = src {
+                if !std::mem::replace(&mut incidents_done, true) {
+                    batches.push(enrich::incidents(&incidents, &ctx));
+                }
+                continue;
+            }
             let p = self.root.join(src.path());
             if p.is_file() || std::fs::read_dir(&p).is_ok() {
                 batches.extend(enrich::harvest(src, &ctx));

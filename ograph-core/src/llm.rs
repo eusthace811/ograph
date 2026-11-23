@@ -14,6 +14,7 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LlmConfig {
     pub command: Vec<String>,
     /// Shown in provenance and part of the cache key, e.g. `pi:openai/gpt-6-luna`.

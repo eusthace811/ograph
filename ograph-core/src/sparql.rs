@@ -160,8 +160,8 @@ fn outside_literals(text: &str) -> Vec<&str> {
 /// answer), with the nearest declared name, and a class with subclasses, since the store holds
 /// only each node's most specific type.
 pub fn check(query: &str, ont: &crate::ontology::Ontology) -> anyhow::Result<spargebra::Query> {
-    static IRI: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = IRI.get_or_init(|| regex::Regex::new(r"<(https://ograph\.dev/[^>\s]+)>").unwrap());
+    static TOKEN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = TOKEN.get_or_init(|| regex::Regex::new(r"<[^<>\s]*>|[?$]\w+|_:\w+|\w+|\S").unwrap());
     let schema = [vocab::ops::NS, vocab::evt::NS, vocab::inc::NS, vocab::disc::NS, vocab::corr::NS, vocab::rca::NS, vocab::harv::NS];
     let declared: std::collections::BTreeSet<String> =
         ont.graph.iter().filter_map(|t| match t.subject {
@@ -171,10 +171,17 @@ pub fn check(query: &str, ont: &crate::ontology::Ontology) -> anyhow::Result<spa
     let parsed = parse(query)?;
     let text = parsed.to_string();
     let (mut unknown, mut abstract_): (Vec<String>, Vec<String>) = Default::default();
-    for iri in outside_literals(&text).into_iter().flat_map(|t| re.captures_iter(t)).map(|c| c.get(1).unwrap().as_str()) {
+    let segments: Vec<Vec<&str>> = outside_literals(&text).into_iter().map(|t| re.find_iter(t).map(|m| m.as_str()).collect()).collect();
+    let iris = segments.iter().flat_map(|t| {
+        t.iter().enumerate().filter_map(move |(i, x)| {
+            let iri = x.strip_prefix('<')?.strip_suffix('>')?;
+            iri.starts_with("https://ograph.dev/").then(|| (iri, matched_as_type(t, i)))
+        })
+    });
+    for (iri, typed) in iris {
         let name = vocab::compact(iri);
         let is_leaf = |c: &String| !ont.classes.iter().any(|(d, sups)| d != c && sups.contains(c));
-        let leaves: Vec<String> = ont.classes.iter().filter(|(c, sups)| *c != iri && sups.contains(iri) && is_leaf(c)).map(|(c, _)| vocab::compact(c)).collect();
+        let leaves: Vec<String> = ont.classes.iter().filter(|(c, sups)| typed && *c != iri && sups.contains(iri) && is_leaf(c)).map(|(c, _)| vocab::compact(c)).collect();
         let (list, msg) = if !leaves.is_empty() {
             (&mut abstract_, format!("{name} has subclasses, and each node stores only its most specific type, so match those: VALUES ?type {{ {} }} ?x a ?type", leaves.join(" ")))
         } else if !schema.iter().any(|ns| iri.starts_with(ns)) || declared.contains(iri) {
@@ -199,6 +206,35 @@ pub fn check(query: &str, ont: &crate::ontology::Ontology) -> anyhow::Result<spa
     anyhow::ensure!(unknown.is_empty(), "the ontology declares no {}; a query with an undeclared name matches nothing", unknown.join(", "));
     anyhow::ensure!(abstract_.is_empty(), "{}", abstract_.join("; "));
     Ok(parsed)
+}
+
+/// Whether the term at `t[i]`, a token of a canonical query, is the object of a predicate path
+/// through `rdf:type` or `rdfs:subClassOf`: where a class with subclasses matches nothing.
+fn matched_as_type(t: &[&str], i: usize) -> bool {
+    let mut j = i;
+    while j > 0 && matches!(t[j - 1], "*" | "+" | "?") {
+        j -= 1;
+    }
+    let mut depth = 0;
+    loop {
+        let Some(k) = j.checked_sub(1) else { return false };
+        j = k;
+        match t[j] {
+            "(" if depth == 0 => return false,
+            "(" => depth -= 1,
+            ")" => depth += 1,
+            _ => {}
+        }
+        if depth == 0 {
+            break;
+        }
+    }
+    while j > 0 && t[j - 1] == "^" {
+        j -= 1;
+    }
+    let subject = j.checked_sub(1).is_some_and(|k| ["?", "$", "_:", "<"].iter().any(|p| t[k].starts_with(p)));
+    let typing = ["<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>", "<http://www.w3.org/2000/01/rdf-schema#subClassOf>"];
+    subject && t[j..i].iter().any(|x| typing.contains(x))
 }
 
 /// Runs a parsed query and collects the answer. `limit` caps solution rows.
@@ -248,5 +284,17 @@ mod tests {
         assert_eq!(err("SELECT ?x WHERE { ?x evt:severty ?s FILTER(?s < 2) }"), "the ontology declares no evt:severty (did you mean evt:severity?); a query with an undeclared name matches nothing");
         assert!(err("SELECT ?x WHERE { ?x a/rdfs:subClassOf* evt:Event }").starts_with("evt:Event has subclasses, and each node stores only its most specific type, so match those: VALUES ?type { evt:Alert "));
         assert_eq!(err("SELECT ?x WHERE { VALUES ?t { evt:Alert inc:Incident } ?x a ?t }"), "");
+    }
+
+    #[test]
+    fn the_subclass_hint_applies_only_where_a_type_is_matched() {
+        let ont = crate::ontology::Ontology::load_default().unwrap();
+        let err = |q: &str| check(q, &ont).err().map(|e| e.to_string()).unwrap_or_default();
+        for q in ["SELECT (evt:Event AS ?class) WHERE {}", "SELECT ?x WHERE { ?x evt:on ?a FILTER(?a != evt:Event) }", "SELECT ?x WHERE { VALUES (?a ?c) { (ops:Application evt:Event) } ?x a ?a }"] {
+            assert_eq!(err(q), "", "{q}");
+        }
+        for q in ["SELECT ?x WHERE { ?x a evt:Event }", "SELECT ?x WHERE { ?x rdf:type evt:Event }", "SELECT ?x WHERE { ?x (a|evt:on)+ evt:Event }", "SELECT ?x WHERE { ?x evt:on ?a FILTER EXISTS { ?y ^evt:on/a evt:Event } }"] {
+            assert!(err(q).starts_with("evt:Event has subclasses"), "{q}: {}", err(q));
+        }
     }
 }

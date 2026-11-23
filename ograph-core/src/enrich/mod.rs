@@ -1,6 +1,7 @@
 //! Enrichers turn source files into [`Batch`]es of proposed facts. They never write: the
 //! gateway does. They run in Netflix's layer order, and each source file is one batch whose key
-//! is the file's path, so re-harvesting a file replaces its graph.
+//! is the file's path, so re-harvesting a file replaces its graph. Incidents are the exception:
+//! all of them are one batch, since one incident's fields can come from several files.
 
 pub mod catalog;
 pub mod discussions;
@@ -103,9 +104,13 @@ pub struct Ctx<'a> {
     pub ontology: &'a crate::ontology::Ontology,
 }
 
-/// Files under a source path: the path itself, or every regular file below it, sorted.
-pub fn files(root: &Path, path: &Path) -> Vec<PathBuf> {
-    walk(root, path).0
+/// The files a source's enricher reads: for a catalog, the operations files ogrep reads; for
+/// any other source, the path itself or every regular file below it, sorted.
+pub fn files(root: &Path, source: &Source) -> Vec<PathBuf> {
+    match source {
+        Source::Catalog { path } => catalog::files(root, path),
+        _ => walk(root, source.path()).0,
+    }
 }
 
 /// [`files`], and the directories below the source path that could not be listed.
@@ -150,8 +155,10 @@ pub fn rel(root: &Path, p: &Path) -> String {
 /// that cannot be listed, becomes a degraded, empty batch instead of stopping the harvest; the
 /// gateway keeps the last good facts of a failed batch's key and of every key below it.
 pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
-    if let Source::Catalog { path } = source {
-        return vec![catalog::harvest(ctx.root, path)];
+    match source {
+        Source::Catalog { path } => return vec![catalog::harvest(ctx.root, path)],
+        Source::Incidents { path } => return vec![incidents(&[path], ctx)],
+        _ => {}
     }
     let (files, unreadable) = walk(ctx.root, source.path());
     let mut out: Vec<Batch> = unreadable
@@ -162,34 +169,42 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
             b
         })
         .collect();
-    let files: Vec<(PathBuf, String)> = files.into_iter().map(|f| (f.clone(), rel(ctx.root, &f))).collect();
-    let results = match source {
-        Source::Incidents { .. } => records::incidents(&files),
-        _ => files
-            .iter()
-            .map(|(file, key)| match source {
-                Source::Catalog { .. } | Source::Incidents { .. } => unreachable!(),
-                Source::Ownership { .. } => records::ownership(file, key),
-                Source::Docs { .. } => docs::harvest(file, key),
-                Source::Deployments { .. } => records::deployments(file, key),
-                Source::ConfigChanges { .. } => records::config_changes(file, key),
-                Source::Alerts { .. } => records::alerts(file, key),
-                Source::News { .. } => records::news(file, key),
-                Source::Logs { .. } => signals::logs(file, key, ctx.detect),
-                Source::Metrics { .. } => signals::metrics(file, key, ctx.detect),
-                Source::Traces { .. } => signals::traces(file, key, ctx.detect),
-                Source::Discussions { .. } => discussions::harvest(file, key, ctx),
-            })
-            .collect(),
-    };
-    for ((_, key), result) in files.iter().zip(results) {
+    for file in files {
+        let key = rel(ctx.root, &file);
+        let result = match source {
+            Source::Catalog { .. } | Source::Incidents { .. } => unreachable!("harvested as one batch"),
+            Source::Ownership { .. } => records::ownership(&file, &key),
+            Source::Docs { .. } => docs::harvest(&file, &key),
+            Source::Deployments { .. } => records::deployments(&file, &key),
+            Source::ConfigChanges { .. } => records::config_changes(&file, &key),
+            Source::Alerts { .. } => records::alerts(&file, &key),
+            Source::News { .. } => records::news(&file, &key),
+            Source::Logs { .. } => signals::logs(&file, &key, ctx.detect),
+            Source::Metrics { .. } => signals::metrics(&file, &key, ctx.detect),
+            Source::Traces { .. } => signals::traces(&file, &key, ctx.detect),
+            Source::Discussions { .. } => discussions::harvest(&file, &key, ctx),
+        };
         out.push(result.unwrap_or_else(|e| {
-            let mut b = Batch::new(source.name(), key, "failed");
+            let mut b = Batch::new(source.name(), &key, "failed");
             b.degraded.push(format!("{key}: {e:#}"));
             b
         }));
     }
     out
+}
+
+/// The files of every incident source as one batch (see [`records::incidents`]). A source path
+/// or a directory below it that cannot be listed fails the batch.
+pub fn incidents(paths: &[&Path], ctx: &Ctx<'_>) -> Batch {
+    let (mut files, mut degraded) = (Vec::new(), Vec::new());
+    for path in paths {
+        let (found, unreadable) = walk(ctx.root, path);
+        files.extend(found.into_iter().map(|f| (rel(ctx.root, &f), f)));
+        degraded.extend(unreadable.iter().map(|d| format!("cannot read directory {}", rel(ctx.root, d))));
+    }
+    files.sort();
+    files.dedup();
+    records::incidents(&files.into_iter().map(|(key, f)| (f, key)).collect::<Vec<_>>(), degraded)
 }
 
 /// Seconds, milliseconds, microseconds or nanoseconds since the epoch (number or numeric string), or RFC 3339 / ISO 8601
