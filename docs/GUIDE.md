@@ -7,7 +7,14 @@ investigation. `docs/REFERENCE.md` has every option and format.
 
 ## 1. Install
 
-ograph builds from source with Rust 1.85 or newer, on Linux, macOS and Windows (Git Bash). It
+The quickest way is a prebuilt release, on Linux, macOS and Windows (Git Bash). It installs
+ograph and, if it is missing, ogrep into `~/.local/bin` (`~/bin` in Git Bash):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eusthace811/ograph/main/install.sh | sh
+```
+
+Where downloaded executables are not allowed, build from source with Rust 1.85 or newer. ograph
 is pure Rust, so no C compiler is needed. On Windows, rustup's MSVC toolchain also needs the
 Visual Studio Build Tools for the linker.
 
@@ -24,7 +31,7 @@ uses a registry for one run, and `./x vendor` prepares an offline build.
 ograph also needs `ogrep` 0.2 or newer on `PATH`. It reads the service catalog (Backstage,
 Compose, Kubernetes and Prometheus files), and only the catalog can create applications. Without
 it the harvest still runs, but every fact about a service is quarantined as "not in the catalog",
-so the questions have nothing to answer. Install it from [its repository](https://github.com/eusthace811/ogrep):
+so the questions have nothing to answer. `install.sh` installs it; from source it is:
 
 ```bash
 cargo install --locked --git https://github.com/eusthace811/ogrep ogrep-cli
