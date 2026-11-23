@@ -128,29 +128,41 @@ impl Workspace {
             names.dedup();
             anyhow::bail!("no source of kind {o:?} is configured; configured kinds: {}, correlation", names.join(", "));
         }
-        // A source whose path cannot be listed (a mistyped path, an unmounted disk) reports one
-        // failed batch and keeps every graph it had.
-        let mut unreadable = Vec::new();
+        // A source whose path cannot be listed (a mistyped path, an unmounted disk), or a
+        // directory that lists no files while the store holds graphs under it (an empty mount
+        // point), reports one failed batch and keeps every graph under its path.
+        let graphs = self.graph_names()?;
         let mut batches = Vec::new();
         for src in &ran {
             let p = self.root.join(src.path());
-            if p.is_file() || std::fs::read_dir(&p).is_ok() {
-                batches.extend(enrich::harvest(src, &ctx));
+            let failed = |why: String| {
+                let mut b = Batch::new(src.name(), &enrich::rel(&self.root, &p), "failed");
+                b.degraded.push(why);
+                b
+            };
+            if !p.is_file() && std::fs::read_dir(&p).is_err() {
+                batches.push(failed(format!("cannot read {}", p.display())));
+                continue;
+            }
+            let found = enrich::harvest(src, &ctx);
+            let held = || {
+                let key = failed(String::new());
+                let below = [key.graph(), key.quarantine_graph()].map(|g| format!("{}/", g.as_str()));
+                graphs.iter().any(|n| below.iter().any(|b| n.as_str().starts_with(b.as_str())))
+            };
+            if found.is_empty() && p.is_dir() && held() {
+                batches.push(failed(format!("{} lists no files; keeping what it held", p.display())));
             } else {
-                unreadable.push(src.name());
-                let mut b = Batch::new(src.name(), &src.path().to_string_lossy(), "failed");
-                b.degraded.push(format!("cannot read {}", p.display()));
-                batches.push(b);
+                batches.extend(found);
             }
         }
         let mut kept: HashSet<NamedNode> = batches.iter().flat_map(|b| [b.graph(), b.quarantine_graph()]).collect();
         let kept_below: Vec<String> = batches.iter().filter(|b| b.failed()).flat_map(|b| [b.graph(), b.quarantine_graph()].map(|g| format!("{}/", g.as_str()))).collect();
         // A full harvest owns every harvest graph but the verdicts; `--only` owns its kind's.
         let mut names: Vec<String> = match only {
-            None => self.prunable_sources()?,
+            None => prunable_sources(&graphs),
             Some(_) => ran.iter().map(|s| s.name().to_owned()).collect(),
         };
-        names.retain(|n| !unreadable.contains(&n.as_str()));
         let correlate = only.is_none_or(|o| o == "correlation");
         if correlate && only.is_some() {
             names.push("correlation".to_owned());
@@ -180,21 +192,15 @@ impl Workspace {
         Ok(out)
     }
 
-    /// Every source name with a graph in the store, except the verdicts people recorded.
-    fn prunable_sources(&self) -> anyhow::Result<Vec<String>> {
+    fn graph_names(&self) -> anyhow::Result<Vec<NamedNode>> {
         let snap = self.store.snapshot()?;
-        let mut names = std::collections::BTreeSet::new();
+        let mut out = Vec::new();
         for (g, _) in snap.graphs()? {
-            if let oxrdf::Term::NamedNode(n) = snap.term(g)?
-                && let Some(rest) = n.as_str().strip_prefix(vocab::GRAPH)
-                && let Some(rest) = rest.strip_prefix("harvest/").or_else(|| rest.strip_prefix("quarantine/"))
-                && let Some((source, _)) = rest.split_once('/')
-                && source != "verdicts"
-            {
-                names.insert(source.to_owned());
+            if let oxrdf::Term::NamedNode(n) = snap.term(g)? {
+                out.push(n);
             }
         }
-        Ok(names.into_iter().collect())
+        Ok(out)
     }
 
     /// Clears the graphs of `sources` that this run did not write: files that were deleted or
@@ -232,7 +238,7 @@ impl Workspace {
         let mut batches = Vec::new();
         for i in incidents {
             let Ok(a) = correlate::analyze(&snap, &ids, i, &self.config.correlation) else { continue };
-            batches.push(chain_batch(&a));
+            batches.push(chain_batch(&a, self.config.correlation.max_chains));
         }
         drop(snap);
         let mut catalog = None;
@@ -240,9 +246,11 @@ impl Workspace {
     }
 
     /// Records a human verdict on a chain. The verdict keeps what it judged (the chain's
-    /// incident and root event, and the root's class, application, time and signal), so it
-    /// means the same after the telemetry behind the root is retired or the chain's rank
-    /// changes. An accepted chain also writes `inc:cause`.
+    /// incident and root event, and on the verdict node the root's class, application, time
+    /// and signal), so it means the same after the telemetry behind the root is retired or the
+    /// chain's rank changes. The root event itself gets only `a evt:Event`: its time and
+    /// application stay with its telemetry, so a retired root is no candidate for correlation.
+    /// An accepted chain also writes `inc:cause`.
     pub fn verdict(&self, chain: &str, accept: bool, by: &str, evidence: &[String]) -> anyhow::Result<Outcome> {
         let _write = self.store.write_lock()?;
         let snap = self.store.snapshot()?;
@@ -259,14 +267,28 @@ impl Workspace {
         let incident = named(object(cid, corr::LEADS_TO)?)?;
         let root = named(object(cid, corr::ROOT_CAUSE)?)?;
         let root_id = snap.iri(root.as_str())?.expect("a chain's root is in the store");
+        let local = chain_iri.as_str().rsplit('/').next().unwrap_or("chain").to_owned();
+        // From the root's telemetry while it lasts, else from the verdict that judged it before.
+        let earlier = snap.iri(crate::model::entity("verdict", &local).as_str())?;
+        let live = object(root_id, evt::AT)?.is_some();
+        let class_of = |e: u64| -> anyhow::Result<Option<oxrdf::Term>> {
+            let Some(ty) = snap.iri(RDF_TYPE)? else { return Ok(None) };
+            let classes = snap.objects(e, ty)?.into_iter().map(|c| snap.term(c)).collect::<Result<Vec<_>, _>>()?;
+            Ok(classes.into_iter().find(|c| !matches!(c, oxrdf::Term::NamedNode(n) if n.as_str() == evt::EVENT)))
+        };
         let mut kept = Vec::new();
-        for p in [RDF_TYPE, evt::ON, evt::AT, evt::SIGNAL] {
-            if let Some(o) = object(root_id, p)? {
-                kept.push((p, o));
+        for (p, q) in [(RDF_TYPE, rca::ROOT_CLASS), (evt::ON, rca::ROOT_ON), (evt::AT, rca::ROOT_AT), (evt::SIGNAL, rca::ROOT_SIGNAL)] {
+            let o = match (live, earlier) {
+                (true, _) if p == RDF_TYPE => class_of(root_id)?,
+                (true, _) => object(root_id, p)?,
+                (false, Some(v)) => object(v, q)?,
+                (false, None) => None,
+            };
+            if let Some(o) = o {
+                kept.push((q, o));
             }
         }
         drop(snap);
-        let local = chain_iri.as_str().rsplit('/').next().unwrap_or("chain").to_owned();
         let mut b = Batch::new("verdicts", &local, "human");
         let m = Extraction::Human { who: by.to_owned() };
         let ev = b.record(format!("verdict:{local}"));
@@ -283,19 +305,35 @@ impl Workspace {
         b.add(c.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(corr::CHAIN)), &ev, &m);
         b.add(c.clone(), corr::LEADS_TO, obj(incident.clone()), &ev, &m);
         b.add(c, corr::ROOT_CAUSE, obj(root.clone()), &ev, &m);
+        b.add(EntityRef::Known(root.clone()), RDF_TYPE, obj(NamedNode::new_unchecked(evt::EVENT)), &ev, &m);
         for (p, o) in kept {
             let o = match o {
                 oxrdf::Term::NamedNode(n) => obj(n),
                 oxrdf::Term::Literal(l) => lit(l),
                 _ => continue,
             };
-            b.add(EntityRef::Known(root.clone()), p, o, &ev, &m);
+            b.add(v.clone(), p, o, &ev, &m);
         }
         if accept {
             b.add(EntityRef::Known(incident), inc::CAUSE, obj(root), &ev, &m);
         }
         gateway::submit(&self.store, &self.ontology, &b, now_ms())
     }
+}
+
+/// Every source name with a graph in `graphs`, except the verdicts people recorded.
+fn prunable_sources(graphs: &[NamedNode]) -> Vec<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for n in graphs {
+        if let Some(rest) = n.as_str().strip_prefix(vocab::GRAPH)
+            && let Some(rest) = rest.strip_prefix("harvest/").or_else(|| rest.strip_prefix("quarantine/"))
+            && let Some((source, _)) = rest.split_once('/')
+            && source != "verdicts"
+        {
+            names.insert(source.to_owned());
+        }
+    }
+    names.into_iter().collect()
 }
 
 /// A source's kind as `config.toml` names it, which `--only` accepts besides its graph name.
@@ -306,17 +344,22 @@ fn kind(s: &Source) -> &'static str {
     }
 }
 
-/// A chain by IRI, or `id:chain/<incident>-<rank>` for the chain at that rank now.
+/// A chain by IRI, or `id:chain/<incident>-<rank>` for the chain at that rank now. A name in
+/// the rank form that is not a chain, such as a chain id from before ids were stable, means
+/// the rank.
 fn find_chain(snap: &crate::store::Snapshot, chain: &str) -> anyhow::Result<u64> {
     let iri = resolve_iri(chain);
-    if let Some(id) = snap.iri(&iri)? {
+    let missing = || anyhow::anyhow!("no chain {chain}; `ograph chains INCIDENT` lists them");
+    let leads = snap.iri(corr::LEADS_TO)?.ok_or_else(missing)?;
+    if let Some(id) = snap.iri(&iri)?
+        && snap.object(id, leads)?.is_some()
+    {
         return Ok(id);
     }
-    let missing = || anyhow::anyhow!("no chain {chain}; `ograph chains INCIDENT` lists them");
-    let (incident, rank) = iri.rsplit('/').next().and_then(|l| l.rsplit_once('-')).ok_or_else(missing)?;
+    let local = iri.strip_prefix(&format!("{}chain/", vocab::DATA)).ok_or_else(missing)?;
+    let (incident, rank) = local.rsplit_once('-').ok_or_else(missing)?;
     let rank: i64 = rank.parse().map_err(|_| missing())?;
-    let (Some(leads), Some(rank_p), Some(i), Some(r)) = (
-        snap.iri(corr::LEADS_TO)?,
+    let (Some(rank_p), Some(i), Some(r)) = (
         snap.iri(corr::RANK)?,
         snap.iri(crate::model::entity("inc", incident).as_str())?,
         snap.id(&oxrdf::Literal::from(rank).into())?,
@@ -339,13 +382,13 @@ pub fn resolve_iri(s: &str) -> String {
     s.to_owned()
 }
 
-/// The chains of one analysis as a correlation batch.
-pub fn chain_batch(a: &correlate::Analysis) -> Batch {
+/// The best chain of each of the first `max` ranked applications as a correlation batch.
+pub fn chain_batch(a: &correlate::Analysis, max: usize) -> Batch {
     let local = a.incident.rsplit('/').next().unwrap_or("inc").to_owned();
     let mut b = Batch::new("correlation", &local, "correlator-v1");
     let m = Extraction::Rule { extractor: "correlator-v1".into() };
     let ev = b.record(format!("query:chains {local}"));
-    for (rank, c) in a.chains.iter().enumerate() {
+    for (rank, c) in a.apps.iter().take(max).enumerate().filter_map(|(k, r)| Some((k, r.chain.as_ref()?))) {
         let node = EntityRef::Known(NamedNode::new_unchecked(&c.id));
         b.add(node.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(corr::CHAIN)), &ev, &m);
         b.add(node.clone(), corr::LEADS_TO, obj(NamedNode::new_unchecked(&a.incident)), &ev, &m);
@@ -430,7 +473,116 @@ mod tests {
         let incidents = out.iter().find(|o| o.graph.contains("/incidents/")).unwrap();
         assert_eq!(incidents.quarantined.len(), 0);
         assert_eq!(violations(&root), 0);
-        assert_eq!(sparql(&root, "SELECT ?app WHERE { ?i inc:id \"INC-1\" ; inc:cause ?e . ?e evt:on ?app }"), [["id:app/ledger-db"]]);
+        assert_eq!(sparql(&root, "SELECT ?app WHERE { ?i inc:id \"INC-1\" ; inc:cause ?e . ?v rca:onChain [ corr:rootCause ?e ] ; rca:rootOn ?app }"), [["id:app/ledger-db"]]);
+    }
+
+    #[test]
+    fn similar_keeps_the_cause_of_a_verdict_whose_root_left_the_sources() {
+        let root = fixture("similar", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600))), ("deployments", "deployments.jsonl", &format!("{{\"service\":\"payments-api\",\"version\":\"1\",\"at\":{}}}\n{{\"service\":\"payments-api\",\"version\":\"2\",\"at\":{}}}\n", T - 300, T + 86_100))]);
+        std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T}}},{{"id":"INC-2","service":"checkout","opened":{}}}]"#, T + 86_400)).unwrap();
+        harvest(&root, None);
+        let chain = sparql(&root, "SELECT ?c WHERE { ?c corr:leadsTo ?i ; corr:candidateApp id:app\\/ledger-db . ?i inc:id \"INC-1\" }");
+        Workspace::open(&root).unwrap().verdict(&chain[0][0], true, "oncall", &[]).unwrap();
+        std::fs::write(root.join("alerts.json"), "[]").unwrap();
+        harvest(&root, None);
+        assert_eq!(violations(&root), 0);
+        let ws = Workspace::open(&root).unwrap();
+        let similar = crate::query::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5).unwrap();
+        assert_eq!(similar.iter().map(|s| (s.incident.as_str(), s.cause_apps.clone())).collect::<Vec<_>>(), [("id:inc/inc-1", vec!["ledger-db".to_owned()])]);
+    }
+
+    #[test]
+    fn a_judged_root_that_left_the_sources_is_no_longer_a_candidate() {
+        let root = fixture("retired", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        Workspace::open(&root).unwrap().verdict("id:chain/inc-1-1", false, "oncall", &[]).unwrap();
+        std::fs::write(root.join("alerts.json"), "[]").unwrap();
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        assert!(crate::query::before(&ws.store.snapshot().unwrap(), "INC-1", 1800, 4).unwrap().events.is_empty());
+        assert!(sparql(&root, "SELECT ?c WHERE { ?c corr:rank ?r }").is_empty());
+        assert_eq!(violations(&root), 0);
+    }
+
+    #[test]
+    fn the_rank_a_verdict_resolves_is_the_rank_chains_prints() {
+        let alerts = [alert("ledger-db", "PoolSaturated", T - 600), alert("ledger-db", "SlowQueries", T - 500), alert("payments-api", "ErrorRate", T - 300)];
+        let root = fixture("ranks", &[("alerts", "alerts.json", &format!("[{}]", alerts.join(",")))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let ids = crate::correlate::Ids::new(&snap).unwrap();
+        let a = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+        let printed: Vec<Vec<String>> = a.apps.iter().enumerate().map(|(k, r)| vec![crate::vocab::compact(&r.chain.as_ref().unwrap().id), (k + 1).to_string()]).collect();
+        assert_eq!(printed.len(), 2);
+        assert_eq!(sparql(&root, "SELECT ?c ?r WHERE { ?c corr:rank ?r } ORDER BY ?r"), printed);
+    }
+
+    #[test]
+    fn a_leftover_iri_in_the_rank_form_does_not_shadow_the_rank() {
+        let root = fixture("leftover", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        ws.store.transact(|tx| tx.intern(&oxrdf::NamedNode::new_unchecked("https://ograph.dev/id/chain/inc-1-1").into()).map(drop)).unwrap();
+        ws.verdict("id:chain/inc-1-1", true, "oncall", &[]).unwrap();
+        assert_eq!(sparql(&root, VERDICT_ROOT), [[format!("id:ev/alert-ledger-db-poolsaturated-{}000", T - 600)]]);
+    }
+
+    #[test]
+    fn a_verdict_outside_the_chain_namespace_is_an_error() {
+        let root = fixture("typo", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        assert!(Workspace::open(&root).unwrap().verdict("https://example.org/typo/inc-1-1", true, "oncall", &[]).is_err());
+        assert!(sparql(&root, "SELECT ?v WHERE { ?v a rca:Verdict }").is_empty());
+    }
+
+    #[test]
+    fn a_chain_cannot_hold_two_roots() {
+        let root = fixture("two-roots", &[("alerts", "alerts.json", &format!("[{},{}]", alert("ledger-db", "A", T - 600), alert("ledger-db", "B", T - 600)))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let mut b = crate::model::Batch::new("correlation", "inc-1", "test");
+        let m = crate::model::Extraction::Rule { extractor: "test".into() };
+        let ev = b.record("test");
+        let c = crate::model::known("chain", "inc-1-0");
+        let n = |s: &str| crate::model::obj(oxrdf::NamedNode::new_unchecked(s));
+        b.add(c.clone(), crate::vocab::RDF_TYPE, n(crate::vocab::corr::CHAIN), &ev, &m);
+        b.add(c.clone(), crate::vocab::corr::LEADS_TO, n("https://ograph.dev/id/inc/inc-1"), &ev, &m);
+        for name in ["a", "b"] {
+            b.add(c.clone(), crate::vocab::corr::ROOT_CAUSE, n(&format!("https://ograph.dev/id/ev/alert-ledger-db-{name}-{}000", T - 600)), &ev, &m);
+        }
+        let o = crate::gateway::submit(&ws.store, &ws.ontology, &b, 0).unwrap();
+        assert!(!o.quarantined.is_empty(), "{o:?}");
+    }
+
+    #[test]
+    fn an_unreadable_source_keeps_only_its_own_graphs() {
+        let root = fixture("siblings", &[]);
+        for (f, name) in [("east/1.json", "E1"), ("west/1.json", "W1"), ("west/2.json", "W2")] {
+            std::fs::create_dir_all(root.join(f).parent().unwrap()).unwrap();
+            std::fs::write(root.join(f), format!("[{}]", alert("ledger-db", name, T - 600))).unwrap();
+        }
+        let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
+        std::fs::write(root.join(".ograph/config.toml"), format!("{config}[[source]]\nkind = \"alerts\"\npath = \"./east\"\n[[source]]\nkind = \"alerts\"\npath = \"west\"\n")).unwrap();
+        harvest(&root, None);
+        std::fs::rename(root.join("east"), root.join("offline")).unwrap();
+        std::fs::remove_file(root.join("west/2.json")).unwrap();
+        harvest(&root, None);
+        assert_eq!(sparql(&root, "SELECT ?n WHERE { ?e a evt:Alert ; evt:summary ?n } ORDER BY ?n"), [["E1"], ["W1"]]);
+    }
+
+    #[test]
+    fn an_empty_source_directory_keeps_its_graphs() {
+        let root = fixture("empty-dir", &[]);
+        std::fs::create_dir(root.join("al")).unwrap();
+        std::fs::write(root.join("al/1.json"), format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600))).unwrap();
+        let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
+        std::fs::write(root.join(".ograph/config.toml"), format!("{config}[[source]]\nkind = \"alerts\"\npath = \"al\"\n")).unwrap();
+        harvest(&root, None);
+        std::fs::remove_file(root.join("al/1.json")).unwrap();
+        let out = harvest(&root, None);
+        assert!(out.iter().any(|o| !o.degraded.is_empty()), "{out:?}");
+        assert_eq!(sparql(&root, "SELECT ?e WHERE { ?e a evt:Alert }").len(), 1);
     }
 
     #[test]

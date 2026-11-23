@@ -96,6 +96,10 @@ rca:state a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:stri
 rca:by a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:string ; rdfs:comment "Who gave the verdict." .
 rca:evidence a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:string ; rdfs:comment "The evidence the person cited for the verdict." .
 rca:at a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:dateTime ; rdfs:comment "When the verdict was given." .
+rca:rootClass a owl:ObjectProperty ; rdfs:domain rca:Verdict ; rdfs:range og:Thing ; rdfs:comment "The class of the root event the verdict judged, kept on the verdict so it outlives the event's telemetry." .
+rca:rootOn a owl:ObjectProperty ; rdfs:domain rca:Verdict ; rdfs:range ops:Application ; rdfs:comment "The application of the root event the verdict judged." .
+rca:rootAt a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:dateTime ; rdfs:comment "When the root event the verdict judged happened." .
+rca:rootSignal a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:string ; rdfs:comment "The signal of the root event the verdict judged." .
 
 # ---------- HARVEST ----------
 harv:Harvest a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "One run of reading a source into the graph." .

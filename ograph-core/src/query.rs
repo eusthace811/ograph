@@ -154,6 +154,23 @@ fn cosine(a: &FxHashMap<(String, String), f64>, b: &FxHashMap<(String, String), 
     if na == 0.0 || nb == 0.0 { 0.0 } else { dot / (na * nb) }
 }
 
+/// The application of a cause: from its telemetry, or from the verdict that judged it once the
+/// telemetry is gone.
+fn cause_app(s: &Snapshot, ids: &Ids, e: Id) -> anyhow::Result<Option<Id>> {
+    if let Some(a) = s.object(e, ids.on)? {
+        return Ok(Some(a));
+    }
+    let (Some(root), Some(on_chain), Some(root_on)) = (s.iri(vocab::corr::ROOT_CAUSE)?, s.iri(vocab::rca::ON_CHAIN)?, s.iri(vocab::rca::ROOT_ON)?) else { return Ok(None) };
+    for c in s.subjects(root, e)? {
+        for v in s.subjects(on_chain, c)? {
+            if let Some(a) = s.object(v, root_on)? {
+                return Ok(Some(a));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Q3: past incidents that resemble this one, with their accepted causes and mitigations.
 pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> anyhow::Result<Vec<Similar>> {
     let ids = Ids::new(s)?;
@@ -181,7 +198,7 @@ pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> any
             similarity,
             app: app_name(s, &ids, app),
             at: term::format_millis(at),
-            cause_apps: causes.iter().filter_map(|&e| s.object(e, ids.on).ok().flatten()).map(|a| app_name(s, &ids, a)).collect(),
+            cause_apps: causes.iter().map(|&e| cause_app(s, &ids, e)).collect::<anyhow::Result<Vec<_>>>()?.into_iter().flatten().map(|a| app_name(s, &ids, a)).collect(),
             causes: causes.iter().filter_map(|&e| literal(s, e)).map(|x| vocab::compact(&x)).collect(),
             mitigations: mit_p.map(|p| s.objects(other, p)).transpose()?.unwrap_or_default().into_iter().filter_map(|v| literal(s, v)).collect(),
             title: title_p.and_then(|p| s.object(other, p).ok().flatten()).and_then(|v| literal(s, v)),

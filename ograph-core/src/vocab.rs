@@ -92,6 +92,10 @@ ns!(rca, "https://ograph.dev/rca#", {
     BY = "by",
     EVIDENCE = "evidence",
     AT = "at",
+    ROOT_CLASS = "rootClass",
+    ROOT_ON = "rootOn",
+    ROOT_AT = "rootAt",
+    ROOT_SIGNAL = "rootSignal",
 });
 
 ns!(harv, "https://ograph.dev/harv#", {

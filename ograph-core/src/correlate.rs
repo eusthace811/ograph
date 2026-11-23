@@ -111,7 +111,9 @@ pub struct Analysis {
     pub app: String,
     pub at_ms: i64,
     pub candidates: usize,
-    pub chains: Vec<Chain>,
+    /// Ranked root-cause applications, each with its best chain. A chain's `corr:rank` is its
+    /// application's position here, so the number `ograph chains` prints is the one a verdict
+    /// resolves.
     pub apps: Vec<Ranked>,
 }
 
@@ -231,11 +233,13 @@ pub fn incident_anchor(s: &Snapshot, ids: &Ids, incident: Id) -> anyhow::Result<
 /// way when the window opens.
 const EPISODE_LOOKBACK_MS: i64 = 24 * 3600 * 1000;
 
-/// The IRI of the chain from `root` to `incident`.
+/// The IRI of the chain from `root` to `incident`: 64 bits of their digest, so two roots of
+/// one incident do not share an id in practice, and `shapes.ttl` rejects a chain with two roots
+/// if they ever do.
 pub fn chain_iri(incident: &str, root: &str) -> String {
     let local = incident.rsplit('/').next().unwrap_or("inc");
-    let h = hex::encode(crate::gateway::sha2_hash(root));
-    format!("{}chain/{}-{}", crate::vocab::DATA, crate::model::slug(local), &h[..8])
+    let h = hex::encode(crate::gateway::sha2_hash(&format!("{incident} {root}")));
+    format!("{}chain/{}-{}", crate::vocab::DATA, crate::model::slug(local), &h[..16])
 }
 
 /// Events on the incident's application and everything it depends on, in the window, and
@@ -421,9 +425,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
         }),
         RankMode::Propagation => apps.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.first_ms.cmp(&b.first_ms)).then(a.app.cmp(&b.app))),
     }
-    chains.sort_by(|a, b| b.confidence.total_cmp(&a.confidence).then(a.root.at_ms.cmp(&b.root.at_ms)));
-    chains.truncate(st.max_chains);
-    Ok(Analysis { incident: incident_iri, app: app_name(s, ids, app), at_ms: t, candidates: cands.len(), chains, apps })
+    Ok(Analysis { incident: incident_iri, app: app_name(s, ids, app), at_ms: t, candidates: cands.len(), apps })
 }
 
 /// Confidence at the resolution ranking cares about, so float noise cannot break a tie.

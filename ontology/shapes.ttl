@@ -39,6 +39,7 @@ shape:Thread a sh:NodeShape ;
 shape:Chain a sh:NodeShape ;
   sh:targetClass corr:Chain ;
   sh:property [ sh:path corr:leadsTo ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path corr:rootCause ; sh:minCount 1 ; sh:maxCount 1 ; sh:message "a chain has exactly one root cause" ] ;
   sh:property [ sh:path corr:confidence ; sh:maxCount 1 ; sh:minInclusive 0 ; sh:maxInclusive 1 ] .
 
 shape:Verdict a sh:NodeShape ;
