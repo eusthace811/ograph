@@ -9,7 +9,7 @@ to a recipe in skills/ograph/references/sparql.md; "novel" ones are not.
 
 Usage: sparql_agent_eval.py --bin target/release/ograph --demo examples/demo [--model M] [--repeat N] [--no-skill]
 --no-skill runs the same agent without the skill, to measure what the skill adds."""
-import argparse, concurrent.futures, itertools, json, os, pathlib, re, shutil, statistics, subprocess, tempfile, time
+import argparse, atexit, concurrent.futures, itertools, json, os, pathlib, re, shutil, statistics, subprocess, tempfile, time
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--bin", required=True); ap.add_argument("--demo", required=True)
@@ -21,6 +21,7 @@ skill = pathlib.Path(__file__).resolve().parents[2] / "skills" / "ograph"
 questions = json.loads((demo / "sparql-questions.json").read_text())
 
 work = pathlib.Path(tempfile.mkdtemp(prefix="ograph-sparql-agent-"))
+atexit.register(shutil.rmtree, work, True)
 ws = work / "demo"
 shutil.copytree(demo, ws, ignore=shutil.ignore_patterns("sparql-questions.json", "*-labels.json", "questions*.txt", "generate.py"))
 bindir = work / "bin"; bindir.mkdir(); (bindir / "ograph").symlink_to(binp)
@@ -43,8 +44,8 @@ def named(rs): return [[NAMES.get(c, c) for c in r] for r in rs]
 def same(got, gold):
     got, gold = named(got), named(gold)
     want = {tuple(r) for r in gold}
-    if not got: return not want
-    k = len(gold[0]) if gold else 1
+    if not got or not want: return not got and not want
+    k = len(gold[0])
     return any({tuple(r[i] for i in cols) for r in got} == want for cols in itertools.permutations(range(len(got[0])), k))
 
 PROMPT = """Answer this question about the ograph workspace in the current directory by writing SPARQL and running it with `ograph sparql`. Use only `ograph sparql`, not the other ograph commands. Run as many queries as you need.
@@ -67,7 +68,7 @@ def ask(item):
             why = f"exit {p.returncode}: {(p.stderr or p.stdout).strip()[-200:]}"
         except subprocess.TimeoutExpired:
             why = "no reply within 300 s"
-        time.sleep(30 * (attempt + 1))
+        if attempt < 2: time.sleep(30 * (attempt + 1))
     else:
         return n, None, f"pi failed 3 times, last: {why}", time.time() - t
     blocks = re.findall(r"```sparql\s*\n(.*?)```", p.stdout, re.S)
@@ -78,10 +79,11 @@ def ask(item):
     return n, ok, "" if ok else f"got {sorted(map(tuple, got), key=str)[:6]} want {sorted(map(tuple, gold[n]), key=str)[:6]}", time.time() - t
 
 todo = [(n, q) for n, q in enumerate(questions, 1) if not a.only or n in a.only]
+if not todo: raise SystemExit(f"no question matches --only; there are {len(questions)}")
 gold = {}
 for n, q in todo:
     gold[n], err = rows(q["gold"])
-    if err: raise SystemExit(f"Q{n} reference query failed: {err}")
+    if err or not gold[n]: raise SystemExit(f"Q{n} reference query: {err or 'no rows; harvest the demo first (cd examples/demo && ograph harvest)'}")
 print(f"model {a.model}, {len(todo)} questions x {a.repeat}, " + ("no skill" if a.no_skill else "skill skills/ograph"))
 results, times = {}, []
 with concurrent.futures.ThreadPoolExecutor(a.parallel) as pool:
@@ -93,4 +95,3 @@ for kind in ("recipe", "novel", "all"):
     scored = [ok for ok in runs if ok is not None]
     print(f"{kind}: {sum(scored)}/{len(scored)} correct ({sum(scored) / max(len(scored), 1):.2f})" + (f"; {len(runs) - len(scored)} not scored: pi failed" if len(scored) < len(runs) else ""))
 print(f"median time per run: {statistics.median(times):.1f} s")
-shutil.rmtree(work)

@@ -111,14 +111,14 @@ For vendor news: `ograph news --since 7d`.
 
 ## 5. Ask anything else
 
-Everything is queryable with SPARQL. The ontology's prefixes and `id:` are predeclared.
+Everything is queryable with SPARQL. The ontology's prefixes, `id:` and `g:` are predeclared.
 
 ```bash
 ograph sparql 'SELECT ?app WHERE { ?a ops:dependsOn+ id:app\/ledger-db ; ops:name ?app }'
 ograph sparql 'SELECT ?id ?status WHERE { ?i a inc:Incident ; inc:id ?id ; inc:status ?status }'
 ```
 
-Two things to know: write `/` in ids as `\/` inside a query, and match event types by their
+Two things to know: write `/` in ids as `\/` inside a query (and a version's dots as `\.`), and match event types by their
 specific class (`evt:Alert`, `evt:Deployment`, ...), since `evt:Event` itself is not stored.
 A misspelled name is an error that suggests the right one. The prefixes and more recipes are in
 `skills/ograph/references/sparql.md`.

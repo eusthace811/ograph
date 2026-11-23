@@ -205,7 +205,7 @@ A query that uses a class or property the ontology does not declare now fails, w
 
 - **Accuracy does not separate the arms on this set.** Without the skill the agent still writes correct queries. It can read `.ograph/ontology.ttl` in the workspace, which is the likely reason (inferred: the runner keeps no transcripts). The skill saves it about 5 s a question. A harder set or a smaller model may separate them; this one does not.
 - **The misses are answer shape and one aggregate.** With the skill: 2 of 3 runs of "the top-ranked candidate" returned the whole ranking. Without it: one count of alerts by severity counted every event, and one final query kept an unescaped `/`.
-- **Found during the work.** An id written as commands print it, `id:app/payments-api`, failed to parse with `expected OPTIONAL`, which does not mention the `/`. The error now ends `the / in id:app/payments-api must be escaped, as id:app\/payments-api, or use the full IRI`.
+- **Found during the work.** An id written as commands print it, `id:app/payments-api`, failed to parse with `expected OPTIONAL`, which does not mention the `/`. The error now ends `write id:app/payments-api as id:app\/payments-api inside a query, or use the full IRI`; the run recorded in `sparql-agent.txt` shows that message's earlier wording.
 - **Limits.** One model, 22 questions written by the author of the reference queries, on a 10-application demo. A run that pi could not complete (a failed exit, an empty reply or no reply within 300 s, 3 times over, such as a rate limit) is reported as ERROR and not scored; this run had none.
 
 ### Ontology coverage against competency questions (`coverage.txt`)

@@ -120,70 +120,33 @@ pub fn parse(query: &str) -> anyhow::Result<spargebra::Query> {
     parser.clone().parse_query(query).or_else(|e| {
         anyhow::ensure!(!parser.clone().parse_update(query).is_ok_and(|u| !u.operations.is_empty()), "read-only: SPARQL updates are not allowed");
         match unescaped_slash(&parser, query) {
-            Some(name) => anyhow::bail!("{e}: the / in {name} must be escaped, as {}, or use the full IRI", name.replace('/', "\\/")),
+            Some(name) => anyhow::bail!("{e}: write {name} as {} inside a query, or use the full IRI", escape_id(name)),
             None => Err(e.into()),
         }
     })
 }
 
-/// A data id written as commands print it (`id:app/ledger-db`), which SPARQL cannot parse: the
-/// parser stops at the `/` with an error that does not mention it. Ids are looked for only
-/// outside strings, IRIs and comments, and named only when escaping them makes the query parse.
+/// A data id written as commands print it (`id:app/ledger-db`, `id:ev/deploy-x-2.3.1-17953...`),
+/// which SPARQL cannot parse: a `/`, or more than one `.`, stops the parser with an error that
+/// does not mention it. Comments, strings and IRIs are matched first, so ids inside them are
+/// skipped, and an id is named only when escaping every id makes the query parse.
 fn unescaped_slash<'q>(parser: &SparqlParser, query: &'q str) -> Option<&'q str> {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| regex::Regex::new(r"(?:^|[^\w:\\/<])((?:id|g):[\w-](?:[\w.-]*[\w-])?(?:/[\w-](?:[\w.-]*[\w-])?)+)").unwrap());
-    let ids: Vec<_> = re.captures_iter(&code_only(query)).map(|c| c.get(1).unwrap().range()).collect();
-    let first = ids.first()?.clone();
-    let (mut escaped, mut at) = (String::new(), 0);
-    for r in &ids {
-        escaped.push_str(&query[at..r.start]);
-        escaped.push_str(&query[r.clone()].replace('/', "\\/"));
-        at = r.end;
-    }
-    escaped.push_str(&query[at..]);
-    parser.clone().parse_query(&escaped).is_ok().then(|| &query[first])
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(concat!(
+            r#"#[^\n]*|"""(?:"{0,2}(?:[^"\\]|\\.))*(?:"""|$)|'''(?:'{0,2}(?:[^'\\]|\\.))*(?:'''|$)"#,
+            r#"|"(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?|<[^<>"{}|^`\\\s]*>"#,
+            r"|\b((?:id|g):[\w-](?:[\w.-]*[\w-])?(?:/[\w-](?:[\w.-]*[\w-])?)+)",
+        ))
+        .unwrap()
+    });
+    let first = re.captures_iter(query).find_map(|c| c.get(1))?;
+    let escaped = re.replace_all(query, |c: &regex::Captures| c.get(1).map_or_else(|| c[0].to_string(), |id| escape_id(id.as_str())));
+    parser.clone().parse_query(&escaped).is_ok().then(|| first.as_str())
 }
 
-/// The query with its strings, IRIs and comments blanked to spaces, byte for byte, so offsets
-/// into it are offsets into the query.
-fn code_only(query: &str) -> String {
-    let b = query.as_bytes();
-    let mut out = b.to_vec();
-    let mut i = 0;
-    while i < b.len() {
-        let end = match b[i] {
-            b'#' => b[i..].iter().position(|&c| c == b'\n').map_or(b.len(), |k| i + k),
-            q @ (b'"' | b'\'') => {
-                let long = b[i..].starts_with(&[q, q, q]);
-                let mut j = i + if long { 3 } else { 1 };
-                while j < b.len() {
-                    if b[j] == b'\\' {
-                        j += 2;
-                    } else if long && b[j..].starts_with(&[q, q, q]) {
-                        j += 3;
-                        break;
-                    } else if !long && (b[j] == q || b[j] == b'\n') {
-                        j += 1;
-                        break;
-                    } else {
-                        j += 1;
-                    }
-                }
-                j.min(b.len())
-            }
-            // An IRI has no whitespace before its `>`; a `<` comparison does.
-            b'<' => match b[i + 1..].iter().position(|&c| c == b'>' || c.is_ascii_whitespace()) {
-                Some(k) if b[i + 1 + k] == b'>' => i + 2 + k,
-                _ => i + 1,
-            },
-            _ => i + 1,
-        };
-        if b[i] == b'#' || b[i] == b'"' || b[i] == b'\'' || (b[i] == b'<' && end > i + 1) {
-            out[i..end].iter_mut().filter(|c| **c != b'\n').for_each(|c| *c = b' ');
-        }
-        i = end;
-    }
-    String::from_utf8(out).expect("only ASCII bytes were replaced, with spaces")
+fn escape_id(id: &str) -> String {
+    id.replace('/', "\\/").replace('.', "\\.")
 }
 
 pub fn show(t: &Term) -> String {
@@ -352,13 +315,13 @@ mod tests {
     #[test]
     fn an_unescaped_slash_in_an_id_names_the_fix() {
         let err = super::parse("SELECT ?a WHERE {\n  id:app/payments-api ops:alias ?a }").unwrap_err().to_string();
-        assert!(err.ends_with(r"the / in id:app/payments-api must be escaped, as id:app\/payments-api, or use the full IRI"), "{err}");
+        assert!(err.ends_with(r"write id:app/payments-api as id:app\/payments-api inside a query, or use the full IRI"), "{err}");
         let err = super::parse("SELECT ?a WHERE { ?a ops:dependsOn/ops:name ?n . <https://ograph.dev/id/app/x> ?p ?o ").unwrap_err().to_string();
-        assert!(!err.contains("must be escaped"), "{err}");
+        assert!(!err.contains("inside a query"), "{err}");
         assert!(super::parse(r"SELECT ?a WHERE { id:app\/payments-api ops:alias ?a }").is_ok());
         for q in ["SELECT ?a WHERE { ?a ops:name \"see id:app/x\" ; ops:alias }", "SELECT ?a WHERE { # id:app/x\n ?a ops:alias }"] {
             let err = super::parse(q).unwrap_err().to_string();
-            assert!(!err.contains("must be escaped"), "{q}: {err}");
+            assert!(!err.contains("inside a query"), "{q}: {err}");
         }
         for q in [
             "# was id:app/old-name\nSELECT ?a WHERE { id:app/payments-api ops:alias ?a }",
@@ -366,14 +329,28 @@ mod tests {
             "SELECT ?a WHERE { ?a ops:name 'id:app/x' ; ops:dependsOn <https://ograph.dev/id/app/x> . id:app/payments-api ops:alias ?a }",
         ] {
             let err = super::parse(q).unwrap_err().to_string();
-            assert!(err.ends_with(r"the / in id:app/payments-api must be escaped, as id:app\/payments-api, or use the full IRI"), "{q}: {err}");
+            assert!(err.ends_with(r"write id:app/payments-api as id:app\/payments-api inside a query, or use the full IRI"), "{q}: {err}");
         }
         for q in ["", "  # nothing\n"] {
             assert!(!super::parse(q).unwrap_err().to_string().contains("read-only"), "{q:?}");
         }
         assert!(super::parse("CLEAR ALL").unwrap_err().to_string().contains("read-only"));
+        let hint = |q: &str| super::parse(q).unwrap_err().to_string().contains("inside a query");
+        for q in [
+            r#"SELECT ?a WHERE { ?a ops:name "a#b" . id:app/x ops:alias ?a }"#,
+            r#"SELECT ?a WHERE { <http://x/y#z> ?p ?o . id:app/x ops:alias ?a }"#,
+            r#"SELECT ?a WHERE { ?a ops:name """x " id:app/q """ . id:app/x ops:alias ?a }"#,
+            r#"SELECT ?a WHERE { ?a ops:name 'it\'s' . id:app/x ops:alias ?a }"#,
+            r#"SELECT ?a WHERE { ?a ops:p ?b FILTER(?b < 3) . id:app/x ops:alias ?a }"#,
+            r#"SELECT ?a WHERE { ?a ops:name ?n FILTER(?n<"z>") id:app/x ops:alias ?a }"#,
+        ] {
+            assert!(hint(q), "{q}");
+        }
+        assert!(!hint(r#"SELECT ?a WHERE { ?a ops:name """x id:app/q"#));
+        let err = super::parse("SELECT ?p WHERE { id:ev/deploy-payments-api-2.3.1-1795386160000 ?p ?o }").unwrap_err().to_string();
+        assert!(err.ends_with(r"write id:ev/deploy-payments-api-2.3.1-1795386160000 as id:ev\/deploy-payments-api-2\.3\.1-1795386160000 inside a query, or use the full IRI"), "{err}");
         let err = super::parse("SELECT ?n WHERE { ?a ops:dependsOn id:app/ledger-db. ?a ops:name ?n }").unwrap_err().to_string();
-        assert!(err.ends_with(r"the / in id:app/ledger-db must be escaped, as id:app\/ledger-db, or use the full IRI"), "{err}");
+        assert!(err.ends_with(r"write id:app/ledger-db as id:app\/ledger-db inside a query, or use the full IRI"), "{err}");
     }
 
     #[test]

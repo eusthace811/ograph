@@ -82,9 +82,10 @@ ograph sparql 'SELECT ?p ?o WHERE { <https://ograph.dev/id/app/ledger-db> ?p ?o 
 
 ## Pitfalls
 
-- **`/` in a prefixed name.** Write `id:app\/ledger-db` or the full IRI
+- **`/` and dots in a prefixed name.** Write `id:app\/ledger-db` or the full IRI
   `<https://ograph.dev/id/app/ledger-db>`. The ids that commands print (`id:app/ledger-db`)
-  need that escape inside a query.
+  need that escape inside a query, and a deployment id's version dots too
+  (`id:ev\/deploy-payments-api-2\.3\.1-1795386160000`).
 - **Superclasses match nothing.** Only the most specific type is stored, so
   `?e a evt:Event` is rejected with the list of subclasses to use in `VALUES`.
 - **Misspelled names are errors, not empty results.** `evt:onn` fails with

@@ -55,7 +55,7 @@ ograph verdict id:chain/inc-5377-f1ece3ced5be33c7 reject --evidence "deploy was 
 ### Query anything else
 
 ```bash
-# prefixes ops: evt: inc: disc: corr: rca: harv: id: g: rdf: rdfs: xsd: are predeclared
+# the ontology's prefixes, id: and g: are predeclared (references/sparql.md lists them)
 ograph sparql 'SELECT ?app WHERE { ?a ops:dependsOn+ id:app\/ledger-db ; ops:name ?app }'
 ograph sparql 'SELECT ?id ?status WHERE { ?i a inc:Incident ; inc:id ?id ; inc:status ?status }' --limit 20
 ```
@@ -97,8 +97,9 @@ Any command that takes a node accepts:
 - a prefixed name: `id:inc/inc-5377`, `id:app/ledger-db`, `id:chain/inc-5377-a7370ff7d4358525`
 - a full IRI: `https://ograph.dev/id/app/ledger-db`
 
-Inside SPARQL a `/` in a prefixed name must be escaped (`id:app\/ledger-db`) or the full IRI
-used (`<https://ograph.dev/id/app/ledger-db>`).
+Inside SPARQL, escape a `/` in a prefixed name, and the dots of a version (`id:app\/ledger-db`,
+`id:ev\/deploy-payments-api-2\.3\.1-1795386160000`), or use the full IRI
+(`<https://ograph.dev/id/app/ledger-db>`). A parse error names the escaped form.
 
 ## Rules for investigating
 
