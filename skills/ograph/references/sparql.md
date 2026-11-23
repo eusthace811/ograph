@@ -23,7 +23,7 @@ deduplicated union of every harvest; `GRAPH ?g { }` reaches the named graphs. Up
 - `ops:Application`, `ops:Team`, `ops:Region`, `ops:BusinessProcess`, `ops:Vendor`
 - Events (each node has only its most specific type): `evt:Deployment`, `evt:ConfigChange`,
   `evt:Alert`, `evt:LogError`, `evt:MetricAnomaly`, `evt:TraceFailed`, `evt:TraceSlow`,
-  `evt:Experiment`, `evt:NewsItem`, `inc:Incident`
+  `evt:Experiment`, `evt:E2EFailure`, `evt:NewsItem`, `inc:Incident`
 - `disc:Thread`, `corr:Chain`, `rca:Verdict`, `harv:Harvest`, `harv:Quarantined`, `harv:LlmFact`
 
 ## Properties you will use
@@ -43,8 +43,7 @@ deduplicated union of every harvest; `GRAPH ?g { }` reaches the named graphs. Up
 | `rca:onChain`, `rca:state`, `rca:by`, `rca:evidence`, `rca:at`, `rca:rootOn`, `rca:rootAt` | verdict fields |
 
 Closed values: `inc:status` open, mitigated, resolved. `rca:state` accepted, rejected.
-`ops:tier` critical, high, medium, low. `ograph ontology check` prints the full ontology summary;
-`.ograph/ontology.ttl` is the source of truth.
+`ops:tier` critical, high, medium, low. `.ograph/ontology.ttl` is the source of truth.
 
 ## Recipes
 
@@ -58,7 +57,7 @@ ograph sparql 'SELECT ?app ?v ?at WHERE { ?d a evt:Deployment ; evt:on/ops:name 
 
 # count events of every kind (list the subclasses, see pitfalls)
 ograph sparql 'SELECT ?type (COUNT(?e) AS ?n) WHERE {
-  VALUES ?type { evt:Alert evt:Deployment evt:ConfigChange evt:LogError evt:MetricAnomaly evt:TraceFailed evt:TraceSlow }
+  VALUES ?type { evt:Alert evt:Deployment evt:ConfigChange evt:LogError evt:MetricAnomaly evt:TraceFailed evt:TraceSlow evt:Experiment evt:E2EFailure }
   ?e a ?type } GROUP BY ?type ORDER BY DESC(?n)'
 
 # incidents and their status

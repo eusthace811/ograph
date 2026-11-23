@@ -28,10 +28,6 @@ Compose, Kubernetes and Prometheus files), and only the catalog can create appli
 it the harvest still runs, but every fact about a service is quarantined as "not in the catalog",
 so the questions have nothing to answer. `OGRAPH_OGREP=/path/to/ogrep` points at another binary.
 
-```bash
-ogrep --version
-```
-
 ## 2. Try it on the demo
 
 The demo is a small company with four incidents, already configured.
@@ -115,8 +111,7 @@ For vendor news: `ograph news --since 7d`.
 
 ## 5. Ask anything else
 
-Everything is queryable with SPARQL. The ontology's prefixes and `id:` are predeclared; the
-full list is in `skills/ograph/references/sparql.md`.
+Everything is queryable with SPARQL. The ontology's prefixes and `id:` are predeclared.
 
 ```bash
 ograph sparql 'SELECT ?app WHERE { ?a ops:dependsOn+ id:app\/ledger-db ; ops:name ?app }'
@@ -125,7 +120,7 @@ ograph sparql 'SELECT ?id ?status WHERE { ?i a inc:Incident ; inc:id ?id ; inc:s
 
 Two things to know: write `/` in ids as `\/` inside a query, and match event types by their
 specific class (`evt:Alert`, `evt:Deployment`, ...), since `evt:Event` itself is not stored.
-A misspelled name is an error that suggests the right one. More recipes:
+A misspelled name is an error that suggests the right one. The prefixes and more recipes are in
 `skills/ograph/references/sparql.md`.
 
 Add `--json` to any command for machine-readable output. Exit codes: 0 found, 1 nothing found,
@@ -149,11 +144,8 @@ confirms):
 
 ```bash
 ./x install-skill                              # ~/.claude/skills and ~/.agents/skills
-./x install-skill .claude/skills               # or one project
+./x install-skill .claude/skills               # or any directory an agent reads skills from
 ```
-
-Agents that read Agent Skills folders from another directory take the same folder:
-`./x install-skill DIR`.
 
 **MCP clients.** Point them at `ograph serve --mcp --root /path/to/workspace`. The tools are
 `before`, `chains`, `blast`, `similar`, `why`, `news`, `sparql` and `verdict`.

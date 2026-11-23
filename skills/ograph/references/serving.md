@@ -1,10 +1,6 @@
 # Serving the graph to agents
 
-Three ways to reach the same answers. All can run while a harvest runs.
-
-## CLI (this skill)
-
-Run `ograph` commands directly. Add `--json` to parse results.
+Besides the CLI, two ways to reach the same answers. Both can run while a harvest runs.
 
 ## JSON-RPC over TCP, with automatic refresh
 

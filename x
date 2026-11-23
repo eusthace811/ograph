@@ -34,13 +34,6 @@ esac
 if [ "$HOST" = windows ]; then
   EXE=.exe
   MANIFEST="$(cygpath -w "$HERE/Cargo.toml")"
-  # A repo on the WSL share (//wsl.localhost/...) needs target/ on a Windows disk: link.exe
-  # reads the leading / of such a path as an option, and the share has no file locks for cargo.
-  if [ -z "${CARGO_TARGET_DIR:-}" ]; then
-    case "$HERE" in
-      //*) export CARGO_TARGET_DIR="$(cygpath -w "$HOME/.ograph-target")" ;;
-    esac
-  fi
   BIN_DEFAULT="$HOME/bin"
 else
   EXE=
@@ -49,7 +42,11 @@ else
 fi
 # Pinned so `install` copies the binary this build wrote, whatever target-dir a cargo config sets.
 if [ -z "${CARGO_TARGET_DIR:-}" ]; then
-  CARGO_TARGET_DIR="${CARGO_BUILD_TARGET_DIR:-$HERE/target}"
+  target_default="$HERE/target"
+  # A repo on the WSL share (//wsl.localhost/...) needs target/ on a Windows disk: link.exe
+  # reads the leading / of such a path as an option, and the share has no file locks for cargo.
+  case "$HOST:$HERE" in windows://*) target_default="$HOME/.ograph-target" ;; esac
+  CARGO_TARGET_DIR="${CARGO_BUILD_TARGET_DIR:-$target_default}"
   [ "$HOST" = windows ] && CARGO_TARGET_DIR="$(cygpath -w "$CARGO_TARGET_DIR")"
   export CARGO_TARGET_DIR
 fi
@@ -87,7 +84,7 @@ refuse_if_running() {
   local live
   # No /FI filter: Git Bash would rewrite /FI into a path.
   live="$(tasklist 2>/dev/null | grep -ci '^ograph\.exe' || true)"
-  [ "${live:-0}" -eq 0 ] && return 0
+  [ "$live" -eq 0 ] && return 0
   echo "x: ograph.exe is still running ($live process(es)), and Windows will not replace a running .exe." >&2
   echo "   Stop 'ograph serve' with Ctrl-C in its window, or end them all with: taskkill //IM ograph.exe //F" >&2
   exit 1
@@ -208,5 +205,5 @@ case "${1:-help}" in
            fi
            exit "$status" ;;
 
-  *)       sub="$1"; shift; run_cargo "$sub" "$@" ;;
+  *)       run_cargo "$@" ;;
 esac

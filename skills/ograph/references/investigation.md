@@ -96,10 +96,6 @@ Each item names the vendor, the applications that use it and their business proc
 incident when its applications are in the incident's `scope` and it came shortly before the
 first symptom. Say so as a lead to check, not as a cause.
 
-## Before you cite a fact
-
-Run `ograph why` on it; [data-quality.md](data-quality.md) "Where a fact came from" says what it shows.
-
 ## What to report
 
 1. The timeline, newest first, minutes before the incident.

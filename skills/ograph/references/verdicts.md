@@ -14,8 +14,7 @@ ograph verdict id:chain/inc-5377-f1ece3ced5be33c7 reject --evidence "rollback ch
 ```
 
 - `--evidence` may repeat: a postmortem id, a ticket, a dashboard link.
-- `--by` must not be blank. If the person gave no name, ask once; otherwise use their role.
-- If they gave no ticket or postmortem id, quote their confirmation as the evidence.
+- `--by` must not be blank.
 - `id:chain/inc-5377-1` also works and means "the chain ranked 1 right now". Prefer the hash id:
   a re-harvest between reading and judging can change ranks.
 - Judging the same chain again replaces the earlier verdict.

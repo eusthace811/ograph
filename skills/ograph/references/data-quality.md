@@ -30,13 +30,6 @@ A batch line ending in `DEGRADED: <why>` kept the facts it had. Causes: a file t
 read or parsed, an empty file, a directory that cannot be listed, or a directory that held files
 and is now empty (an unmounted share). Fix the source and harvest again.
 
-## Audit
-
-```bash
-ograph validate          # full SHACL audit; "0 violations" is the healthy answer
-ograph stats             # size, graph count, triples
-```
-
 ## Where a fact came from
 
 ```bash

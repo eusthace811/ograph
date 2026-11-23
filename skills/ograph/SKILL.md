@@ -32,7 +32,6 @@ ograph chains INC-5377                 # top 5 applications, each with its best 
 ograph chains INC-5377 --top 10
 ograph chains INC-5377 --rank propagation   # second opinion: anomaly spread, not chain score
 ograph blast ledger-db                 # name, alias or IRI of an application
-ograph blast pay-gw                    # aliases resolve
 ograph similar INC-5377 --top 3
 ograph news                            # all news; --since 24h, 7d counts back from now
 ```

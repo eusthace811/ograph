@@ -9,7 +9,7 @@ to a recipe in skills/ograph/references/sparql.md; "novel" ones are not.
 
 Usage: sparql_agent_eval.py --bin target/release/ograph --demo examples/demo [--model M] [--repeat N] [--no-skill]
 --no-skill runs the same agent without the skill, to measure what the skill adds."""
-import argparse, concurrent.futures, itertools, json, os, pathlib, re, shutil, subprocess, tempfile, time
+import argparse, concurrent.futures, itertools, json, os, pathlib, re, shutil, statistics, subprocess, tempfile, time
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--bin", required=True); ap.add_argument("--demo", required=True)
@@ -31,8 +31,8 @@ def rows(q):
         p = subprocess.run([str(binp), "--root", str(ws), "--json", "sparql", q], capture_output=True, text=True, timeout=60)
     except subprocess.TimeoutExpired:
         return None, "query ran over 60 s"
-    if p.returncode == 2: return None, p.stderr.strip().splitlines()[-1] if p.stderr.strip() else "error"
     if p.returncode == 1: return [], None
+    if p.returncode != 0: return None, " ".join(p.stderr.split())[:300] or f"exit {p.returncode}"
     answer = json.loads(p.stdout)
     return (answer["rows"], None) if "rows" in answer else (None, f"a {answer['kind']} answer, not SELECT rows")
 
@@ -82,15 +82,15 @@ gold = {}
 for n, q in todo:
     gold[n], err = rows(q["gold"])
     if err: raise SystemExit(f"Q{n} reference query failed: {err}")
-print(f"model {a.model}, {len(todo)} questions x {a.repeat}, " + ("no skill" if a.no_skill else f"skill {skill.relative_to(skill.parents[1])}"))
-results = {}
+print(f"model {a.model}, {len(todo)} questions x {a.repeat}, " + ("no skill" if a.no_skill else "skill skills/ograph"))
+results, times = {}, []
 with concurrent.futures.ThreadPoolExecutor(a.parallel) as pool:
     for n, ok, why, secs in pool.map(ask, [t for t in todo for _ in range(a.repeat)]):
-        results.setdefault(n, []).append(ok)
-        kind = questions[n - 1]["kind"]
-        print(f"Q{n:<2} {kind:<6} {'ERROR' if ok is None else 'PASS' if ok else 'FAIL'} {secs:5.1f} s  {questions[n - 1]['q'][:70]}" + (f"\n       {why}" if why else ""), flush=True)
+        results.setdefault(n, []).append(ok); times.append(secs)
+        print(f"Q{n:<2} {questions[n - 1]['kind']:<6} {'ERROR' if ok is None else 'PASS' if ok else 'FAIL'} {secs:5.1f} s  {questions[n - 1]['q'][:70]}" + (f"\n       {why}" if why else ""), flush=True)
 for kind in ("recipe", "novel", "all"):
     runs = [ok for n, oks in results.items() if kind == "all" or questions[n - 1]["kind"] == kind for ok in oks]
     scored = [ok for ok in runs if ok is not None]
     print(f"{kind}: {sum(scored)}/{len(scored)} correct ({sum(scored) / max(len(scored), 1):.2f})" + (f"; {len(runs) - len(scored)} not scored: pi failed" if len(scored) < len(runs) else ""))
+print(f"median time per run: {statistics.median(times):.1f} s")
 shutil.rmtree(work)
