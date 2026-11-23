@@ -102,7 +102,7 @@ Enrichers never write to the store. A batch goes through these checks in order:
 1. **IRI scheme.** IRIs must have the form `https://ograph.dev/id/<kind>/<slug>`.
 2. **Catalog.** Applications and teams must resolve against the catalog:
    - an exact name or alias is accepted;
-   - a fuzzy match at Jaro-Winkler 0.93 or above is accepted and counted (tied scores go to the first IRI in order);
+   - a fuzzy match at Jaro-Winkler 0.93 or above is accepted and counted (tied scores go to the first IRI in order), unless another entity scores within 0.03 of it or the name is a sibling: the same words but one, and that word unlike its counterpart (`inventory-service-uk` against `inventory-service-eu`, `v1` against `v2`). Those are quarantined as ambiguous;
    - a match from 0.80 to 0.93 is quarantined as ambiguous;
    - anything lower is quarantined as missing.
 3. **Catalog-only types.** Only the catalog may create an application.

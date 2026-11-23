@@ -20,6 +20,10 @@ use std::collections::HashMap;
 pub const MIN_LLM_CONFIDENCE: f64 = 0.5;
 pub const FUZZY_ACCEPT: f64 = 0.93;
 pub const FUZZY_QUARANTINE: f64 = 0.80;
+/// A fuzzy match must beat the best match on any other entity by this much.
+pub const FUZZY_MARGIN: f64 = 0.03;
+/// Two words this unlike are different words, not a typo of one another.
+const SIBLING_WORD: f64 = 0.8;
 
 /// Structural facts a model may propose only when the catalog or telemetry already shows them.
 /// Co-occurring events do not count: on RCAEval they confirm invented edges almost as often as
@@ -44,7 +48,7 @@ fn iri_scheme() -> &'static regex::Regex {
 
 /// Names and aliases of catalog entities, normalized, per class.
 pub struct Catalog {
-    names: HashMap<(&'static str, String), NamedNode>,
+    names: HashMap<(&'static str, String), (NamedNode, Vec<String>)>,
     known: FxHashSet<String>,
 }
 
@@ -57,6 +61,17 @@ pub enum Resolution {
 
 fn norm(s: &str) -> String {
     s.to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric()).collect()
+}
+
+fn words(s: &str) -> Vec<String> {
+    s.to_lowercase().split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_owned).collect()
+}
+
+/// `a` names a sibling of `b` rather than misspelling it: the same words but one, and that one
+/// unlike its counterpart (`inventory-service-uk` against `inventory-service-eu`, `v1` against `v2`).
+fn sibling(a: &[String], b: &[String]) -> bool {
+    let mut diff = a.iter().zip(b).filter(|(x, y)| x != y);
+    a.len() == b.len() && matches!((diff.next(), diff.next()), (Some((x, y)), None) if strsim::jaro_winkler(x, y) < SIBLING_WORD)
 }
 
 const CATALOG_CLASSES: [&str; 2] = [ops::APPLICATION, ops::TEAM];
@@ -73,12 +88,12 @@ impl Catalog {
                 for p in [name, alias].into_iter().flatten() {
                     for v in snap.objects(e, p)? {
                         if let Term::Literal(l) = snap.term(v)? {
-                            c.names.insert((class, norm(l.value())), n.clone());
+                            c.names.insert((class, norm(l.value())), (n.clone(), words(l.value())));
                         }
                     }
                 }
                 let local = n.as_str().rsplit('/').next().unwrap_or_default().to_owned();
-                c.names.insert((class, norm(&local)), n.clone());
+                c.names.insert((class, norm(&local)), (n.clone(), words(&local)));
             }
         }
         Ok(c)
@@ -87,7 +102,7 @@ impl Catalog {
     pub fn add(&mut self, class: &'static str, iri: &NamedNode, names: &[&str]) {
         self.known.insert(iri.as_str().to_owned());
         for n in names {
-            self.names.insert((class, norm(n)), iri.clone());
+            self.names.insert((class, norm(n)), (iri.clone(), words(n)));
         }
     }
 
@@ -97,19 +112,18 @@ impl Catalog {
 
     pub fn resolve(&self, class: &'static str, name: &str) -> Resolution {
         let key = norm(name);
-        if let Some(n) = self.names.get(&(class, key.clone())) {
+        if let Some((n, _)) = self.names.get(&(class, key.clone())) {
             return Resolution::Exact(n.clone());
         }
-        let best = self
-            .names
-            .iter()
-            .filter(|((c, _), _)| *c == class)
-            .map(|((_, k), n)| (strsim::jaro_winkler(&key, k), n))
-            .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.as_str().cmp(a.1.as_str())));
-        match best {
-            Some((s, n)) if s >= FUZZY_ACCEPT => Resolution::Fuzzy(n.clone(), s),
-            Some((s, n)) if s >= FUZZY_QUARANTINE => Resolution::Ambiguous(n.clone(), s),
-            _ => Resolution::Missing,
+        let mut scored: Vec<(f64, &NamedNode, &[String])> =
+            self.names.iter().filter(|((c, _), _)| *c == class).map(|((_, k), (n, w))| (strsim::jaro_winkler(&key, k), n, w.as_slice())).collect();
+        scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.as_str().cmp(b.1.as_str())));
+        let Some(&(s, n, w)) = scored.first() else { return Resolution::Missing };
+        let runner_up = scored.iter().find(|x| x.1 != n).map_or(0.0, |x| x.0);
+        match s {
+            _ if s < FUZZY_QUARANTINE => Resolution::Missing,
+            _ if s >= FUZZY_ACCEPT && s - runner_up >= FUZZY_MARGIN && !sibling(&words(name), w) => Resolution::Fuzzy(n.clone(), s),
+            _ => Resolution::Ambiguous(n.clone(), s),
         }
     }
 }
@@ -290,6 +304,7 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                             *fuzzy += 1;
                             Ok(n)
                         }
+                        Resolution::Ambiguous(n, s) if s >= FUZZY_ACCEPT => Err(format!("\"{name}\" is close to {} ({s:.2}) but names a sibling or ties another entity; not created", vocab::compact(n.as_str()))),
                         Resolution::Ambiguous(n, s) => Err(format!("\"{name}\" only fuzzily matches {} ({s:.2}); not created", vocab::compact(n.as_str()))),
                         Resolution::Missing => Err(format!("\"{name}\" is not in the {} catalog; not created", vocab::compact(class))),
                     }

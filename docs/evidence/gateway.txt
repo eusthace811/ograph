@@ -1,11 +1,12 @@
 ontology check: 0 problems []
-catalog: proposed 24 accepted 24 quarantined 0
+catalog: proposed 27 accepted 27 quarantined 0
 
 | kind | cases | cases with some fact committed (valid siblings of the bad fact) | quarantined facts (first reason) |
 |---|---|---|---|
 | unknown-predicate | 3 | 3 | 3 (evt:colour is not an ontology property) |
 | unknown-class | 3 | 0 | 3 (evt:Gremlin is not an ontology class) |
 | app-outside-catalog | 3 | 0 | 3 (id:app/bad-app-outside-catalog-0 is not in the catalog) |
+| near-twin-app-name | 3 | 0 | 9 ("inventory-service-uk" is close to id:app/inventory-service-eu (0.98) but names a sibling or ties another entity; not created) |
 | unknown-app-name | 3 | 0 | 9 ("Ledger Service" is not in the ops:Application catalog; not created) |
 | fuzzy-app-name | 3 | 0 | 9 ("currencies-svc" only fuzzily matches id:app/currency (0.88); not created) |
 | bad-iri | 3 | 0 | 3 (IRI <https://ograph.dev/id/ev/Has Space> does not follow the id scheme) |
@@ -21,8 +22,8 @@ catalog: proposed 24 accepted 24 quarantined 0
 | missing-required | 3 | 0 | 6 (SHACL MinCountConstraintComponent: an event needs a time) |
 model-proposed edge the catalog declares, committed: true
 
-batch: proposed 293 facts, accepted 191, quarantined 102, fuzzy catalog matches 0, 13 ms
-bad subjects with a committed fact: 12; good events missing: 0/40; full SHACL audit violations: 0
+batch: proposed 311 facts, accepted 200, quarantined 111, fuzzy catalog matches 2, 19 ms
+bad subjects with a committed fact: 12; good events missing: 0/43; full SHACL audit violations: 0
 re-submit: removed 1 added 1 (only the harvest time should change: 1 and 1)
 bad facts (the faulty fact of each case) committed: 0
 GATEWAY GATE: PASS

@@ -63,7 +63,7 @@ Interleaved, sequential runs on 12 cases (3 each) give a median of 0.228 s befor
 |---|---|
 | SHACL Core, W3C suite (`shacl-core.txt`) | 98 of 98 on `sh:conforms` and result count. rudof's measured 92 came from a harness that ignored `sht:dataGraph`; with a fixed harness it would likely match |
 | `ograph ontology check` | 0 problems. Every IRI the code uses is declared |
-| Gateway gate, 16 kinds of bad write plus 40 good events (`gateway.txt`) | 0 bad facts committed, every kind quarantined with its reason, 40 of 40 good events committed, full audit clean, and a re-submit writes 1 quad (the harvest time) |
+| Gateway gate, 17 kinds of bad write plus 43 good events (`gateway.txt`) | 0 bad facts committed, every kind quarantined with its reason, 43 of 43 good events committed (3 of them misspelled names that must still resolve), full audit clean, and a re-submit writes 1 quad (the harvest time) |
 
 The rudof `shacl` crate was measured and rejected:
 
@@ -181,6 +181,7 @@ The base rate is 0.136, so co-occurrence barely beats chance. During an incident
 |---|---|
 | New gateway kind: a confident model edge with no backing edge | Quarantined in all 3 cases. A model edge that the catalog declares is committed |
 | Real model on the demo threads | It proposed 1 to 2 calls per run. Every committed call is declared in the catalog. It also proposed `payments-api -> ledger-db` with a quote that does not name payments-api, and code dropped it |
+| Near-twin names | `inventory-service-uk` scored 0.98 against the catalog's `inventory-service-eu` and resolved to it silently. A fuzzy match now also needs a 0.03 margin over any other entity and must not differ by one whole unlike word. The new kind is quarantined 3 of 3; misspellings such as `inventry-service-eu` still resolve. RCAEval scores, the demo and the alias gate are unchanged |
 | Determinism | A fuzzy catalog match with tied scores picked its winner in hash order, so a re-submit could rewrite quarantine reasons. Ties now break by IRI. Re-submits wrote 1 quad in 5 of 5 runs |
 
 ### SPARQL name check (`pi-contract.txt`)
