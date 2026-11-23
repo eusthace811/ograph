@@ -48,11 +48,10 @@ kind = "news"             # {"at","title","summary","mentions":[...]}
 path = "exports/news.jsonl"
 ```
 
-- The catalog is the authority: only it creates applications. Every other source must name an
-  application the catalog knows (exact name, alias, or a close spelling).
-- The catalog is required, and reading it needs `ogrep` on `PATH` (or
-  `OGRAPH_OGREP=/path/to/ogrep`). Without either, the harvest still runs but quarantines every
-  fact about a service as "not in the ops:Application catalog".
+- The catalog is required and is the authority: only it creates applications, and every other
+  source must name an application it knows (exact name, alias, or a close spelling). Reading it
+  needs `ogrep` on `PATH` (or `OGRAPH_OGREP=/path/to/ogrep`). Without it, the harvest still runs
+  but quarantines every fact about a service as "not in the ops:Application catalog".
 - Times may be epoch seconds, ms, µs or ns, or ISO 8601 with any offset; between 1971 and 2200.
 - JSON files may be one array, one object, or JSON lines.
 - An incident may be updated across files: each field comes from the last record that states

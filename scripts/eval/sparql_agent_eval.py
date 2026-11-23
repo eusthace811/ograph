@@ -4,10 +4,9 @@
 An agent (headless pi with the skills/ograph skill, bash and read) answers each question by
 writing SPARQL. It ends its reply with its final query; that query is run and its rows must
 equal the rows of the question's reference query, as a set, on some choice and order of its
-columns (extra columns are allowed, extra or missing rows are not). "recipe" questions are close
+columns (extra columns are allowed, extra or missing rows are not). Numbers compare by value. "recipe" questions are close
 to a recipe in skills/ograph/references/sparql.md; "novel" ones are not.
 
-Usage: sparql_agent_eval.py --bin target/release/ograph --demo examples/demo [--model M] [--repeat N] [--no-skill]
 --no-skill runs the same agent without the skill, to measure what the skill adds."""
 import argparse, atexit, concurrent.futures, itertools, json, os, pathlib, re, shutil, statistics, subprocess, tempfile, time
 
@@ -16,8 +15,10 @@ ap.add_argument("--bin", required=True); ap.add_argument("--demo", required=True
 ap.add_argument("--model", default="openai/gpt-5.6-terra"); ap.add_argument("--repeat", type=int, default=1)
 ap.add_argument("--parallel", type=int, default=2); ap.add_argument("--no-skill", action="store_true"); ap.add_argument("--only", type=int, nargs="*")
 a = ap.parse_args()
+if a.repeat < 1: ap.error("--repeat must be 1 or more")
 binp = pathlib.Path(a.bin).resolve(); demo = pathlib.Path(a.demo).resolve()
 skill = pathlib.Path(__file__).resolve().parents[2] / "skills" / "ograph"
+if not (demo / "sparql-questions.json").is_file(): ap.error(f"{demo} has no sparql-questions.json")
 questions = json.loads((demo / "sparql-questions.json").read_text())
 
 work = pathlib.Path(tempfile.mkdtemp(prefix="ograph-sparql-agent-"))
@@ -41,7 +42,12 @@ def rows(q):
 names, err = rows("SELECT ?s ?n WHERE { { ?s ops:name ?n } UNION { ?s inc:id ?n } }")
 if err: raise SystemExit(f"{demo} is not an ograph workspace: {err}")
 NAMES = dict(names)
-def named(rs): return [[NAMES.get(c, c) for c in r] for r in rs]
+def cell(c):
+    m = re.fullmatch(r'"(.*)"\^\^<http://www\.w3\.org/2001/XMLSchema#\w+>', c)
+    c = m[1] if m else c
+    try: return str(float(c))
+    except ValueError: return NAMES.get(c, c)
+def named(rs): return [[cell(c) for c in r] for r in rs]
 
 def same(got, gold):
     got, gold = named(got), named(gold)

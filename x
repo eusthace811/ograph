@@ -11,7 +11,7 @@
 #   ./x install-skill [dir]  copy skills/ograph into dir (default ~/.claude/skills and
 #                          ~/.agents/skills)
 #   ./x test [args]        cargo test --workspace --locked
-#   ./x vendor             cargo vendor into ./vendor, for offline builds
+#   ./x vendor             cargo vendor into ./vendor; while it exists, ./x builds offline from it
 #   ./x <anything else>    passed to cargo (clippy, fmt, tree, ...)
 #
 # ograph needs ogrep 0.2 or newer on PATH to read the service catalog; `./x doctor` checks it.
@@ -70,6 +70,13 @@ if [ -n "${OGRAPH_CARGO_REGISTRY:-}" ]; then
     --config "source.ograph-mirror.registry=\"$OGRAPH_CARGO_REGISTRY\""
     --config 'source.crates-io.replace-with="ograph-mirror"'
   )
+elif [ -d "$HERE/vendor" ] && [ "${1:-}" != vendor ]; then
+  VENDOR_DIR="$HERE/vendor"; [ "$HOST" = windows ] && VENDOR_DIR="$(cygpath -w "$VENDOR_DIR")"
+  # Literal TOML strings, so a Windows path's backslashes stay as they are.
+  REGISTRY_ARGS=(
+    --config "source.vendored-sources.directory='$VENDOR_DIR'"
+    --config "source.crates-io.replace-with='vendored-sources'"
+  )
 fi
 
 # --manifest-path goes right after the subcommand: after a `--` it would reach the test binary.
@@ -105,7 +112,7 @@ check_ogrep() {
   echo "ogrep:         $version ($(command -v "$bin"))"
 }
 
-case "${1:-help}" in
+case "$1" in
   fetch)   shift; run_cargo fetch --locked "$@"
            echo "every locked crate is available" ;;
 
@@ -147,14 +154,7 @@ case "${1:-help}" in
   vendor)  shift
            vendor_dir="$HERE/vendor"; [ "$HOST" = windows ] && vendor_dir="$(cygpath -w "$vendor_dir")"
            run_cargo vendor --locked --versioned-dirs "$vendor_dir" "$@" >/dev/null
-           echo "vendored every locked crate into ./vendor. To build from it offline, add to"
-           echo "$HERE/.cargo/config.toml:"
-           echo ""
-           echo '  [source.crates-io]'
-           echo '  replace-with = "vendored-sources"'
-           echo ''
-           echo '  [source.vendored-sources]'
-           echo '  directory = "vendor"' ;;
+           echo "vendored every locked crate into ./vendor; ./x builds from it offline until you delete it" ;;
 
   doctor)  status=0
            echo "host:          $HOST"
@@ -163,6 +163,8 @@ case "${1:-help}" in
            echo "install to:    $BIN_DEFAULT"
            if [ -n "${OGRAPH_CARGO_REGISTRY:-}" ]; then
              echo "registry:      $OGRAPH_CARGO_REGISTRY (from OGRAPH_CARGO_REGISTRY)"
+           elif [ -n "${VENDOR_DIR:-}" ]; then
+             echo "registry:      none, building offline from $VENDOR_DIR"
            elif [ -f "$CARGO_CONFIG" ] && grep -q 'replace-with' "$CARGO_CONFIG"; then
              echo "registry:      crates.io replaced in $CARGO_CONFIG:"
              grep -n -A1 'replace-with\|^\[source\.' "$CARGO_CONFIG" | sed 's/^/                 /'

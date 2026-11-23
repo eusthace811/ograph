@@ -124,7 +124,14 @@ impl Llm {
             #[cfg(unix)]
             let _ = Command::new("kill").args(["-KILL", &format!("-{}", child.id())]).status();
             #[cfg(windows)]
-            let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &child.id().to_string()]).status();
+            {
+                let pid = child.id();
+                let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]).status();
+                // taskkill /T cannot start from a command that already exited, but its leftovers
+                // still name it as parent, and `child` keeps its pid from being reused.
+                let leftovers = format!("Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}' | ForEach-Object {{ taskkill /T /F /PID $_.ProcessId }}");
+                let _ = Command::new("powershell").args(["-NoProfile", "-Command", &leftovers]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+            }
             let _ = child.kill();
             let _ = child.wait();
         };
