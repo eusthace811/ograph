@@ -1,0 +1,40 @@
+[
+ {
+  "id": "INC-4120",
+  "title": "Card payments failing",
+  "service": "payments-api",
+  "opened": 1793572000,
+  "severity": "SEV2",
+  "status": "resolved",
+  "resolved": 1793575600,
+  "mitigation": "raised ledger-db connection pool to 200"
+ },
+ {
+  "id": "INC-4388",
+  "title": "Checkout errors after release",
+  "service": "checkout",
+  "opened": 1794263200,
+  "severity": "SEV2",
+  "status": "resolved",
+  "resolved": 1794265000,
+  "mitigation": "rolled back checkout v4.1.0"
+ },
+ {
+  "id": "INC-4501",
+  "title": "Search timeouts",
+  "service": "search-api",
+  "opened": 1794868000,
+  "severity": "SEV3",
+  "status": "resolved",
+  "resolved": 1794875200,
+  "mitigation": "replaced failed elasticsearch data nodes"
+ },
+ {
+  "id": "INC-5377",
+  "title": "Checkout latency and payment errors",
+  "service": "checkout",
+  "opened": 1795386400,
+  "severity": "SEV2",
+  "status": "open"
+ }
+]

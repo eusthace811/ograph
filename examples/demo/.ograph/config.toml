@@ -1,0 +1,45 @@
+[[source]]
+kind = "catalog"
+path = "catalog"
+[[source]]
+kind = "ownership"
+path = "ownership.jsonl"
+[[source]]
+kind = "docs"
+path = "runbooks"
+[[source]]
+kind = "deployments"
+path = "deployments.jsonl"
+[[source]]
+kind = "config_changes"
+path = "config.jsonl"
+[[source]]
+kind = "alerts"
+path = "alerts.json"
+[[source]]
+kind = "incidents"
+path = "incidents.json"
+[[source]]
+kind = "logs"
+path = "logs.jsonl"
+[[source]]
+kind = "metrics"
+path = "metrics.csv"
+[[source]]
+kind = "discussions"
+path = "discussions"
+[[source]]
+kind = "news"
+path = "news.jsonl"
+
+[detect]
+metric_z = 5.0
+
+[correlation]
+window_s = 1800
+rank = "chain"
+
+[llm.extract]
+command = ["pi", "-p", "--no-tools", "--no-session", "--no-extensions", "--no-skills", "--no-context-files", "--offline", "--thinking", "off", "--model", "openai/gpt-6-luna"]
+model = "pi:openai/gpt-6-luna"
+parallel = 4

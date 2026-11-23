@@ -1,0 +1,10 @@
+{"app": "web-frontend", "process": "online sales"}
+{"app": "checkout", "process": "online sales"}
+{"app": "payments-api", "process": "card payments"}
+{"app": "ledger-db", "process": "card payments"}
+{"app": "orders-api", "process": "order fulfilment"}
+{"app": "notifications", "process": "customer notifications"}
+{"app": "payments-api", "vendor": "CardRail"}
+{"app": "notifications", "vendor": "MailRelay"}
+{"app": "elasticsearch", "vendor": "SearchCloud"}
+{"app": "payments-api", "alias": "payments"}
