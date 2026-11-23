@@ -1,0 +1,27 @@
+90 cases, 9900 ordered application pairs proposed as ops:dependsOn, 1350 declared in the catalog
+
+| support rule | accepted real | accepted invented | rejected real | precision | recall |
+|---|---|---|---|---|---|
+| 1 trace edge only | 270 | 0 | 1080 | 1.000 | 0.200 |
+| 2 co-occurrence >= 01 (directed truth) | 1176 | 6778 | 174 | 0.148 | 0.871 |
+| 2 co-occurrence >= 02 (directed truth) | 709 | 3124 | 641 | 0.185 | 0.525 |
+| 2 co-occurrence >= 03 (directed truth) | 330 | 1163 | 1020 | 0.221 | 0.244 |
+| 2 co-occurrence >= 05 (directed truth) | 42 | 151 | 1308 | 0.218 | 0.031 |
+| 2 co-occurrence >= 08 (directed truth) | 1 | 5 | 1349 | 0.167 | 0.001 |
+| 2 co-occurrence >= 13 (directed truth) | 0 | 0 | 1350 | 0.000 | 0.000 |
+| 2 co-occurrence >= 21 (directed truth) | 0 | 0 | 1350 | 0.000 | 0.000 |
+| 3 co-occurrence >= 01 (either direction is truth) | 2352 | 5602 | 348 | 0.296 | 0.871 |
+| 3 co-occurrence >= 02 (either direction is truth) | 1362 | 2471 | 1338 | 0.355 | 0.504 |
+| 3 co-occurrence >= 03 (either direction is truth) | 602 | 891 | 2098 | 0.403 | 0.223 |
+| 3 co-occurrence >= 05 (either direction is truth) | 79 | 114 | 2621 | 0.409 | 0.029 |
+| 3 co-occurrence >= 08 (either direction is truth) | 2 | 4 | 2698 | 0.333 | 0.001 |
+| 3 co-occurrence >= 13 (either direction is truth) | 0 | 0 | 2700 | 0.000 | 0.000 |
+| 3 co-occurrence >= 21 (either direction is truth) | 0 | 0 | 2700 | 0.000 | 0.000 |
+| 4 trace edge, else co-occurrence >= 01 | 1195 | 6778 | 155 | 0.150 | 0.885 |
+| 4 trace edge, else co-occurrence >= 02 | 823 | 3124 | 527 | 0.209 | 0.610 |
+| 4 trace edge, else co-occurrence >= 03 | 521 | 1163 | 829 | 0.309 | 0.386 |
+| 4 trace edge, else co-occurrence >= 05 | 304 | 151 | 1046 | 0.668 | 0.225 |
+| 4 trace edge, else co-occurrence >= 08 | 271 | 5 | 1079 | 0.982 | 0.201 |
+| 4 trace edge, else co-occurrence >= 13 | 270 | 0 | 1080 | 1.000 | 0.200 |
+| 4 trace edge, else co-occurrence >= 21 | 270 | 0 | 1080 | 1.000 | 0.200 |
+| 5 gateway as shipped (catalog or trace edge) | 1350 | 0 | 0 | 1.000 | 1.000 |

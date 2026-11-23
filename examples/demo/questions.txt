@@ -1,0 +1,22 @@
+# Competency questions for `ograph ontology coverage`; labels in questions-labels.json.
+Which recent deployments could explain incident INC-5377?
+Which business processes are affected if ledger-db fails?
+What mitigation fixed past incidents with the same cause?
+Which news items mention a vendor that payments-api uses?
+Which team owns checkout?
+Which applications run in region eu-west-1?
+Which config changes happened on auth-service in the last day?
+What severity was the alert on payments-api before the incident?
+Which chat threads discussed incident INC-4120 and how urgent were they?
+Who accepted the root cause chain for INC-4120, and with what evidence?
+Which critical-tier applications depend on elasticsearch?
+Which log error templates burst on orders-api?
+Which facts about checkout did a model propose, and with what confidence?
+Which on-call engineer was paged for INC-5377?
+Which SLO did checkout breach during the incident?
+How much revenue was lost during INC-4120?
+Which Kubernetes cluster runs payments-api?
+Which feature flags are enabled for web-frontend?
+Which customers were affected by INC-5377?
+How much error budget does search-api have left this month?
+Which runbook covers ledger-db?

@@ -1,0 +1,21 @@
+{
+ "aliases": {
+  "payments-api": [
+   "pay-gw"
+  ],
+  "ledger-db": [
+   "ledger-pg"
+  ],
+  "search-api": [
+   "finder"
+  ]
+ },
+ "decoys": [
+  "postgres",
+  "ledger-db",
+  "INC-4120",
+  "INC-4388",
+  "v2.3.1",
+  "checkout"
+ ]
+}

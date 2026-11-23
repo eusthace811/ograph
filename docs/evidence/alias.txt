@@ -1,0 +1,9 @@
+without runbooks: aliases from runbooks []; alias-named alert facts quarantined 12; alias-named alerts resolved to []; top causes [('ledger-db', 0.9444), ('payments-api', 0.9295), ('checkout', 0.9)]
+with runbooks: aliases from runbooks [('ledger-db', 'ledger-pg'), ('payments-api', 'pay-gw'), ('search-api', 'finder')]; alias-named alert facts quarantined 0; alias-named alerts resolved to ['id:app/payments-api', 'id:app/search-api']; top causes [('ledger-db', 0.9444), ('payments-api', 0.9295), ('checkout', 0.9)]
+   runbook proposal quarantined: ops:Application?"database" ops:alias "ledger-db" -- "database" is not in the ops:Application catalog; not created
+   runbook proposal quarantined: ops:Application?"orders-api" ops:alias "checkout" -- alias "checkout" already names id:app/checkout
+
+1. aliases: 3/3 expected committed, unexpected [], missed [], decoys committed []
+2. alias-named alerts: quarantined 12 facts without runbooks, 0 with; resolved to ['id:app/payments-api', 'id:app/search-api']
+3. INC-5377 top causes unchanged: True
+ALIAS GATE: PASS
