@@ -1,0 +1,8 @@
+206 weight combinations on the tuning split; top 5:
+  strength,chain,spread,onset=(0.3, 0.6, 0.1, 0.0): AC@1 0.87 AC@3 0.97 Avg@5 0.95
+  strength,chain,spread,onset=(0.4, 0.5, 0.1, 0.0): AC@1 0.87 AC@3 0.97 Avg@5 0.95
+  strength,chain,spread,onset=(0.5, 0.4, 0.1, 0.0): AC@1 0.87 AC@3 0.97 Avg@5 0.95
+  strength,chain,spread,onset=(0.6, 0.3, 0.1, 0.0): AC@1 0.87 AC@3 0.97 Avg@5 0.95
+  strength,chain,spread,onset=(0.6, 0.2, 0.2, 0.0): AC@1 0.87 AC@3 0.97 Avg@5 0.94
+chosen on rep 1 (0.3, 0.6, 0.1, 0.0): tuning AC@1 0.87/0.97/0.95; held-out AC@1 0.82 AC@3 0.95 Avg@5 0.93
+shipped default (0.4, 0.3, 0.2, 0.1): tuning AC@1 0.80/0.93/0.92; held-out AC@1 0.83 AC@3 0.92 Avg@5 0.92

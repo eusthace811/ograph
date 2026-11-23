@@ -1,0 +1,92 @@
+90 cases in 8 s; 0 errors []
+harvest per case: median 0.29 s, max 0.65 s
+
+All RE2-OB (90 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.87 | 0.96 | 0.94 |
+| propagation | 0.74 | 0.92 | 0.90 |
+| zmax | 0.84 | 0.97 | 0.94 |
+| sparql_meanshift | 0.63 | 0.94 | 0.89 |
+
+Tuning split (rep 1) (30 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.87 | 0.97 | 0.95 |
+| propagation | 0.67 | 0.90 | 0.88 |
+| zmax | 0.90 | 0.97 | 0.95 |
+| sparql_meanshift | 0.53 | 0.90 | 0.85 |
+
+Held-out split (reps 2-3) (60 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.87 | 0.95 | 0.94 |
+| propagation | 0.78 | 0.93 | 0.91 |
+| zmax | 0.82 | 0.97 | 0.94 |
+| sparql_meanshift | 0.68 | 0.97 | 0.90 |
+
+Fault cpu (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 1.00 | 1.00 | 1.00 |
+| propagation | 0.93 | 1.00 | 0.99 |
+| zmax | 0.93 | 1.00 | 0.99 |
+| sparql_meanshift | 0.87 | 0.93 | 0.95 |
+
+Fault delay (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.80 | 0.80 | 0.88 |
+| propagation | 0.80 | 0.87 | 0.88 |
+| zmax | 0.80 | 0.80 | 0.88 |
+| sparql_meanshift | 0.27 | 0.80 | 0.72 |
+
+Fault disk (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 1.00 | 0.97 |
+| propagation | 0.73 | 1.00 | 0.95 |
+| zmax | 1.00 | 1.00 | 1.00 |
+| sparql_meanshift | 0.93 | 1.00 | 0.99 |
+
+Fault loss (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.60 | 0.93 | 0.84 |
+| propagation | 0.40 | 0.80 | 0.73 |
+| zmax | 0.60 | 1.00 | 0.88 |
+| sparql_meanshift | 0.33 | 0.93 | 0.80 |
+
+Fault mem (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 1.00 | 0.97 |
+| propagation | 0.67 | 0.87 | 0.87 |
+| zmax | 0.80 | 1.00 | 0.95 |
+| sparql_meanshift | 0.53 | 1.00 | 0.89 |
+
+Fault socket (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 1.00 | 0.99 |
+| propagation | 0.93 | 1.00 | 0.99 |
+| zmax | 0.93 | 1.00 | 0.97 |
+| sparql_meanshift | 0.87 | 1.00 | 0.97 |
+
+Cases with traces (30 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.87 | 0.97 | 0.95 |
+| propagation | 0.67 | 0.90 | 0.88 |
+| zmax | 0.90 | 0.97 | 0.95 |
+| sparql_meanshift | 0.53 | 0.90 | 0.85 |

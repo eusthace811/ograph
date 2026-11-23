@@ -1,0 +1,22 @@
+lag 120 chain | chain | 0.87 | 0.96 | 0.95 |
+lag 120 propagation | propagation | 0.74 | 0.93 | 0.91 |
+lag 120 propagation:[0.4,0.5,0.1,0.0] | propagation | 0.86 | 0.96 | 0.95 |
+lag 600 chain | chain | 0.11 | 0.18 | 0.17 |
+lag 600 propagation | propagation | 0.80 | 0.92 | 0.91 |
+lag 600 propagation:[0.4,0.5,0.1,0.0] | propagation | 0.82 | 0.94 | 0.93 |
+lag 900 chain | chain | 0.04 | 0.06 | 0.05 |
+lag 900 propagation | propagation | 0.08 | 0.19 | 0.18 |
+lag 900 propagation:[0.4,0.5,0.1,0.0] | propagation | 0.12 | 0.18 | 0.18 |
+lag 300 chain | chain | 0.80 | 0.96 | 0.93 |
+lag 300 propagation | propagation | 0.82 | 0.92 | 0.92 |
+lag 300 propagation:[0.4,0.5,0.1,0.0] | propagation | 0.83 | 0.96 | 0.94 |
+lag 900 window 1800 | chain | 0.78 | 0.94 | 0.91 |
+lag 900 window 1800 | propagation | 0.72 | 0.92 | 0.88 |
+lag 300 window 1800 | chain | 0.87 | 0.96 | 0.94 |
+lag 300 window 1800 | propagation | 0.74 | 0.92 | 0.90 |
+lag 120 window 1800 | chain | 0.87 | 0.97 | 0.95 |
+lag 120 window 1800 held-out | chain | 0.83 | 0.95 | 0.94 |
+lag 600 window 1800 | chain | 0.79 | 0.93 | 0.92 |
+lag 600 window 1800 held-out | chain | 0.78 | 0.93 | 0.92 |
+lag 300 window 1800 | chain | 0.87 | 0.96 | 0.94 |
+lag 300 window 1800 held-out | chain | 0.87 | 0.95 | 0.94 |
