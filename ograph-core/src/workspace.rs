@@ -127,6 +127,11 @@ impl Workspace {
         let mut out = Vec::new();
         let mut kept = HashSet::new();
         let ran: Vec<&Source> = sources.iter().filter(|s| only.is_none_or(|o| o == s.name())).collect();
+        if let Some(o) = only.filter(|o| *o != "correlation" && ran.is_empty()) {
+            let mut names: Vec<&str> = sources.iter().map(Source::name).collect();
+            names.dedup();
+            anyhow::bail!("no source of kind {o:?} is configured; configured kinds: {}, correlation", names.join(", "));
+        }
         // A source whose path cannot be listed (a mistyped path, an unmounted disk) reports one
         // failed batch and keeps every graph it had.
         let mut unreadable = Vec::new();

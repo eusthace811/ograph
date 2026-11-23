@@ -111,27 +111,33 @@ impl Llm {
             });
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(self.config.timeout_s);
-        let timed_out = |child: &mut std::process::Child| {
-            // A negative pid signals the whole group.
+        // A negative pid signals the whole group, including whatever the command left behind.
+        let kill_group = |child: &mut std::process::Child| {
             let _ = Command::new("kill").args(["-KILL", &format!("-{}", child.id())]).status();
             let _ = child.kill();
             let _ = child.wait();
-            anyhow::anyhow!("model command timed out after {} s", self.config.timeout_s)
         };
         let status = loop {
             if let Some(status) = child.try_wait()? {
                 break status;
             }
             if std::time::Instant::now() > deadline {
-                return Err(timed_out(&mut child));
+                kill_group(&mut child);
+                anyhow::bail!("model command timed out after {} s", self.config.timeout_s);
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         };
+        // A process the command left behind can hold the pipes open past its exit. After a
+        // short grace, stopping it closes them and the answer already written is kept.
+        let grace = std::time::Duration::from_secs(1);
         let (mut out, mut err) = (Vec::new(), Vec::new());
         for _ in 0..2 {
-            // A process the command left behind can hold the pipes open past its exit.
-            let Ok((is_out, buf)) = rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) else {
-                return Err(timed_out(&mut child));
+            let (is_out, buf) = match rx.recv_timeout(grace) {
+                Ok(m) => m,
+                Err(_) => {
+                    kill_group(&mut child);
+                    rx.recv_timeout(grace).map_err(|_| anyhow::anyhow!("model command left its output open"))?
+                }
             };
             *(if is_out { &mut out } else { &mut err }) = buf;
         }
@@ -204,8 +210,17 @@ mod tests {
     }
 
     #[test]
-    fn timeout_holds_when_a_leftover_process_keeps_the_pipe_open() {
-        let config = LlmConfig { command: vec!["sh".into(), "-c".into(), "cat >/dev/null; sleep 30 & echo hi".into()], model: "t".into(), parallel: 1, timeout_s: 1 };
+    fn the_answer_survives_a_leftover_process_holding_the_pipe() {
+        let config = LlmConfig { command: vec!["sh".into(), "-c".into(), "cat >/dev/null; sleep 30 & echo hi".into()], model: "t".into(), parallel: 1, timeout_s: 20 };
+        let llm = Llm::new(config, std::env::temp_dir().join("ograph-llm-test-none/llm.jsonl"));
+        let t = std::time::Instant::now();
+        assert_eq!(llm.run("p", "x").unwrap(), "hi");
+        assert!(t.elapsed().as_secs() < 5);
+    }
+
+    #[test]
+    fn a_hung_command_times_out() {
+        let config = LlmConfig { command: vec!["sh".into(), "-c".into(), "sleep 30".into()], model: "t".into(), parallel: 1, timeout_s: 1 };
         let llm = Llm::new(config, std::env::temp_dir().join("ograph-llm-test-none/llm.jsonl"));
         let t = std::time::Instant::now();
         assert!(llm.run("p", "x").unwrap_err().to_string().contains("timed out"));

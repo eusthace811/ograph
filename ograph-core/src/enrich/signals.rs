@@ -41,6 +41,8 @@ struct Episode {
     len: usize,
 }
 
+const MIN_BASELINE_POINTS: i64 = 12;
+
 fn median(v: &mut [f64]) -> f64 {
     let n = v.len();
     let (below, mid, _) = v.select_nth_unstable_by(n / 2, f64::total_cmp);
@@ -57,8 +59,11 @@ fn episodes(series: &[(i64, f64, usize)], d: &Detect, two_sided: bool) -> Vec<Ep
     let mut cur: Option<Episode> = None;
     let mut misses = 0;
     let mut lo = 0;
-    let window_ms = d.metric_baseline_s * 1000;
     let gap_ms = 10_000;
+    // A coarsely sampled series widens its window until the baseline holds enough points.
+    let mut steps: Vec<f64> = series.windows(2).take(256).map(|w| (w[1].0 - w[0].0) as f64).filter(|s| *s > 0.0).collect();
+    let step = if steps.is_empty() { 0 } else { median(&mut steps) as i64 };
+    let window_ms = (d.metric_baseline_s * 1000).max(MIN_BASELINE_POINTS * step + gap_ms);
     for (i, &(t, v, row)) in series.iter().enumerate() {
         if !v.is_finite() {
             continue;
@@ -68,7 +73,7 @@ fn episodes(series: &[(i64, f64, usize)], d: &Detect, two_sided: bool) -> Vec<Ep
                 lo += 1;
             }
             let mut hist: Vec<f64> = series[lo..i].iter().filter(|x| x.0 < t - gap_ms && x.1.is_finite()).map(|x| x.1).collect();
-            if hist.len() >= 12 && t - series[lo].0 >= d.metric_min_history_s * 1000 {
+            if hist.len() >= MIN_BASELINE_POINTS as usize && t - series[lo].0 >= d.metric_min_history_s * 1000 {
                 let m = median(&mut hist);
                 let mut dev: Vec<f64> = hist.iter().map(|x| (x - m).abs()).collect();
                 let mad = median(&mut dev);
@@ -323,4 +328,18 @@ pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
         }
     }
     Ok(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_spike_in_minute_samples_is_an_episode() {
+        let series: Vec<(i64, f64, usize)> =
+            (0..60).map(|i| (i * 60_000, if (40..45).contains(&i) { 100.0 } else { 10.0 + (i % 3) as f64 }, i as usize)).collect();
+        let found = episodes(&series, &Detect::default(), false);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].start_ms, 40 * 60_000);
+    }
 }

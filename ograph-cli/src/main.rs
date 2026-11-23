@@ -6,6 +6,7 @@ use ograph_core::correlate::{self, RankMode};
 use ograph_core::query;
 use ograph_core::sparql::{self, Answer};
 use ograph_core::workspace::{self, Workspace};
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -164,7 +165,8 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             let outcomes = ws.harvest(only.as_deref(), |o, secs| {
                 if !json {
                     let g = o.graph.trim_start_matches(ograph_core::vocab::GRAPH);
-                    println!("{g}: {} proposed, {} accepted, {} quarantined, +{} -{} quads{}{} ({secs:.2} s)", o.proposed, o.accepted, o.quarantined.len(), o.added, o.removed,
+                    // A closed pipe (`| head`) must not stop the harvest before it prunes and flushes.
+                    let _ = writeln!(std::io::stdout(), "{g}: {} proposed, {} accepted, {} quarantined, +{} -{} quads{}{} ({secs:.2} s)", o.proposed, o.accepted, o.quarantined.len(), o.added, o.removed,
                         if o.fuzzy_matches > 0 { format!(", {} fuzzy catalog matches", o.fuzzy_matches) } else { String::new() },
                         if o.degraded.is_empty() { String::new() } else { format!(", DEGRADED: {}", o.degraded.join("; ")) });
                 }
@@ -173,7 +175,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 println!("{}", serde_json::to_string(&outcomes)?);
             } else {
                 let q: usize = outcomes.iter().map(|o| o.quarantined.len()).sum();
-                println!("harvested {} batches in {:.1} s; {q} facts quarantined (see `ograph sparql` on graph g:quarantine/...)", outcomes.len(), t.elapsed().as_secs_f64());
+                let _ = writeln!(std::io::stdout(), "harvested {} batches in {:.1} s; {q} facts quarantined (see `ograph sparql` on graph g:quarantine/...)", outcomes.len(), t.elapsed().as_secs_f64());
             }
             Ok(true)
         }
@@ -192,7 +194,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         Cmd::Blast { app, depth } => {
             let snap = ws.store.snapshot()?;
             let b = query::blast(&snap, &app, depth)?;
-            let found = !b.dependents.is_empty();
+            let found = !b.dependents.is_empty() || !b.processes.is_empty();
             print(json, &b, |b| {
                 println!("{} is depended on by {} applications", b.app, b.dependents.len());
                 for (a, d) in &b.dependents {

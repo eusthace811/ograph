@@ -70,7 +70,7 @@ fn words(s: &str) -> Vec<String> {
 
 /// `query` names a sibling of the catalog name `known` rather than misspelling it: the same
 /// words but one, and that one unlike its counterpart (`inventory-service-uk` against
-/// `inventory-service-eu`, `v1` against `v2`), or the same words plus some that are not filler
+/// `inventory-service-eu`, `v1` against `v2`, but not `svc` against `service`), or the same words plus some that are not filler
 /// (`inventory-service-eu-canary` against `inventory-service-eu`, but not `checkout-svc`
 /// against `checkout`).
 fn sibling(query: &[String], known: &[String]) -> bool {
@@ -80,11 +80,12 @@ fn sibling(query: &[String], known: &[String]) -> bool {
         return contains && query.iter().any(|w| !known.contains(w) && !FILLER.contains(&w.as_str()));
     }
     let mut diff = query.iter().zip(known).filter(|(x, y)| x != y);
-    matches!((diff.next(), diff.next()), (Some((x, y)), None) if strsim::jaro_winkler(x, y) < SIBLING_WORD)
+    let filler = |w: &String| FILLER.contains(&w.as_str());
+    matches!((diff.next(), diff.next()), (Some((x, y)), None) if strsim::jaro_winkler(x, y) < SIBLING_WORD && !(filler(x) && filler(y)))
 }
 
 /// Words that name the kind of thing rather than which one.
-const FILLER: [&str; 6] = ["svc", "service", "srv", "server", "app", "api"];
+pub(crate) const FILLER: [&str; 6] = ["svc", "service", "srv", "server", "app", "api"];
 
 const CATALOG_CLASSES: [&str; 2] = [ops::APPLICATION, ops::TEAM];
 
@@ -560,4 +561,19 @@ pub fn sha2_hash(s: &str) -> [u8; 32] {
 pub fn audit(snap: &Snapshot, ont: &Ontology) -> Vec<shacl::ValidationResult> {
     let view = Overlay { snap, ont, add: oxrdf::Graph::new(), replaced: None, ids: RefCell::default() };
     shacl::Validator::new(&ont.shapes, &view).validate_all()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sibling, words};
+
+    #[test]
+    fn siblings_differ_in_what_they_name() {
+        let is = |q: &str, k: &str| sibling(&words(q), &words(k));
+        assert!(is("inventory-service-uk", "inventory-service-eu"));
+        assert!(is("inventory-service-eu-canary", "inventory-service-eu"));
+        assert!(!is("inventory-svc-eu", "inventory-service-eu"));
+        assert!(!is("checkout-svc", "checkout-service"));
+        assert!(!is("checkout-svc", "checkout"));
+    }
 }

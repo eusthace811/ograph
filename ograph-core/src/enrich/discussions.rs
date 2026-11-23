@@ -59,7 +59,8 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
     let mut nodes = Vec::new();
     for ((channel, root), mut msgs) in threads {
         msgs.sort();
-        let node = known("thread", &format!("{}-{}", channel.as_deref().unwrap_or("chat"), root.replace('.', "-")));
+        let name = format!("{}-{}", channel.as_deref().unwrap_or("chat"), root.replace('.', "-"));
+        let node = known("thread", &name);
         let ev = b.record(format!("{key}#{}", msgs[0].2));
         let text: String = msgs.iter().map(|m| m.1.as_str()).collect::<Vec<_>>().join("\n");
         b.add(node.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(disc::THREAD)), &ev, &rule);
@@ -72,16 +73,16 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
             b.add(node.clone(), disc::ABOUT, obj(crate::model::entity("inc", r.as_str())), &ev, &rule);
         }
         texts.push(text);
-        nodes.push((node, ev));
+        nodes.push((node, ev, name));
     }
     let Some(llm) = ctx.llm else { return Ok(b) };
     let p = prompt(ctx.ontology);
     let prompt_hash = crate::llm::hash(&p);
-    for (((node, ev), answer), text) in nodes.into_iter().zip(llm.ask_all(&p, &texts)).zip(&texts) {
+    for (((node, ev, name), answer), text) in nodes.into_iter().zip(llm.ask_all(&p, &texts)).zip(&texts) {
         let answer = match answer {
             Ok(a) => a,
             Err(e) => {
-                b.degraded.push(format!("model call failed for {}: {e:#}", crate::vocab::compact(&format!("{node:?}"))));
+                b.degraded.push(format!("model call failed for thread {name}: {e:#}"));
                 continue;
             }
         };

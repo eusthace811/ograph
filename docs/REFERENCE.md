@@ -40,7 +40,7 @@ path = "repo"
 
 [detect]
 metric_z = 5.0              # robust z threshold for metric episodes
-metric_baseline_s = 300     # trailing baseline window
+metric_baseline_s = 300     # trailing baseline window, widened for coarse series to hold 12 points
 metric_min_run = 3          # consecutive anomalous points that make an episode
 metric_min_history_s = 150  # seconds of history before the detector judges a point (no warm-up episodes)
 log_burst_factor = 3.0      # error-template count vs. the 5-minute trailing mean
@@ -73,8 +73,8 @@ timeout_s = 90
 
 Times may be any of these:
 
-- Unix seconds or milliseconds, as a number or a numeric string
-- ISO 8601 with any fraction and offset; no offset means UTC
+- Unix seconds, milliseconds, microseconds or nanoseconds, as a number or a numeric string
+- ISO 8601 with any fraction and offset (`Z`, `+05:30`, `+0530`, `+05` or a trailing ` UTC`); no offset means UTC
 
 JSON inputs may be a JSON array, one object, or JSON lines.
 
@@ -114,4 +114,4 @@ Enrichers never write to the store. A batch goes through these checks in order:
 9. **Evidence.** Each fact needs evidence that names a record this harvest read.
 10. **Incremental SHACL.** Shapes run on the nodes the batch touches, seen as the store will be after the commit. They are the derived domain, range, datatype, vocabulary and functional shapes, plus `shapes.ttl`. A violation that no single fact caused, such as a missing required value, rejects the node. The checks repeat until no violation is left.
 
-Rejected facts go to `g:quarantine/<source>/<key>` with their reason. Accepted facts replace `g:harvest/<source>/<key>`, and only the difference is written, so an unchanged re-harvest writes one quad: the harvest time. The key is the file's path relative to the workspace, percent-encoded but otherwise kept, so two files never share a graph. A file that cannot be read at all keeps its last good facts and is marked degraded. A full harvest clears the graphs of files that no longer exist, of sources no longer configured and of incidents that no longer have chains; verdicts are never cleared, and `--only KIND` clears only that kind's. A source whose path cannot be listed reports one degraded batch and keeps all its graphs.
+Rejected facts go to `g:quarantine/<source>/<key>` with their reason. Accepted facts replace `g:harvest/<source>/<key>`, and only the difference is written, so an unchanged re-harvest writes one quad: the harvest time. The key is the file's path relative to the workspace, percent-encoded but otherwise kept, so two files never share a graph. A file that cannot be read at all, or is empty, keeps its last good facts and is marked degraded. A full harvest clears the graphs of files that no longer exist, of sources no longer configured and of incidents that no longer have chains; verdicts are never cleared, and `--only KIND` clears only that kind's and fails on a kind that is not configured. A source whose path cannot be listed reports one degraded batch and keeps all its graphs.

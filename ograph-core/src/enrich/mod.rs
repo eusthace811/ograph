@@ -191,13 +191,23 @@ fn epoch_ms(n: f64) -> Option<i64> {
 }
 
 pub fn parse_iso(s: &str) -> Option<i64> {
-    let s = s.trim().replacen(' ', "T", 1);
+    let s = s.trim();
+    let s = match s.strip_suffix(" UTC").or_else(|| s.strip_suffix(" GMT")) {
+        Some(bare) => format!("{bare}Z"),
+        None => s.to_owned(),
+    };
+    let s = s.replacen(' ', "T", 1);
     let (main, zone) = match s.find(['Z', '+']).or_else(|| s.get(10..).and_then(|t| t.find('-')).map(|i| i + 10)) {
         Some(i) => s.split_at(i),
         None => (s.as_str(), "Z"),
     };
+    let zone = match (zone.len(), zone.is_ascii() && !zone.contains(':')) {
+        (5, true) => format!("{}:{}", &zone[..3], &zone[3..]),
+        (3, true) => format!("{zone}:00"),
+        _ => zone.to_owned(),
+    };
     let main = match main.split_once('.') {
-        Some((a, f)) => format!("{a}.{:0<3}", &f[..f.len().min(3)]),
+        Some((a, f)) => format!("{a}.{:0<3}", f.chars().take(3).collect::<String>()),
         None => main.to_owned(),
     };
     let dt: oxsdatatypes::DateTime = format!("{main}{zone}").parse().ok()?;
@@ -236,13 +246,17 @@ pub fn dt(ms: i64) -> crate::model::Object {
     crate::model::lit(oxrdf::Literal::new_typed_literal(crate::term::format_millis(ms), oxrdf::vocab::xsd::DATE_TIME))
 }
 
-/// A source file as text, without the byte-order mark Windows exports start with.
+/// A source file as text, without the byte-order mark Windows exports start with. A stray
+/// invalid byte becomes U+FFFD rather than failing the file. An empty file is an error, so an
+/// exporter that truncates before it writes keeps the facts its file had.
 pub fn read_text(path: &Path) -> std::io::Result<String> {
-    let text = std::fs::read_to_string(path)?;
-    Ok(match text.strip_prefix('\u{feff}') {
-        Some(rest) => rest.to_owned(),
-        None => text,
-    })
+    let bytes = std::fs::read(path)?;
+    let text = String::from_utf8_lossy(&bytes);
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    if text.trim().is_empty() {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "empty file, keeping its previous facts"));
+    }
+    Ok(text.to_owned())
 }
 
 /// Reads JSON lines, one JSON array or one JSON object (pretty-printed or not) into values.
@@ -329,4 +343,19 @@ pub fn raw_time(v: &RawValue) -> Option<i64> {
 
 pub fn str_field<'a>(v: &'a serde_json::Value, names: &[&str]) -> Option<&'a str> {
     names.iter().find_map(|n| v.get(*n).and_then(|x| x.as_str()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_iso;
+
+    #[test]
+    fn every_offset_spelling_is_the_same_instant() {
+        let z = parse_iso("2024-03-01T12:00:00Z");
+        assert_eq!(z, Some(1_709_294_400_000));
+        for s in ["2024-03-01T12:00:00+0000", "2024-03-01 12:00:00 UTC", "2024-03-01T12:00:00+00", "2024-03-01T17:30:00+0530", "2024-03-01T06:30:00-0530"] {
+            assert_eq!(parse_iso(s), z, "{s}");
+        }
+        assert_eq!(parse_iso("2024-03-01T12:00:00.12éé"), None);
+    }
 }

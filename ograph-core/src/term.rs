@@ -135,9 +135,10 @@ pub fn inline_expression(id: Id) -> Option<spareval::ExpressionTerm> {
 }
 
 pub fn decimal(v: f64) -> Literal {
-    let text = format!("{:.4}", if v.is_finite() { v } else { 0.0 });
+    // xsd:decimal values past about 1.7e20 do not parse, so a degenerate score is capped.
+    let text = format!("{:.4}", if v.is_finite() { v.clamp(-1e15, 1e15) } else { 0.0 });
     let text = text.trim_end_matches('0').trim_end_matches('.');
-    let text = if text.is_empty() || text == "-" { "0" } else { text };
+    let text = if text == "-0" { "0" } else { text };
     Literal::new_typed_literal(text, xsd::DECIMAL)
 }
 
@@ -208,5 +209,14 @@ mod tests {
             assert_eq!(inline(&Literal::new_typed_literal(lex, dt).into()), None, "{lex}");
         }
         assert_eq!(inline_term(inline(&Literal::from(-42).into()).unwrap()), Some(Literal::from(-42).into()));
+    }
+
+    #[test]
+    fn every_value_is_a_well_formed_decimal() {
+        for (v, want) in [(1e21, "1000000000000000"), (-0.00001, "0"), (2.5, "2.5"), (f64::NAN, "0"), (-3.0, "-3")] {
+            let l = decimal(v);
+            assert_eq!(l.value(), want);
+            assert!(l.value().parse::<oxsdatatypes::Decimal>().is_ok());
+        }
     }
 }
