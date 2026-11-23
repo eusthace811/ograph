@@ -48,8 +48,9 @@ def cell(c):
     # unbound variable as null.
     m = isinstance(c, str) and re.fullmatch(r'"(.*)"\^\^<http://www\.w3\.org/2001/XMLSchema#(?:double|float)>', c)
     if not m: return NAMES.get(c, c)
-    try: return format(decimal.Decimal(m[1]).normalize(), "f")
-    except decimal.InvalidOperation: return c
+    try: x = float(m[1]) + 0.0  # a double's own range; + 0.0 turns -0 into 0
+    except ValueError: return c
+    return format(decimal.Decimal(repr(x)).normalize(), "f")
 def named(rs): return [[cell(c) for c in r] for r in rs]
 
 def same(got, gold):
