@@ -236,24 +236,32 @@ pub fn dt(ms: i64) -> crate::model::Object {
     crate::model::lit(oxrdf::Literal::new_typed_literal(crate::term::format_millis(ms), oxrdf::vocab::xsd::DATE_TIME))
 }
 
-/// Reads JSON lines, or one JSON array, into values.
-pub fn json_records(path: &Path) -> anyhow::Result<Vec<serde_json::Value>> {
+/// A source file as text, without the byte-order mark Windows exports start with.
+pub fn read_text(path: &Path) -> std::io::Result<String> {
     let text = std::fs::read_to_string(path)?;
-    let t = text.trim_start();
-    if t.starts_with('[') {
-        return Ok(serde_json::from_str(t)?);
-    }
-    if t.starts_with('{') && !t.contains('\n') {
-        return Ok(vec![serde_json::from_str(t)?]);
-    }
-    text.lines().filter(|l| !l.trim().is_empty()).map(|l| Ok(serde_json::from_str(l)?)).collect()
+    Ok(match text.strip_prefix('\u{feff}') {
+        Some(rest) => rest.to_owned(),
+        None => text,
+    })
 }
 
-/// The records of a file of JSON lines, or of one JSON array, as raw JSON text.
+/// Reads JSON lines, one JSON array or one JSON object (pretty-printed or not) into values.
+pub fn json_records(path: &Path) -> anyhow::Result<Vec<serde_json::Value>> {
+    let text = read_text(path)?;
+    json_record_texts(&text)?.into_iter().map(|t| Ok(serde_json::from_str(t)?)).collect()
+}
+
+/// The records of a file of JSON lines, one JSON array or one JSON object, as raw JSON text.
 pub fn json_record_texts(text: &str) -> serde_json::Result<Vec<&str>> {
-    if text.trim_start().starts_with('[') {
-        let all: Vec<&RawValue> = serde_json::from_str(text)?;
+    let t = text.trim_start();
+    if t.starts_with('[') {
+        let all: Vec<&RawValue> = serde_json::from_str(t)?;
         return Ok(all.into_iter().map(|r| r.get()).collect());
+    }
+    if t.starts_with('{')
+        && let Ok(one) = serde_json::from_str::<&RawValue>(t)
+    {
+        return Ok(vec![one.get()]);
     }
     Ok(text.lines().filter(|l| !l.trim().is_empty()).collect())
 }

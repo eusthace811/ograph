@@ -73,6 +73,7 @@ ledger-db (postgres) runs on the managed database tier; the primary database (le
 ## History
 Past incidents: payments-api (INC-4120) and checkout (INC-4388). The rounding change shipped in payments-api (v2.3.1).
 Some teams say orders-api is also called checkout, because it was split out of the old checkout backend.
+payments-api is also called by web-frontend; ledger-db (read-only) replicas serve the monthly reports.
 """)
 pathlib.Path("runbooks/platform.md").write_text("""# Platform notes
 
@@ -81,7 +82,7 @@ notifications sends email through MailRelay.
 web-frontend talks to checkout (see the payments runbook).
 """)
 pathlib.Path("runbooks-labels.json").write_text(json.dumps({"aliases": {"payments-api": ["pay-gw"], "ledger-db": ["ledger-pg"], "search-api": ["finder"]},
-    "decoys": ["postgres", "ledger-db", "INC-4120", "INC-4388", "v2.3.1", "checkout"]}, indent=1))
+    "decoys": ["postgres", "ledger-db", "INC-4120", "INC-4388", "v2.3.1", "checkout", "by", "read-only"]}, indent=1))
 lines = []
 for s in range(NOW - 3600, NOW + 120, 2):
     lines.append({"ts": s, "service": "payments-api", "message": f"charge ok id={R.randint(1000,9999)} took {R.randint(20,80)}ms"})

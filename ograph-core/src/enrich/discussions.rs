@@ -43,28 +43,27 @@ fn incident_refs() -> &'static regex::Regex {
 pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
     let mut b = Batch::new("discussions", key, "threads-v1");
     let rule = Extraction::Rule { extractor: "thread-regex".into() };
-    let mut threads: BTreeMap<String, Vec<(i64, String, usize)>> = BTreeMap::new();
-    let mut channel_of: BTreeMap<String, String> = BTreeMap::new();
+    // A thread is its channel and root timestamp: two channels can share a timestamp.
+    let mut threads: BTreeMap<(Option<String>, String), Vec<(i64, String, usize)>> = BTreeMap::new();
+    let ts_text = |m: &serde_json::Value, k: &str| str_field(m, &[k]).map(str::to_owned).or_else(|| m.get(k).filter(|v| v.is_number()).map(|v| v.to_string()));
     for (i, m) in json_records(path)?.iter().enumerate() {
-        let Some(ts) = str_field(m, &["ts"]).map(str::to_owned).or_else(|| m.get("ts").map(|v| v.to_string())) else { continue };
-        let root = str_field(m, &["thread_ts"]).map(str::to_owned).unwrap_or_else(|| ts.clone());
+        let Some(ts) = ts_text(m, "ts") else { continue };
+        let root = ts_text(m, "thread_ts").unwrap_or(ts);
         let Some(t) = m.get("ts").and_then(parse_time) else { continue };
-        threads.entry(root.clone()).or_default().push((t, str_field(m, &["text"]).unwrap_or("").to_owned(), i + 1));
-        if let Some(c) = str_field(m, &["channel"]) {
-            channel_of.insert(root, c.to_owned());
-        }
+        let channel = str_field(m, &["channel"]).map(str::to_owned);
+        threads.entry((channel, root)).or_default().push((t, str_field(m, &["text"]).unwrap_or("").to_owned(), i + 1));
     }
     let mut texts = Vec::new();
     let mut nodes = Vec::new();
-    for (root, mut msgs) in threads {
+    for ((channel, root), mut msgs) in threads {
         msgs.sort();
-        let node = known("thread", &format!("{}-{}", channel_of.get(&root).map_or("chat", String::as_str), root.replace('.', "-")));
+        let node = known("thread", &format!("{}-{}", channel.as_deref().unwrap_or("chat"), root.replace('.', "-")));
         let ev = b.record(format!("{key}#{}", msgs[0].2));
         let text: String = msgs.iter().map(|m| m.1.as_str()).collect::<Vec<_>>().join("\n");
         b.add(node.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(disc::THREAD)), &ev, &rule);
         b.add(node.clone(), disc::AT, super::dt(msgs[0].0), &ev, &rule);
         b.add(node.clone(), disc::TEXT_HASH, lit(crate::llm::hash(&text)), &ev, &rule);
-        if let Some(c) = channel_of.get(&root) {
+        if let Some(c) = &channel {
             b.add(node.clone(), disc::CHANNEL, lit(c.as_str()), &ev, &rule);
         }
         for r in incident_refs().find_iter(&text) {

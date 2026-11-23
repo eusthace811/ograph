@@ -117,7 +117,10 @@ pub fn parse(query: &str) -> anyhow::Result<spargebra::Query> {
     for (p, ns) in vocab::PREFIXES {
         parser = parser.with_prefix(*p, *ns)?;
     }
-    Ok(parser.parse_query(query)?)
+    parser.clone().parse_query(query).or_else(|e| {
+        anyhow::ensure!(parser.parse_update(query).is_err(), "read-only: SPARQL updates are not allowed");
+        Err(e.into())
+    })
 }
 
 pub fn show(t: &Term) -> String {

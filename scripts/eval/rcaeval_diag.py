@@ -34,7 +34,7 @@ def ts(s):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bin", required=True); ap.add_argument("--cases", required=True)
-    ap.add_argument("--results", required=True); ap.add_argument("--mode", default="chain")
+    ap.add_argument("--results", required=True); ap.add_argument("--mode", default="chain", choices=["chain", "propagation"])
     ap.add_argument("--catalog", default="data/fixtures/online-boutique/catalog-info.yaml")
     a = ap.parse_args()
     R = json.loads(pathlib.Path(a.results).read_text())
@@ -44,6 +44,8 @@ def main():
     rows, causes = [], collections.Counter()
     by_fault = collections.defaultdict(collections.Counter)
     for cid in sorted(labels):
+        if "error" in res[cid]:
+            continue
         lab, ranked = labels[cid], res[cid][a.mode]
         root = lab["root"]
         if ranked[:1] == [root]:

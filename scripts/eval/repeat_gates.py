@@ -31,6 +31,8 @@ def coverage(d, cache, q, l):
     before = lines(cache)
     rc, out, dt = run(sys.executable, ev / "coverage_eval.py", "--bin", binp, "--demo", d, "--questions", q, "--labels", l)
     m = re.search(r"reported covered (\d+)/(\d+); gap questions with the expected gap (\d+)/(\d+)", out)
+    if not m:
+        return {"covered": "?", "gaps": "?", "errors": [out.strip()[-300:]], "calls": lines(cache) - before, "s": round(dt, 1), "pass": False}
     wrong = [w.strip() for w in out.splitlines() if w.startswith("   Q")]
     return {"covered": f"{m[1]}/{m[2]}", "gaps": f"{m[3]}/{m[4]}", "errors": wrong, "calls": lines(cache) - before, "s": round(dt, 1), "pass": rc == 0}
 

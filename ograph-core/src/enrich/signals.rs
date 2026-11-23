@@ -115,7 +115,7 @@ fn episodes(series: &[(i64, f64, usize)], d: &Detect, two_sided: bool) -> Vec<Ep
 /// CSV with a `time` column and one `<service>_<metric>` column per series.
 pub fn metrics(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let mut b = Batch::new("metrics", key, "robust-z-v1");
-    let text = std::fs::read_to_string(path)?;
+    let text = super::read_text(path)?;
     let mut lines = text.lines();
     let header: Vec<&str> = lines.next().ok_or_else(|| anyhow::anyhow!("empty CSV"))?.split(',').collect();
     let tcol = header.iter().position(|h| matches!(h.trim(), "time" | "timestamp" | "ts")).ok_or_else(|| anyhow::anyhow!("no time column"))?;
@@ -163,7 +163,7 @@ fn error_like() -> &'static regex::Regex {
 /// (the service is then the file stem).
 pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let mut b = Batch::new("logs", key, "drain-burst-v1");
-    let text = std::fs::read_to_string(path)?;
+    let text = super::read_text(path)?;
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     // Per service: one Drain, and per line its (time ms, template index, error-like).
     type Lines = Vec<(i64, usize, bool)>;
@@ -234,7 +234,7 @@ struct Span {
 /// `service`/`serviceName`, `start_ms`/`startTimeMillis`, `duration_us`/`duration`, `status`/`statusCode`.
 pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let mut b = Batch::new("traces", key, "span-stats-v1");
-    let text = std::fs::read_to_string(path)?;
+    let text = super::read_text(path)?;
     let records = json_record_texts(&text)?;
     let mut services: Vec<Cow<str>> = Vec::new();
     let mut service_ids: FxHashMap<Cow<str>, u32> = FxHashMap::default();

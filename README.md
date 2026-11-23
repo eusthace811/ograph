@@ -17,7 +17,7 @@ ograph blast ledger-db             # 2. which services and business processes th
 ograph similar INC-5377            # 3. past incidents like this one, their causes and mitigations
 ograph news                        # 4. news touching the vendors our applications use
 ograph why id:inc/inc-4120         # provenance of every fact about a node
-ograph verdict id:chain/inc-4120-2 accept --evidence PM-4120 --by oncall
+ograph verdict id:chain/inc-4120-1 accept --evidence PM-4120 --by oncall
 ograph sparql 'SELECT ?app WHERE { ?app ops:dependsOn+ id:app\/ledger-db }'
 ograph lab                         # one HTML page over the whole graph
 ```

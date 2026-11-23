@@ -14,11 +14,13 @@ export default function (pi: any) {
   let sequence = 0;
   const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
 
+  let stderr = "";
   function stop() {
     child?.kill();
     child = undefined;
     ready = undefined;
-    for (const w of pending.values()) w.reject(new Error("ograph disconnected; retry to reconnect"));
+    const why = stderr.trim().split("\n").slice(-3).join("\n");
+    for (const w of pending.values()) w.reject(new Error(why ? `ograph exited: ${why}` : "ograph disconnected; retry to reconnect"));
     pending.clear();
   }
 
@@ -45,7 +47,8 @@ export default function (pi: any) {
     ready = (async () => {
       const p = spawn(bin, ["serve", "--mcp"], { cwd, stdio: ["pipe", "pipe", "pipe"] });
       child = p;
-      p.stderr?.on("data", () => {});
+      stderr = "";
+      p.stderr?.on("data", (d) => { stderr = (stderr + d).slice(-2000); });
       p.on("exit", () => { if (child === p) stop(); });
       p.on("error", () => { if (child === p) stop(); });
       createInterface({ input: p.stdout! }).on("line", (line) => {

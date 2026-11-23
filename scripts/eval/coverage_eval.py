@@ -46,6 +46,7 @@ d = subprocess.run([binp, "--root", str(demo), "ontology", "diff", str(tmp / "me
 added = [l for l in d.stdout.splitlines() if l.startswith("added")]
 breaking = [l for l in d.stdout.splitlines() if l.startswith("BREAKING")]
 print(f"3. proposals merged into the ontology: {len(added)} additions, {len(breaking)} breaking, diff exit {d.returncode}")
-ok = ok_gap == len(labels["gaps"]) and ok_cov >= len(labels["covered"]) - 2 and replay and not breaking and d.returncode == 0 and added
+unchecked = sum(1 for c in first if c.get("failed"))
+ok = not unchecked and ok_gap == len(labels["gaps"]) and ok_cov >= len(labels["covered"]) - 2 and replay and not breaking and d.returncode == 0 and added
 print("COVERAGE GATE:", "PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)

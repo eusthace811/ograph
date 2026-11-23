@@ -1,5 +1,6 @@
 //! Record sources: incidents, alerts, deployments, config changes, ownership and news. Each
-//! record becomes one event node whose evidence is `file#line`.
+//! record becomes one event node whose evidence is `file#n`, the n-th record of the file
+//! counting from 0 (an array element, or a non-blank JSON line).
 
 use super::{Event, app, dt, event, json_records, parse_time, str_field};
 use crate::model::{Batch, EntityRef, Extraction, Object, entity, known, lit, obj, slug};

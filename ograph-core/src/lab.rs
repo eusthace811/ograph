@@ -22,7 +22,7 @@ pub fn page(s: &Snapshot, st: &Settings) -> anyhow::Result<String> {
         }
     }
     incidents.sort_by_key(|v| std::cmp::Reverse(v["analysis"]["at_ms"].as_i64().unwrap_or(0)));
-    let data = serde_json::to_string(&json!({"incidents": incidents, "triples": s.union_len()?, "graphs": s.graphs()?.len()}))?.replace("</", "<\\/");
+    let data = serde_json::to_string(&json!({"incidents": incidents, "triples": s.union_len()?, "graphs": s.graphs()?.len()}))?.replace('<', "\\u003c");
     Ok(TEMPLATE.replace("__DATA__", &data))
 }
 
@@ -47,7 +47,7 @@ document.getElementById("meta").textContent = `${D.incidents.length} incidents, 
 document.getElementById("list").innerHTML = D.incidents.map(x => {
   const a = x.analysis, top = (a.apps[0] || {}).score || 1;
   const ranks = a.apps.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.app)}</b></td><td style="width:30%"><div class="bar" style="width:${Math.max(4, 100 * r.score / top)}%"></div></td><td>${r.score.toFixed(3)}</td><td>${r.chain ? [r.chain.root, ...r.chain.links].map(s => `<span class="chip">${esc(s.app_name)} ${esc(s.kind)}</span>`).join(" → ") + " → incident" : ""}</td></tr>`).join("");
-  const before = (x.before?.events || []).slice(0, 25).map(e => `<tr><td>-${e.minutes_before} min</td><td>${esc(e.app)}</td><td>${esc(e.signal)}</td><td>${e.severity}</td><td><code>${esc(e.source_record || e.event)}</code></td></tr>`).join("");
+  const before = (x.before?.events || []).slice(0, 25).map(e => `<tr><td>-${e.minutes_before} min</td><td>${esc(e.app)}</td><td>${esc(e.signal)}</td><td>${esc(e.severity)}</td><td><code>${esc(e.source_record || e.event)}</code></td></tr>`).join("");
   const sim = x.similar.map(s => `<tr><td>${s.similarity}</td><td>${esc(s.incident)}</td><td>${esc(s.cause_apps.join(", "))}</td><td>${esc(s.mitigations.join("; "))}</td></tr>`).join("");
   const blast = x.blast ? `${esc(x.blast.app)} is depended on by ${x.blast.dependents.length} applications; processes: ${x.blast.processes.map(p => esc(p[0])).join(", ") || "none recorded"}` : "";
   return `<section class="card"><h2>${esc(a.incident.split("/").pop())} on ${esc(a.app)}</h2><p class="mute">${new Date(a.at_ms).toISOString()} · ${a.candidates} candidate events</p>
