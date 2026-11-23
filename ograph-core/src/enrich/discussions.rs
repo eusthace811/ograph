@@ -43,8 +43,10 @@ fn incident_refs() -> &'static regex::Regex {
 pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
     let mut b = Batch::new("discussions", key, "threads-v1");
     let rule = Extraction::Rule { extractor: "thread-regex".into() };
-    // A thread is its channel and root timestamp: two channels can share a timestamp.
-    let mut threads: BTreeMap<(Option<String>, String), Vec<(i64, String, usize)>> = BTreeMap::new();
+    // A thread is its channel and root timestamp: two channels can share a timestamp. Each
+    // message is (time ms, text, record number).
+    type Messages = Vec<(i64, String, usize)>;
+    let mut threads: BTreeMap<(Option<String>, String), Messages> = BTreeMap::new();
     let ts_text = |m: &serde_json::Value, k: &str| str_field(m, &[k]).map(str::to_owned).or_else(|| m.get(k).filter(|v| v.is_number()).map(|v| v.to_string()));
     for (i, m) in json_records(path)?.iter().enumerate() {
         let Some(ts) = ts_text(m, "ts") else { continue };
