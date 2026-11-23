@@ -36,6 +36,7 @@ pub fn strength(z: f64) -> f64 {
 
 struct Episode {
     start_ms: i64,
+    end_ms: i64,
     peak: f64,
     first_row: usize,
     len: usize,
@@ -67,7 +68,7 @@ fn episodes(series: &[(i64, f64, usize)], d: &Detect, two_sided: bool) -> Vec<Ep
                 lo += 1;
             }
             let mut hist: Vec<f64> = series[lo..i].iter().filter(|x| x.0 < t - gap_ms && x.1.is_finite()).map(|x| x.1).collect();
-            if hist.len() >= 12 {
+            if hist.len() >= 12 && t - series[lo].0 >= d.metric_min_history_s * 1000 {
                 let m = median(&mut hist);
                 let mut dev: Vec<f64> = hist.iter().map(|x| (x - m).abs()).collect();
                 let mad = median(&mut dev);
@@ -86,11 +87,12 @@ fn episodes(series: &[(i64, f64, usize)], d: &Detect, two_sided: bool) -> Vec<Ep
             match &mut cur {
                 Some(e) => {
                     e.len += 1;
+                    e.end_ms = t;
                     if z > e.peak {
                         e.peak = z;
                     }
                 }
-                None => cur = Some(Episode { start_ms: t, peak: z, first_row: row, len: 1 }),
+                None => cur = Some(Episode { start_ms: t, end_ms: t, peak: z, first_row: row, len: 1 }),
             }
         } else if let Some(e) = &cur {
             misses += 1;
@@ -147,6 +149,7 @@ pub fn metrics(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
             b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::METRIC_ANOMALY)), &ev, &m);
             b.add(s.clone(), evt::ON, app(svc), &ev, &m);
             b.add(s.clone(), evt::AT, dt(e.start_ms), &ev, &m);
+            b.add(s.clone(), evt::UNTIL, dt(e.end_ms), &ev, &m);
             b.add(s.clone(), evt::METRIC, lit(metric), &ev, &m);
             b.add(s.clone(), evt::VALUE, lit(crate::term::decimal(e.peak)), &ev, &m);
             b.add(s.clone(), evt::SIGNAL, lit("METRIC_ANOMALY"), &ev, &m);

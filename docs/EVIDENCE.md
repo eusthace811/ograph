@@ -91,8 +91,8 @@ RCAEval RE2-OB (MIT) has 90 labeled failures: 5 services × 6 fault types × 3 r
 
 | Method (`rcaeval-final.txt`) | All 90: AC@1 / AC@3 / Avg@5 | Held-out 60 |
 |---|---|---|
-| **ograph, default (chain ranking, 30-minute window)** | **0.87 / 0.96 / 0.94** | **0.87 / 0.95 / 0.94** |
-| ograph, propagation ranking | 0.74 / 0.92 / 0.90 | 0.78 / 0.93 / 0.91 |
+| **ograph, default (chain ranking, 30-minute window)** | **0.93 / 0.99 / 0.98** | **0.93 / 0.98 / 0.98** |
+| ograph, propagation ranking | 0.83 / 0.94 / 0.94 | 0.87 / 0.97 / 0.96 |
 | z-max with an oracle window (told the injection time) | 0.84 / 0.97 / 0.94 | 0.82 / 0.97 / 0.94 |
 | What a pure graph can rank with SPARQL 1.1 aggregates | 0.63 / 0.94 / 0.89 | 0.68 / 0.97 / 0.90 |
 | Published TORAI (metrics, logs and traces) | 0.83 / 0.95 / 0.93 | |
@@ -114,6 +114,8 @@ The published baselines come from the TORAI paper's Table 2, averaged over all 9
   | 300 s | 0.87 |
   | 600 s | 0.79 |
   | 900 s | 0.78 |
+- **Proximity runs from the end of an episode (`rcaeval_diag.py`).** Strength saturates, so 87 of 90 winning roots had severity 1.0 and time proximity decided every ranking. Proximity was measured from an episode's start, so a one-point blip seconds before the incident beat a fault that began 290 s earlier and never stopped. Metric episodes now record `evt:until`, the last anomalous point, and a link's proximity is measured from it, capped at the next event or the incident. Equal confidences then prefer the chain that reaches more applications, then the earlier onset. The detector also waits for 150 s of baseline history before judging a point, which removes warm-up events at the start of each series (any value from 60 to 300 s gives the same scores). Misses fell from 12 to 6: loss went from 0.60 to 0.80 AC@1 and delay from 0.80 to 0.87, and stored events fell 31%. The misses were diagnosed on all 90 cases before the rule was written, so the held-out split is less independent here than for the weights; the tuning split did prefer this ordering over the reverse (0.90 against 0.87). Of the 6 left, 3 are same-second ties decided by name, 2 have the true service firing after the winner, and 1 is pre-fault noise. A "callee explains its caller" penalty and a raw-z tie-break were tried and rejected on held-out reps.
+- **The lag table predates that change.** A replica of the ranking scored about 0.92 at 120, 600 and 900 s of lag after it, but the table above was not rerun.
 - **The weight grid did not generalize.** Tuning propagation weights on rep 1 (206 combinations) gave no held-out gain, so the shipped weights are not tuned to labels.
 - **The graph is worth about 5 points.** Ranking with the dependency edges ignored scored 0.79 AC@1, against 0.84 with them, measured with propagation ranking.
 - **Signals.** Measured with propagation ranking, metrics alone scored 0.86 and all signals 0.84. On this dataset the log and trace episodes (146 events) added a little noise.
@@ -162,11 +164,11 @@ We also tested co-occurring events as a second kind of support, and rejected it.
 | Support rule | Precision | Recall |
 |---|---|---|
 | A trace edge only | 1.000 | 0.200 |
-| Events co-occur within a minute, in 3 or more minutes | 0.221 | 0.244 |
-| A trace edge, or co-occurrence in 3 or more minutes | 0.309 | 0.386 |
-| A trace edge, or co-occurrence in 8 or more minutes | 0.982 | 0.201 |
+| Events co-occur within a minute, in 3 or more minutes | 0.182 | 0.067 |
+| A trace edge, or co-occurrence in 3 or more minutes | 0.453 | 0.251 |
+| A trace edge, or co-occurrence in 5 or more minutes | 0.885 | 0.205 |
 
-The base rate is 0.136, so co-occurrence barely beats chance. During an incident, every service misbehaves in the same minutes. At thresholds high enough to be precise, co-occurrence adds one real edge and five invented ones over traces alone.
+The base rate is 0.136, so co-occurrence barely beats chance. During an incident, every service misbehaves in the same minutes. At 5 or more minutes, co-occurrence adds 7 real edges and 36 invented ones over traces alone. (Before the detector's warm-up rule removed noise events, the 3-minute row scored 0.221; the conclusion did not change.)
 
 | Check | Result |
 |---|---|
@@ -231,18 +233,18 @@ A pure knowledge graph puts every metric point, log line and span in the graph a
 
 | | Pure knowledge graph | ograph (episodes plus pointers) |
 |---|---|---|
-| Quads | 3,924,039 | 463 (8,500x fewer) |
-| Store | 1,088 MiB | 0.52 MiB |
+| Quads | 3,924,039 | 368 (10,000x fewer) |
+| Store | 1,088 MiB | 0.30 MiB |
 | Ingest | 15.8 s | 0.4 s for the whole harvest, including detection |
-| "What happened in the 10 minutes before?" | 279,168 raw records, 5.5 MiB of text, in 386 ms | 11 episodes, 2.2 KiB, in 0.06 ms |
-| Root cause on 90 cases | 0.63 AC@1 with the best statistic SPARQL 1.1 can express: a mean shift in units of standard deviation | 0.87 AC@1 |
-| A day of this small system | 235 M quads, 64 GiB | 0.03 M quads |
+| "What happened in the 10 minutes before?" | 279,168 raw records, 5.5 MiB of text, in 398 ms | 11 episodes, 2.2 KiB, in 0.05 ms |
+| Root cause on 90 cases | 0.63 AC@1 with the best statistic SPARQL 1.1 can express: a mean shift in units of standard deviation | 0.93 AC@1 |
+| A day of this small system | 235 M quads, 64 GiB | 0.02 M quads |
 
 These are the reasons, each measured above:
 
-- **Size.** Raw telemetry is about 8,500 times larger as triples. At 196 to 256 bytes per quad, one day of an 11-service demo is 64 GiB. A real estate would multiply that by its service count.
+- **Size.** Raw telemetry is about 10,000 times larger as triples. At 196 to 256 bytes per quad, one day of an 11-service demo is 64 GiB. A real estate would multiply that by its service count.
 - **Agents.** The answer an agent needs is the 11 episodes, not the 279,168 records. 5.5 MiB of text does not fit a model's context, and the episodes fit in 2.2 KiB.
-- **SPARQL cannot express the detector.** SPARQL 1.1 has no median, MAD, window functions or online baseline. The best ranking it can express scores 0.63 AC@1, against ograph's 0.87.
+- **SPARQL cannot express the detector.** SPARQL 1.1 has no median, MAD, window functions or online baseline. The best ranking it can express scores 0.63 AC@1, against ograph's 0.93.
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.

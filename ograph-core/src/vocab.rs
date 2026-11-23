@@ -47,6 +47,7 @@ ns!(evt, "https://ograph.dev/evt#", {
     METRIC = "metric",
     VALUE = "value",
     COUNT = "count",
+    UNTIL = "until",
     NEWS_ITEM = "NewsItem",
     MENTIONS = "mentions",
     E2E_FAILURE = "E2EFailure",

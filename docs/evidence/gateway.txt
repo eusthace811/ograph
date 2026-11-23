@@ -21,7 +21,7 @@ catalog: proposed 24 accepted 24 quarantined 0
 | missing-required | 3 | 0 | 6 (SHACL MinCountConstraintComponent: an event needs a time) |
 model-proposed edge the catalog declares, committed: true
 
-batch: proposed 293 facts, accepted 191, quarantined 102, fuzzy catalog matches 0, 12 ms
+batch: proposed 293 facts, accepted 191, quarantined 102, fuzzy catalog matches 0, 13 ms
 bad subjects with a committed fact: 12; good events missing: 0/40; full SHACL audit violations: 0
 re-submit: removed 1 added 1 (only the harvest time should change: 1 and 1)
 bad facts (the faulty fact of each case) committed: 0

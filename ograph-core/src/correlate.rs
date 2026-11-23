@@ -80,6 +80,8 @@ pub struct Signal {
     pub app_iri: String,
     pub app_name: String,
     pub at_ms: i64,
+    /// End of the episode (`evt:until`); `at_ms` for a point event.
+    pub until_ms: i64,
     pub kind: String,
     pub severity: f64,
     pub distance: usize,
@@ -114,6 +116,7 @@ pub struct Ids {
     pub ty: Id,
     pub on: Id,
     pub at: Id,
+    pub until: Option<Id>,
     pub depends: Id,
     pub value: Option<Id>,
     pub severity: Option<Id>,
@@ -129,6 +132,7 @@ impl Ids {
             ty: need(RDF_TYPE)?,
             on: need(evt::ON)?,
             at: need(evt::AT)?,
+            until: s.iri(evt::UNTIL)?,
             depends: s.iri(ops::DEPENDS_ON)?.unwrap_or(u64::MAX),
             value: s.iri(evt::VALUE)?,
             severity: s.iri(evt::SEVERITY)?,
@@ -244,13 +248,16 @@ pub fn candidates(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyho
                 continue;
             }
             let name = names.entry(x).or_insert_with(|| app_name(s, ids, x)).clone();
+            let at_ms = term::millis(tid).unwrap_or(0);
+            let until_ms = ids.until.and_then(|p| s.object(e, p).ok().flatten()).and_then(term::millis).unwrap_or(at_ms).max(at_ms);
             out.push(Signal {
                 id: e,
                 iri: literal(s, e).unwrap_or_default(),
                 app: x,
                 app_iri: literal(s, x).unwrap_or_default(),
                 app_name: name,
-                at_ms: term::millis(tid).unwrap_or(0),
+                at_ms,
+                until_ms,
                 kind,
                 severity: severity_of(s, ids, e),
                 distance: d,
@@ -268,6 +275,11 @@ impl Settings {
 
     /// Netflix's rule: a known causal pair carries its prior weight; any other pair is scored
     /// on temporal proximity and severity. Severity is in [0, 1], so a link is too.
+    ///
+    /// Proximity runs from the end of `a`'s episode, not its start: an anomaly still under way
+    /// when the next event (or the incident) arrives is adjacent to it. Measuring from the start
+    /// made a cause that began five minutes before the incident and never stopped score below a
+    /// one-point blip seconds before it.
     fn link(&self, a: &Signal, to_kind: &str, to_ms: i64) -> f64 {
         let w = (self.window_s * 1000) as f64;
         let gap = (to_ms - a.at_ms) as f64;
@@ -277,6 +289,7 @@ impl Settings {
         if self.known(&a.kind, to_kind) {
             return self.known_pair_prior;
         }
+        let gap = (to_ms - a.until_ms.min(to_ms)) as f64;
         let prox = (1.0 - gap.max(0.0) / w).clamp(0.0, 1.0);
         self.w_time * prox + self.w_severity * a.severity.min(1.0)
     }
@@ -319,7 +332,8 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
             let close = st.link(last, "INCIDENT", t).max(1e-9);
             let conf = ((logsum + close.ln()) / path.len() as f64).exp();
             let gated = close >= st.min_confidence && conf >= st.min_confidence;
-            if best.as_ref().is_none_or(|b| (gated, conf) > (b.2, b.1)) {
+            // Equal confidence prefers the longer path: it explains more of the cascade.
+            if best.as_ref().is_none_or(|b| (gated, quantize(conf), path.len()) > (b.2, quantize(b.1), b.0.len())) {
                 best = Some((path.clone(), conf, gated));
             }
             if path.len() > st.depth {
@@ -382,8 +396,26 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
         }
     }
     let mut apps: Vec<Ranked> = per_app.into_values().collect();
-    apps.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.first_ms.cmp(&b.first_ms)).then(a.app.cmp(&b.app)));
+    match st.rank {
+        // Sustained, saturated anomalies tie on confidence. Among ties the root whose chain
+        // reaches more applications explains more of the cascade, then the earlier onset wins.
+        RankMode::Chain => apps.sort_by_key(|r| {
+            let c = r.chain.as_ref();
+            (std::cmp::Reverse(quantize(r.score)), std::cmp::Reverse(c.map_or(0, breadth)), c.map_or(i64::MAX, |c| c.root.at_ms), r.app.clone())
+        }),
+        RankMode::Propagation => apps.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.first_ms.cmp(&b.first_ms)).then(a.app.cmp(&b.app))),
+    }
     chains.sort_by(|a, b| b.confidence.total_cmp(&a.confidence).then(a.root.at_ms.cmp(&b.root.at_ms)));
     chains.truncate(st.max_chains);
     Ok(Analysis { incident: literal(s, incident).unwrap_or_default(), app: app_name(s, ids, app), at_ms: t, candidates: cands.len(), chains, apps })
+}
+
+/// Confidence at the resolution ranking cares about, so float noise cannot break a tie.
+fn quantize(x: f64) -> i64 {
+    (x * 1e9).round() as i64
+}
+
+/// Distinct applications a chain passes through.
+fn breadth(c: &Chain) -> usize {
+    std::iter::once(&c.root).chain(&c.links).map(|s| s.app).collect::<FxHashSet<_>>().len()
 }

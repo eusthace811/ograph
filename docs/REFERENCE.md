@@ -42,6 +42,7 @@ path = "repo"
 metric_z = 5.0              # robust z threshold for metric episodes
 metric_baseline_s = 300     # trailing baseline window
 metric_min_run = 3          # consecutive anomalous points that make an episode
+metric_min_history_s = 150  # seconds of history before the detector judges a point (no warm-up episodes)
 log_burst_factor = 3.0      # error-template count vs. the 5-minute trailing mean
 log_min_count = 3
 trace_error_rate = 0.05

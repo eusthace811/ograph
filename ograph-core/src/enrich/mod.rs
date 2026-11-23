@@ -77,6 +77,8 @@ pub struct Detect {
     pub metric_z: f64,
     pub metric_baseline_s: i64,
     pub metric_min_run: usize,
+    /// Seconds of history a metric baseline needs before the detector judges a point.
+    pub metric_min_history_s: i64,
     pub log_burst_factor: f64,
     pub log_min_count: usize,
     pub trace_error_rate: f64,
@@ -87,7 +89,7 @@ pub struct Detect {
 
 impl Default for Detect {
     fn default() -> Self {
-        Self { metric_z: 5.0, metric_baseline_s: 300, metric_min_run: 3, log_burst_factor: 3.0, log_min_count: 3, trace_error_rate: 0.05, trace_slow_factor: 2.0, two_sided: vec!["workload".into(), "throughput".into(), "requests".into()] }
+        Self { metric_z: 5.0, metric_baseline_s: 300, metric_min_run: 3, metric_min_history_s: 150, log_burst_factor: 3.0, log_min_count: 3, trace_error_rate: 0.05, trace_slow_factor: 2.0, two_sided: vec!["workload".into(), "throughput".into(), "requests".into()] }
     }
 }
 

@@ -58,6 +58,7 @@ evt:template a owl:DatatypeProperty ; rdfs:domain evt:LogError ; rdfs:range xsd:
 evt:metric a owl:DatatypeProperty ; rdfs:domain evt:MetricAnomaly ; rdfs:range xsd:string .
 evt:value a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:decimal .
 evt:count a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:integer .
+evt:until a owl:DatatypeProperty, owl:FunctionalProperty ; rdfs:domain evt:Event ; rdfs:range xsd:dateTime ; rdfs:comment "Last point of an episode that the detector saw as anomalous; the episode spans evt:at to evt:until." .
 evt:mentions a owl:ObjectProperty ; rdfs:domain evt:NewsItem ; rdfs:range og:Thing .
 
 # ---------- INCIDENT ----------
