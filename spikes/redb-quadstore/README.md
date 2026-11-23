@@ -97,10 +97,10 @@ Two choices shape the result sizes, and both are deliberate.
 
 ## Reproduce
 
-Everything runs from the spike directory. The path has a space, so quote it.
+Everything runs from the spike directory.
 
 ```sh
-cd "/Volumes/External Disk/Github/graph-rag/spikes/redb-quadstore"
+cd spikes/redb-quadstore
 cargo build --release
 
 # Generate the graph, bulk-load redb and Oxigraph, run W1, W2 and W3 on all engines,

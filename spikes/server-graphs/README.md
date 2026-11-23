@@ -71,7 +71,7 @@ Apple M6 (12 cores, 32 GB) as the redb spike, with Docker 29.9 and 8 GB and 12 C
 Docker VM. Load average was 2.4 to 3.4 from other sessions during the runs.
 
 ```sh
-cd "/Volumes/External Disk/Github/graph-rag/spikes/server-graphs"
+cd spikes/server-graphs
 cargo build --release
 ./target/release/export            # CSV + expected rows (needs ../redb-quadstore/data/store.redb)
 
