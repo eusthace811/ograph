@@ -194,6 +194,20 @@ A query that uses a class or property the ontology does not declare now fails, w
 | Agent contract | Three misspelled names were rejected through `serve --mcp` with the right suggestion. A correct query still answers |
 | Found during the work | The check rejected `evt:source` in a query written for the alias eval. The property is `evt:sourceRecord` |
 
+### Agent-written SPARQL (`sparql-agent.txt`)
+
+`scripts/eval/sparql_agent_eval.py` asks 22 questions about the demo of a headless pi agent (`openai/gpt-5.6-terra`) with bash, read and the `skills/ograph` skill. The agent answers by writing SPARQL. Its final query is run, and its rows must equal those of the reference query in `examples/demo/sparql-questions.json`, on some choice of its columns, with a node counted as its `ops:name`. Four questions are close to a recipe in the skill; 18 are not (property paths, negation, aggregates, time arithmetic, joins across four classes). Each question ran 3 times, with the skill and without it.
+
+| Arm | Recipe | Novel | All | Median time |
+|---|---|---|---|---|
+| With the skill | 10/12 | 54/54 | 64/66 (0.97) | 18.0 s |
+| Without the skill | 12/12 | 52/54 | 64/66 (0.97) | 23.1 s |
+
+- **Accuracy does not separate the arms on this set.** Without the skill the agent still writes correct queries. It can read `.ograph/ontology.ttl` in the workspace, which is the likely reason (inferred: the runner keeps no transcripts). The skill saves it about 5 s a question. A harder set or a smaller model may separate them; this one does not.
+- **The misses are answer shape and one aggregate.** With the skill: 2 of 3 runs of "the top-ranked candidate" returned the whole ranking. Without it: one count of alerts by severity counted every event, and one final query kept an unescaped `/`.
+- **Found during the work.** An id written as commands print it, `id:app/payments-api`, failed to parse with `expected OPTIONAL`, which does not mention the `/`. The error now ends `the / in id:app/payments-api must be escaped, as id:app\/payments-api, or use the full IRI`.
+- **Limits.** One model, 22 questions written by the author of the reference queries, on a 10-application demo. A run that pi could not complete (an empty reply after 3 tries, such as a rate limit) is reported as ERROR and not scored; this run had none.
+
 ### Ontology coverage against competency questions (`coverage.txt`)
 
 `ograph ontology coverage QUESTIONS` asks the model which declared name represents each concept in each question. Code keeps a mapping only when the name is declared and the words are in the question. Code also drops a "missing" concept that is a catalog application name. What is left goes into proposed Turtle for a person to review.

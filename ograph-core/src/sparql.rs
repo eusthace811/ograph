@@ -119,8 +119,19 @@ pub fn parse(query: &str) -> anyhow::Result<spargebra::Query> {
     }
     parser.clone().parse_query(query).or_else(|e| {
         anyhow::ensure!(parser.parse_update(query).is_err(), "read-only: SPARQL updates are not allowed");
-        Err(e.into())
+        match unescaped_slash(query) {
+            Some(name) => anyhow::bail!("{e}: the / in {name} must be escaped, as {}, or use the full IRI", name.replace('/', "\\/")),
+            None => Err(e.into()),
+        }
     })
+}
+
+/// A data id written as commands print it (`id:app/ledger-db`), which SPARQL cannot parse: the
+/// parser stops at the `/` with an error that does not mention it.
+fn unescaped_slash(query: &str) -> Option<&str> {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"(?:^|[^\w:\\/<])((?:id|g):[\w.-]+(?:/[\w.-]+)+)").unwrap());
+    re.captures(query).map(|c| c.get(1).unwrap().as_str())
 }
 
 pub fn show(t: &Term) -> String {
@@ -284,6 +295,15 @@ mod tests {
         assert_eq!(err("SELECT ?x WHERE { ?x evt:severty ?s FILTER(?s < 2) }"), "the ontology declares no evt:severty (did you mean evt:severity?); a query with an undeclared name matches nothing");
         assert!(err("SELECT ?x WHERE { ?x a/rdfs:subClassOf* evt:Event }").starts_with("evt:Event has subclasses, and each node stores only its most specific type, so match those: VALUES ?type { evt:Alert "));
         assert_eq!(err("SELECT ?x WHERE { VALUES ?t { evt:Alert inc:Incident } ?x a ?t }"), "");
+    }
+
+    #[test]
+    fn an_unescaped_slash_in_an_id_names_the_fix() {
+        let err = super::parse("SELECT ?a WHERE {\n  id:app/payments-api ops:alias ?a }").unwrap_err().to_string();
+        assert!(err.ends_with(r"the / in id:app/payments-api must be escaped, as id:app\/payments-api, or use the full IRI"), "{err}");
+        let err = super::parse("SELECT ?a WHERE { ?a ops:dependsOn/ops:name ?n . <https://ograph.dev/id/app/x> ?p ?o ").unwrap_err().to_string();
+        assert!(!err.contains("must be escaped"), "{err}");
+        assert!(super::parse(r"SELECT ?a WHERE { id:app\/payments-api ops:alias ?a }").is_ok());
     }
 
     #[test]

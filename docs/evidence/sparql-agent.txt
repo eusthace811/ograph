@@ -1,0 +1,145 @@
+model openai/gpt-5.6-terra, 22 questions x 3, skill skills/ograph
+Q1  recipe PASS  11.8 s  Which applications depend on ledger-db, directly or indirectly?
+Q1  recipe PASS  14.0 s  Which applications depend on ledger-db, directly or indirectly?
+Q1  recipe PASS  13.5 s  Which applications depend on ledger-db, directly or indirectly?
+Q2  recipe PASS  14.3 s  Which incidents are still open?
+Q2  recipe PASS  17.4 s  Which incidents are still open?
+Q2  recipe PASS  11.3 s  Which incidents are still open?
+Q3  recipe FAIL  18.2 s  Which application is the top-ranked root-cause candidate for INC-5377?
+       got [('1', 'ledger-db', '0.9444'), ('2', 'payments-api', '0.9295'), ('3', 'checkout', '0.9')] want [('ledger-db',)]
+Q3  recipe PASS  16.7 s  Which application is the top-ranked root-cause candidate for INC-5377?
+Q3  recipe FAIL  14.9 s  Which application is the top-ranked root-cause candidate for INC-5377?
+       got [('1', 'ledger-db', '0.9444'), ('2', 'payments-api', '0.9295'), ('3', 'checkout', '0.9')] want [('ledger-db',)]
+Q4  recipe PASS  16.4 s  Which vendors does payments-api use?
+Q4  recipe PASS  14.0 s  Which vendors does payments-api use?
+Q4  recipe PASS  14.1 s  Which vendors does payments-api use?
+Q5  novel  PASS  10.5 s  Which applications does checkout depend on directly?
+Q5  novel  PASS  10.5 s  Which applications does checkout depend on directly?
+Q5  novel  PASS  12.0 s  Which applications does checkout depend on directly?
+Q6  novel  PASS  20.0 s  Which business processes would be affected if ledger-db failed? Count 
+Q6  novel  PASS  96.6 s  Which business processes would be affected if ledger-db failed? Count 
+Q6  novel  PASS  16.7 s  Which business processes would be affected if ledger-db failed? Count 
+Q7  novel  PASS  18.5 s  Which applications depend on no other application?
+Q7  novel  PASS  19.8 s  Which applications depend on no other application?
+Q7  novel  PASS  13.3 s  Which applications depend on no other application?
+Q8  novel  PASS  14.4 s  What are all the aliases of payments-api?
+Q8  novel  PASS  17.3 s  What are all the aliases of payments-api?
+Q8  novel  PASS  14.6 s  What are all the aliases of payments-api?
+Q9  novel  PASS  10.9 s  Which application is also known as "finder"?
+Q9  novel  PASS  14.9 s  Which application is also known as "finder"?
+Q9  novel  PASS  14.5 s  Which application is also known as "finder"?
+Q10 novel  PASS  35.2 s  Which vendors are used by checkout or by any application checkout depe
+Q10 novel  PASS  24.7 s  Which vendors are used by checkout or by any application checkout depe
+Q10 novel  PASS  92.9 s  Which vendors are used by checkout or by any application checkout depe
+Q11 novel  PASS  15.9 s  What was the mitigation for the incident titled "Search timeouts"?
+Q11 novel  PASS  16.6 s  What was the mitigation for the incident titled "Search timeouts"?
+Q11 novel  PASS  15.7 s  What was the mitigation for the incident titled "Search timeouts"?
+Q12 novel  PASS  15.8 s  How many alerts are there of each severity? Give the severity and the 
+Q12 novel  PASS  20.4 s  How many alerts are there of each severity? Give the severity and the 
+Q12 novel  PASS  13.7 s  How many alerts are there of each severity? Give the severity and the 
+Q13 novel  PASS  26.0 s  Which deployments (application and version) happened in the hour befor
+Q13 novel  PASS  24.2 s  Which deployments (application and version) happened in the hour befor
+Q13 novel  PASS  22.3 s  Which deployments (application and version) happened in the hour befor
+Q14 novel  PASS  19.2 s  Which applications had a config change in November 2026?
+Q14 novel  PASS  25.0 s  Which applications had a config change in November 2026?
+Q14 novel  PASS  19.8 s  Which applications had a config change in November 2026?
+Q15 novel  PASS  19.2 s  Which application has the most events, counting deployments, config ch
+Q15 novel  PASS  25.4 s  Which application has the most events, counting deployments, config ch
+Q15 novel  PASS  18.3 s  Which application has the most events, counting deployments, config ch
+Q16 novel  PASS  18.2 s  Which metric anomalies happened on applications that support the "card
+Q16 novel  PASS  19.8 s  Which metric anomalies happened on applications that support the "card
+Q16 novel  PASS  19.1 s  Which metric anomalies happened on applications that support the "card
+Q17 novel  PASS  19.5 s  Which applications use a vendor that appears in a news item?
+Q17 novel  PASS  27.2 s  Which applications use a vendor that appears in a news item?
+Q17 novel  PASS  28.2 s  Which applications use a vendor that appears in a news item?
+Q18 novel  PASS  21.5 s  Which incidents happened on an application that has at least one alias
+Q18 novel  PASS  17.0 s  Which incidents happened on an application that has at least one alias
+Q18 novel  PASS  22.6 s  Which incidents happened on an application that has at least one alias
+Q19 novel  PASS  16.2 s  Which applications have never had an alert?
+Q19 novel  PASS  18.0 s  Which applications have never had an alert?
+Q19 novel  PASS  15.8 s  Which applications have never had an alert?
+Q20 novel  PASS  18.6 s  Which resolved incident took the longest from opening to resolution?
+Q20 novel  PASS  25.0 s  Which resolved incident took the longest from opening to resolution?
+Q20 novel  PASS  21.7 s  Which resolved incident took the longest from opening to resolution?
+Q21 novel  PASS  14.8 s  For each incident, which application is its rank-1 root-cause candidat
+Q21 novel  PASS  18.1 s  For each incident, which application is its rank-1 root-cause candidat
+Q21 novel  PASS  16.8 s  For each incident, which application is its rank-1 root-cause candidat
+Q22 novel  PASS  35.2 s  Which alerts fired on applications that INC-5377's application depends
+Q22 novel  PASS  39.7 s  Which alerts fired on applications that INC-5377's application depends
+Q22 novel  PASS  33.4 s  Which alerts fired on applications that INC-5377's application depends
+recipe: 10/12 correct (0.83)
+novel: 54/54 correct (1.00)
+all: 64/66 correct (0.97)
+
+model openai/gpt-5.6-terra, 22 questions x 3, no skill
+Q1  recipe PASS  27.5 s  Which applications depend on ledger-db, directly or indirectly?
+Q1  recipe PASS  22.1 s  Which applications depend on ledger-db, directly or indirectly?
+Q1  recipe PASS  20.6 s  Which applications depend on ledger-db, directly or indirectly?
+Q2  recipe PASS  12.1 s  Which incidents are still open?
+Q2  recipe PASS  16.2 s  Which incidents are still open?
+Q2  recipe PASS  11.8 s  Which incidents are still open?
+Q3  recipe PASS  29.5 s  Which application is the top-ranked root-cause candidate for INC-5377?
+Q3  recipe PASS  17.9 s  Which application is the top-ranked root-cause candidate for INC-5377?
+Q3  recipe PASS  33.5 s  Which application is the top-ranked root-cause candidate for INC-5377?
+Q4  recipe PASS  16.0 s  Which vendors does payments-api use?
+Q4  recipe PASS  20.9 s  Which vendors does payments-api use?
+Q4  recipe PASS  20.6 s  Which vendors does payments-api use?
+Q5  novel  PASS  19.5 s  Which applications does checkout depend on directly?
+Q5  novel  PASS  12.8 s  Which applications does checkout depend on directly?
+Q5  novel  PASS  20.6 s  Which applications does checkout depend on directly?
+Q6  novel  PASS  18.9 s  Which business processes would be affected if ledger-db failed? Count 
+Q6  novel  PASS  31.0 s  Which business processes would be affected if ledger-db failed? Count 
+Q6  novel  PASS  20.0 s  Which business processes would be affected if ledger-db failed? Count 
+Q7  novel  PASS  20.3 s  Which applications depend on no other application?
+Q7  novel  PASS  14.6 s  Which applications depend on no other application?
+Q7  novel  PASS  12.7 s  Which applications depend on no other application?
+Q8  novel  FAIL   8.3 s  What are all the aliases of payments-api?
+       final query failed: ograph: error at 3:11: expected OPTIONAL: the / in id:app/payments-api must be escaped, as id:app\/payments-api, or use the full IRI
+Q8  novel  PASS  21.7 s  What are all the aliases of payments-api?
+Q8  novel  PASS  14.7 s  What are all the aliases of payments-api?
+Q9  novel  PASS  13.5 s  Which application is also known as "finder"?
+Q9  novel  PASS  16.1 s  Which application is also known as "finder"?
+Q9  novel  PASS  13.7 s  Which application is also known as "finder"?
+Q10 novel  PASS  31.1 s  Which vendors are used by checkout or by any application checkout depe
+Q10 novel  PASS  28.3 s  Which vendors are used by checkout or by any application checkout depe
+Q10 novel  PASS  23.9 s  Which vendors are used by checkout or by any application checkout depe
+Q11 novel  PASS  15.6 s  What was the mitigation for the incident titled "Search timeouts"?
+Q11 novel  PASS  23.8 s  What was the mitigation for the incident titled "Search timeouts"?
+Q11 novel  PASS  18.5 s  What was the mitigation for the incident titled "Search timeouts"?
+Q12 novel  FAIL  16.9 s  How many alerts are there of each severity? Give the severity and the 
+       got [('SEV1', '5'), ('SEV2', '6'), ('SEV3', '5'), ('SEV4', '5')] want [('SEV1', '4'), ('SEV3', '4')]
+Q12 novel  PASS  21.1 s  How many alerts are there of each severity? Give the severity and the 
+Q12 novel  PASS  20.1 s  How many alerts are there of each severity? Give the severity and the 
+Q13 novel  PASS  30.0 s  Which deployments (application and version) happened in the hour befor
+Q13 novel  PASS  49.2 s  Which deployments (application and version) happened in the hour befor
+Q13 novel  PASS  37.9 s  Which deployments (application and version) happened in the hour befor
+Q14 novel  PASS  57.2 s  Which applications had a config change in November 2026?
+Q14 novel  PASS  30.8 s  Which applications had a config change in November 2026?
+Q14 novel  PASS  58.2 s  Which applications had a config change in November 2026?
+Q15 novel  PASS  62.5 s  Which application has the most events, counting deployments, config ch
+Q15 novel  PASS  36.1 s  Which application has the most events, counting deployments, config ch
+Q15 novel  PASS  41.8 s  Which application has the most events, counting deployments, config ch
+Q16 novel  PASS  22.3 s  Which metric anomalies happened on applications that support the "card
+Q16 novel  PASS  32.6 s  Which metric anomalies happened on applications that support the "card
+Q16 novel  PASS  29.9 s  Which metric anomalies happened on applications that support the "card
+Q17 novel  PASS  26.5 s  Which applications use a vendor that appears in a news item?
+Q17 novel  PASS  24.5 s  Which applications use a vendor that appears in a news item?
+Q17 novel  PASS  25.0 s  Which applications use a vendor that appears in a news item?
+Q18 novel  PASS  23.1 s  Which incidents happened on an application that has at least one alias
+Q18 novel  PASS  30.7 s  Which incidents happened on an application that has at least one alias
+Q18 novel  PASS  24.8 s  Which incidents happened on an application that has at least one alias
+Q19 novel  PASS  31.4 s  Which applications have never had an alert?
+Q19 novel  PASS  23.2 s  Which applications have never had an alert?
+Q19 novel  PASS  29.1 s  Which applications have never had an alert?
+Q20 novel  PASS  22.8 s  Which resolved incident took the longest from opening to resolution?
+Q20 novel  PASS  19.4 s  Which resolved incident took the longest from opening to resolution?
+Q20 novel  PASS  22.7 s  Which resolved incident took the longest from opening to resolution?
+Q21 novel  PASS  28.4 s  For each incident, which application is its rank-1 root-cause candidat
+Q21 novel  PASS  23.8 s  For each incident, which application is its rank-1 root-cause candidat
+Q21 novel  PASS  31.4 s  For each incident, which application is its rank-1 root-cause candidat
+Q22 novel  PASS  43.8 s  Which alerts fired on applications that INC-5377's application depends
+Q22 novel  PASS  31.7 s  Which alerts fired on applications that INC-5377's application depends
+Q22 novel  PASS  45.8 s  Which alerts fired on applications that INC-5377's application depends
+recipe: 12/12 correct (1.00)
+novel: 52/54 correct (0.96)
+all: 64/66 correct (0.97)
