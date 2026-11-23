@@ -9,8 +9,11 @@ pub mod drain;
 pub mod records;
 pub mod signals;
 
-use crate::model::Batch;
+use crate::model::{Batch, EntityRef, EvidenceRef, Extraction, Object, lit, obj};
+use crate::vocab::{RDF_TYPE, evt, ops};
 use serde::Deserialize;
+use serde_json::value::RawValue;
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 /// One configured input. The order of this enum is the harvest order.
@@ -165,20 +168,26 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
 /// Seconds, milliseconds, microseconds or nanoseconds since the epoch (number or numeric string), or RFC 3339 / ISO 8601
 /// with any fraction (cut to milliseconds) and any offset (no offset means UTC).
 pub fn parse_time(v: &serde_json::Value) -> Option<i64> {
-    let from_num = |n: f64| {
-        let scale = match n.abs() {
-            x if x > 1e17 => 1e-6,
-            x if x > 1e14 => 1e-3,
-            x if x > 1e12 => 1.0,
-            _ => 1000.0,
-        };
-        Some((n * scale).round() as i64)
-    };
     match v {
-        serde_json::Value::Number(n) => from_num(n.as_f64()?),
-        serde_json::Value::String(s) => s.parse::<f64>().ok().map_or_else(|| parse_iso(s), from_num),
+        serde_json::Value::Number(n) => epoch_ms(n.as_f64()?),
+        serde_json::Value::String(s) => parse_time_str(s),
         _ => None,
     }
+}
+
+/// [`parse_time`] of a JSON string.
+pub fn parse_time_str(s: &str) -> Option<i64> {
+    s.parse::<f64>().ok().map_or_else(|| parse_iso(s), epoch_ms)
+}
+
+fn epoch_ms(n: f64) -> Option<i64> {
+    let scale = match n.abs() {
+        x if x > 1e17 => 1e-6,
+        x if x > 1e14 => 1e-3,
+        x if x > 1e12 => 1.0,
+        _ => 1000.0,
+    };
+    Some((n * scale).round() as i64)
 }
 
 pub fn parse_iso(s: &str) -> Option<i64> {
@@ -193,6 +202,34 @@ pub fn parse_iso(s: &str) -> Option<i64> {
     };
     let dt: oxsdatatypes::DateTime = format!("{main}{zone}").parse().ok()?;
     crate::term::millis_of(dt.adjust(Some(oxsdatatypes::TimezoneOffset::UTC))?)
+}
+
+pub fn app(name: &str) -> Object {
+    Object::Entity(EntityRef::Provisional { class: ops::APPLICATION, name: name.to_owned() })
+}
+
+/// The facts every event carries. `details` go between its time and its value.
+pub struct Event<'a> {
+    pub class: &'a str,
+    pub on: &'a str,
+    pub at: i64,
+    pub signal: &'a str,
+    pub severity: &'a str,
+    pub value: Option<f64>,
+}
+
+pub fn event<const N: usize>(b: &mut Batch, s: &EntityRef, e: Event<'_>, details: [(&str, Object); N], ev: &EvidenceRef, m: &Extraction) {
+    b.add(s.clone(), RDF_TYPE, obj(oxrdf::NamedNode::new_unchecked(e.class)), ev, m);
+    b.add(s.clone(), evt::ON, app(e.on), ev, m);
+    b.add(s.clone(), evt::AT, dt(e.at), ev, m);
+    for (p, o) in details {
+        b.add(s.clone(), p, o, ev, m);
+    }
+    if let Some(v) = e.value {
+        b.add(s.clone(), evt::VALUE, lit(crate::term::decimal(v)), ev, m);
+    }
+    b.add(s.clone(), evt::SIGNAL, lit(e.signal), ev, m);
+    b.add(s.clone(), evt::SEVERITY, lit(e.severity), ev, m);
 }
 
 pub fn dt(ms: i64) -> crate::model::Object {
@@ -212,32 +249,32 @@ pub fn json_records(path: &Path) -> anyhow::Result<Vec<serde_json::Value>> {
     text.lines().filter(|l| !l.trim().is_empty()).map(|l| Ok(serde_json::from_str(l)?)).collect()
 }
 
-/// The fields `keys` of each JSON line (or of each element of one JSON array), absent where a
-/// record lacks one or is not an object.
-pub fn json_records_fields<const N: usize>(path: &Path, keys: [&str; N]) -> anyhow::Result<Vec<[Option<serde_json::Value>; N]>> {
-    let text = std::fs::read_to_string(path)?;
-    let t = text.trim_start();
-    if t.starts_with('[') || t.starts_with('{') && !t.contains('\n') {
-        let all: Vec<serde_json::Value> = if t.starts_with('[') { serde_json::from_str(t)? } else { vec![serde_json::from_str(t)?] };
-        return Ok(all.iter().map(|v| keys.map(|k| v.get(k).cloned())).collect());
+/// The records of a file of JSON lines, or of one JSON array, as raw JSON text.
+pub fn json_record_texts(text: &str) -> serde_json::Result<Vec<&str>> {
+    if text.trim_start().starts_with('[') {
+        let all: Vec<&RawValue> = serde_json::from_str(text)?;
+        return Ok(all.into_iter().map(|r| r.get()).collect());
     }
-    text.lines().filter(|l| !l.trim().is_empty()).map(|l| Ok(json_fields(l, keys)?)).collect()
+    Ok(text.lines().filter(|l| !l.trim().is_empty()).collect())
 }
 
-/// The fields `keys` of one JSON value, as `v.get(key)` would give them, without building the
-/// value's other fields or a map. Anything the fast path rejects (not an object, escaped keys,
-/// bad JSON) is parsed whole, so results and errors match `serde_json::from_str`.
-pub fn json_fields<const N: usize>(line: &str, keys: [&str; N]) -> serde_json::Result<[Option<serde_json::Value>; N]> {
+/// The fields `keys` of one JSON value as raw JSON text, without building the value: absent
+/// where the value lacks one or is not an object, the last one where a key repeats. Errors
+/// match `serde_json::from_str`, except that a listed field's number is not range-checked.
+pub fn json_fields<'a, const N: usize>(text: &'a str, keys: [&str; N]) -> serde_json::Result<[Option<&'a RawValue>; N]> {
     use serde::de::{DeserializeSeed, Deserializer, IgnoredAny, MapAccess, Visitor};
+    // A bare `Cow` key always deserializes owned; `borrow` keeps unescaped keys in the text.
+    #[derive(serde::Deserialize)]
+    struct Key<'a>(#[serde(borrow)] Cow<'a, str>);
     struct Fields<'k, const N: usize>(&'k [&'k str; N]);
     impl<'de, const N: usize> Visitor<'de> for Fields<'_, N> {
-        type Value = [Option<serde_json::Value>; N];
+        type Value = [Option<&'de RawValue>; N];
         fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             f.write_str("a JSON object")
         }
         fn visit_map<A: MapAccess<'de>>(self, mut a: A) -> Result<Self::Value, A::Error> {
-            let mut out = std::array::from_fn(|_| None);
-            while let Some(k) = a.next_key::<&'de str>()? {
+            let mut out = [None; N];
+            while let Some(Key(k)) = a.next_key()? {
                 match self.0.iter().position(|x| *x == k) {
                     Some(i) => out[i] = Some(a.next_value()?),
                     None => drop(a.next_value::<IgnoredAny>()?),
@@ -247,18 +284,38 @@ pub fn json_fields<const N: usize>(line: &str, keys: [&str; N]) -> serde_json::R
         }
     }
     impl<'de, const N: usize> DeserializeSeed<'de> for Fields<'_, N> {
-        type Value = [Option<serde_json::Value>; N];
+        type Value = [Option<&'de RawValue>; N];
         fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
             d.deserialize_map(self)
         }
     }
-    let mut de = serde_json::Deserializer::from_str(line);
+    let mut de = serde_json::Deserializer::from_str(text);
     match Fields(&keys).deserialize(&mut de).and_then(|v| de.end().map(|()| v)) {
         Ok(v) => Ok(v),
-        Err(_) => {
-            let v: serde_json::Value = serde_json::from_str(line)?;
-            Ok(keys.map(|k| v.get(k).cloned()))
-        }
+        // Valid JSON that is not an object has no fields; anything else is the parse error.
+        Err(_) => serde_json::from_str::<IgnoredAny>(text).map(|_| [None; N]),
+    }
+}
+
+/// A raw JSON field as a string, or nothing if it is not one.
+pub fn raw_str(v: &RawValue) -> Option<Cow<'_, str>> {
+    let s = v.get();
+    if !s.starts_with('"') {
+        return None;
+    }
+    serde_json::from_str(s).map(Cow::Borrowed).or_else(|_| serde_json::from_str(s).map(Cow::Owned)).ok()
+}
+
+/// A raw JSON field as a number, or nothing if it is not one.
+pub fn raw_f64(v: &RawValue) -> Option<f64> {
+    serde_json::from_str(v.get()).ok()
+}
+
+/// [`parse_time`] of a raw JSON field.
+pub fn raw_time(v: &RawValue) -> Option<i64> {
+    match raw_str(v) {
+        Some(s) => parse_time_str(&s),
+        None => epoch_ms(raw_f64(v)?),
     }
 }
 

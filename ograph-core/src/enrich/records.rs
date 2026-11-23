@@ -1,15 +1,11 @@
 //! Record sources: incidents, alerts, deployments, config changes, ownership and news. Each
 //! record becomes one event node whose evidence is `file#line`.
 
-use super::{dt, json_records, parse_time, str_field};
+use super::{Event, app, dt, event, json_records, parse_time, str_field};
 use crate::model::{Batch, EntityRef, Extraction, Object, entity, known, lit, obj, slug};
 use crate::vocab::{RDF_TYPE, evt, inc, ops};
 use oxrdf::NamedNode;
 use std::path::Path;
-
-fn app(name: &str) -> Object {
-    Object::Entity(EntityRef::Provisional { class: ops::APPLICATION, name: name.to_owned() })
-}
 
 fn class(c: &str) -> Object {
     obj(NamedNode::new_unchecked(c))
@@ -75,18 +71,13 @@ pub fn alerts(path: &Path, key: &str) -> anyhow::Result<Batch> {
         let Some(t) = ["startsAt", "at", "time"].iter().find_map(|f| a.get(*f).and_then(parse_time)) else { continue };
         let name = str_field(labels, &["alertname", "name"]).unwrap_or("alert");
         let s = known("ev", &format!("alert/{}/{}/{t}", slug(svc), slug(name)));
-        b.add(s.clone(), RDF_TYPE, class(evt::ALERT), &ev, &m);
-        b.add(s.clone(), evt::ON, app(svc), &ev, &m);
-        b.add(s.clone(), evt::AT, dt(t), &ev, &m);
-        b.add(s.clone(), evt::SUMMARY, lit(name), &ev, &m);
-        b.add(s.clone(), evt::SIGNAL, lit("ALERT"), &ev, &m);
-        let sev = match str_field(labels, &["severity"]).unwrap_or("").to_lowercase().as_str() {
+        let severity = match str_field(labels, &["severity"]).unwrap_or("").to_lowercase().as_str() {
             "critical" | "page" | "sev1" => "SEV1",
             "error" | "major" | "sev2" => "SEV2",
             "warning" | "minor" | "sev3" => "SEV3",
             _ => "SEV4",
         };
-        b.add(s, evt::SEVERITY, lit(sev), &ev, &m);
+        event(&mut b, &s, Event { class: evt::ALERT, on: svc, at: t, signal: "ALERT", severity, value: None }, [(evt::SUMMARY, lit(name))], &ev, &m);
     }
     Ok(b)
 }
@@ -99,12 +90,7 @@ pub fn deployments(path: &Path, key: &str) -> anyhow::Result<Batch> {
         let (Some(svc), Some(t)) = (str_field(r, &["service", "app"]), ["at", "time", "finished_at"].iter().find_map(|f| r.get(*f).and_then(parse_time))) else { continue };
         let version = str_field(r, &["version", "tag", "commit"]).unwrap_or("unknown");
         let s = known("ev", &format!("deploy/{}/{}/{t}", slug(svc), slug(version)));
-        b.add(s.clone(), RDF_TYPE, class(evt::DEPLOYMENT), &ev, &m);
-        b.add(s.clone(), evt::ON, app(svc), &ev, &m);
-        b.add(s.clone(), evt::AT, dt(t), &ev, &m);
-        b.add(s.clone(), evt::VERSION, lit(version), &ev, &m);
-        b.add(s.clone(), evt::SIGNAL, lit("DEPLOYMENT"), &ev, &m);
-        b.add(s, evt::SEVERITY, lit("SEV4"), &ev, &m);
+        event(&mut b, &s, Event { class: evt::DEPLOYMENT, on: svc, at: t, signal: "DEPLOYMENT", severity: "SEV4", value: None }, [(evt::VERSION, lit(version))], &ev, &m);
     }
     Ok(b)
 }
@@ -117,12 +103,7 @@ pub fn config_changes(path: &Path, key: &str) -> anyhow::Result<Batch> {
         let (Some(svc), Some(t)) = (str_field(r, &["service", "app"]), ["at", "time"].iter().find_map(|f| r.get(*f).and_then(parse_time))) else { continue };
         let what = str_field(r, &["key", "setting", "summary"]).unwrap_or("config");
         let s = known("ev", &format!("config/{}/{}/{t}", slug(svc), slug(what)));
-        b.add(s.clone(), RDF_TYPE, class(evt::CONFIG_CHANGE), &ev, &m);
-        b.add(s.clone(), evt::ON, app(svc), &ev, &m);
-        b.add(s.clone(), evt::AT, dt(t), &ev, &m);
-        b.add(s.clone(), evt::SUMMARY, lit(what), &ev, &m);
-        b.add(s.clone(), evt::SIGNAL, lit("CONFIG_CHANGE"), &ev, &m);
-        b.add(s, evt::SEVERITY, lit("SEV4"), &ev, &m);
+        event(&mut b, &s, Event { class: evt::CONFIG_CHANGE, on: svc, at: t, signal: "CONFIG_CHANGE", severity: "SEV4", value: None }, [(evt::SUMMARY, lit(what))], &ev, &m);
     }
     Ok(b)
 }

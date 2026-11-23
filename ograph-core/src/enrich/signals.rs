@@ -5,17 +5,16 @@
 //! Detectors are online: each point is judged against a trailing baseline, never against a
 //! label or a known incident time.
 
-use super::{Detect, dt, json_fields, json_records_fields, parse_time};
 use super::drain::Drain;
-use crate::model::{Batch, EntityRef, Extraction, Object, known, lit, obj, slug};
-use crate::vocab::{RDF_TYPE, evt, ops};
+use super::{Detect, Event, app, dt, event, json_fields, json_record_texts, parse_time_str, raw_f64, raw_str, raw_time};
+use crate::model::{Batch, EntityRef, Extraction, known, lit, slug};
+use crate::vocab::{evt, ops};
 use oxrdf::{Literal, NamedNode};
-use std::collections::{BTreeMap, HashMap};
+use rustc_hash::FxHashMap;
+use serde_json::value::RawValue;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::path::Path;
-
-fn app(name: &str) -> Object {
-    Object::Entity(EntityRef::Provisional { class: ops::APPLICATION, name: name.to_owned() })
-}
 
 fn severity(score: f64) -> &'static str {
     if score >= 0.8 {
@@ -123,7 +122,7 @@ pub fn metrics(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let mut cols: Vec<Vec<(i64, f64, usize)>> = vec![Vec::new(); header.len()];
     for (row, line) in lines.enumerate() {
         let cells: Vec<&str> = line.split(',').collect();
-        let Some(t) = cells.get(tcol).and_then(|c| parse_time(&serde_json::Value::String(c.trim().to_owned()))) else { continue };
+        let Some(t) = cells.get(tcol).and_then(|c| parse_time_str(c.trim())) else { continue };
         for (c, cell) in cells.iter().enumerate() {
             if c != tcol
                 && let Some(col) = cols.get_mut(c)
@@ -148,14 +147,8 @@ pub fn metrics(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
             let ev = b.record(format!("{key}:{}", e.first_row));
             let s = known("ev", &format!("metric/{}/{}/{}", slug(svc), slug(metric), e.start_ms));
             let st = strength(e.peak);
-            b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::METRIC_ANOMALY)), &ev, &m);
-            b.add(s.clone(), evt::ON, app(svc), &ev, &m);
-            b.add(s.clone(), evt::AT, dt(e.start_ms), &ev, &m);
-            b.add(s.clone(), evt::UNTIL, dt(e.end_ms), &ev, &m);
-            b.add(s.clone(), evt::METRIC, lit(metric), &ev, &m);
-            b.add(s.clone(), evt::VALUE, lit(crate::term::decimal(e.peak)), &ev, &m);
-            b.add(s.clone(), evt::SIGNAL, lit("METRIC_ANOMALY"), &ev, &m);
-            b.add(s, evt::SEVERITY, lit(severity(st)), &ev, &m);
+            let details = [(evt::UNTIL, dt(e.end_ms)), (evt::METRIC, lit(metric))];
+            event(&mut b, &s, Event { class: evt::METRIC_ANOMALY, on: svc, at: e.start_ms, signal: "METRIC_ANOMALY", severity: severity(st), value: Some(e.peak) }, details, &ev, &m);
         }
     }
     Ok(b)
@@ -178,9 +171,9 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     for line in text.lines() {
         let (svc, t, msg, level) = if line.trim_start().starts_with('{') {
             let Ok(f) = json_fields(line, ["ts", "timestamp", "time", "service", "container_name", "app", "message", "msg", "log", "level", "severity"]) else { continue };
-            let Some(t) = f[0..3].iter().find_map(|v| v.as_ref().and_then(parse_time)) else { continue };
-            let svc = first_str(&f[3..6]).unwrap_or(&stem).to_owned();
-            (svc, t, first_str(&f[6..9]).unwrap_or("").to_owned(), first_str(&f[9..11]).map(str::to_lowercase))
+            let Some(t) = f[0..3].iter().flatten().find_map(|v| raw_time(v)) else { continue };
+            let svc = first_str(&f[3..6]).map_or_else(|| stem.clone(), Cow::into_owned);
+            (svc, t, first_str(&f[6..9]).map(Cow::into_owned).unwrap_or_default(), first_str(&f[9..11]).map(|l| l.to_lowercase()))
         } else {
             let (Some(t), rest) = super::drain::leading_timestamp(line) else { continue };
             (stem.clone(), t * 1000, rest.to_owned(), None)
@@ -215,14 +208,9 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
                 let ratio = count as f64 / prior.max(0.2);
                 let ev = b.record(format!("{key}@{}", first));
                 let s = known("ev", &format!("log/{}/{}/{first}", slug(&svc), &hex::encode(crate::gateway::sha2_hash(&text))[..12]));
-                b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::LOG_ERROR)), &ev, &m);
-                b.add(s.clone(), evt::ON, app(&svc), &ev, &m);
-                b.add(s.clone(), evt::AT, dt(first), &ev, &m);
-                b.add(s.clone(), evt::TEMPLATE, lit(text.chars().take(300).collect::<String>()), &ev, &m);
-                b.add(s.clone(), evt::COUNT, lit(Literal::from(count as i64)), &ev, &m);
-                b.add(s.clone(), evt::VALUE, lit(crate::term::decimal(ratio * 5.0)), &ev, &m);
-                b.add(s.clone(), evt::SIGNAL, lit("LOG_ERROR"), &ev, &m);
-                b.add(s, evt::SEVERITY, lit(severity(strength(ratio * 5.0))), &ev, &m);
+                let e = Event { class: evt::LOG_ERROR, on: &svc, at: first, signal: "LOG_ERROR", severity: severity(strength(ratio * 5.0)), value: Some(ratio * 5.0) };
+                let details = [(evt::TEMPLATE, lit(text.chars().take(300).collect::<String>())), (evt::COUNT, lit(Literal::from(count as i64)))];
+                event(&mut b, &s, e, details, &ev, &m);
             }
         }
     }
@@ -230,12 +218,12 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
 }
 
 /// The first of `fields` that is a string.
-fn first_str(fields: &[Option<serde_json::Value>]) -> Option<&str> {
-    fields.iter().find_map(|v| v.as_ref()?.as_str())
+fn first_str<'a>(fields: &[Option<&'a RawValue>]) -> Option<Cow<'a, str>> {
+    fields.iter().flatten().find_map(|v| raw_str(v))
 }
 
 struct Span {
-    service: String,
+    service: u32,
     start: i64,
     dur_us: f64,
     error: bool,
@@ -246,47 +234,54 @@ struct Span {
 /// `service`/`serviceName`, `start_ms`/`startTimeMillis`, `duration_us`/`duration`, `status`/`statusCode`.
 pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let mut b = Batch::new("traces", key, "span-stats-v1");
-    let mut spans = Vec::new();
-    let mut by_id: HashMap<String, usize> = HashMap::new();
-    let mut parents = Vec::new();
+    let text = std::fs::read_to_string(path)?;
+    let records = json_record_texts(&text)?;
+    let mut services: Vec<Cow<str>> = Vec::new();
+    let mut service_ids: FxHashMap<Cow<str>, u32> = FxHashMap::default();
+    let mut spans = Vec::with_capacity(records.len());
+    let mut by_id: FxHashMap<Cow<str>, usize> = FxHashMap::with_capacity_and_hasher(records.len(), Default::default());
+    let mut parents = Vec::with_capacity(records.len());
     let keys = ["service", "serviceName", "start_ms", "startTimeMillis", "duration_us", "duration", "status", "statusCode", "span_id", "spanID", "parent_span_id", "parentSpanID"];
-    for (i, f) in json_records_fields(path, keys)?.iter().enumerate() {
-        let (Some(svc), Some(start)) = (first_str(&f[0..2]), f[2..4].iter().find_map(|v| v.as_ref().and_then(parse_time))) else { continue };
-        let dur = f[4..6].iter().find_map(|v| v.as_ref().and_then(|x| x.as_f64().or_else(|| x.as_str()?.parse().ok()))).unwrap_or(0.0);
-        let status = f[6].as_ref().or(f[7].as_ref());
-        let error = match status {
-            Some(serde_json::Value::Number(n)) => n.as_i64().unwrap_or(0) == 2 || n.as_i64().unwrap_or(0) >= 400,
-            Some(serde_json::Value::String(s)) => matches!(s.to_lowercase().as_str(), "error" | "2" | "status_code_error"),
-            _ => false,
-        };
+    for (i, record) in records.into_iter().enumerate() {
+        let f = json_fields(record, keys)?;
+        let (Some(svc), Some(start)) = (first_str(&f[0..2]), f[2..4].iter().flatten().find_map(|v| raw_time(v))) else { continue };
+        let dur = f[4..6].iter().flatten().find_map(|v| raw_f64(v).or_else(|| raw_str(v)?.parse().ok())).unwrap_or(0.0);
+        let error = f[6].or(f[7]).is_some_and(|v| match raw_str(v) {
+            Some(s) => matches!(s.to_lowercase().as_str(), "error" | "2" | "status_code_error"),
+            None => serde_json::from_str::<i64>(v.get()).is_ok_and(|n| n == 2 || n >= 400),
+        });
         if let Some(id) = first_str(&f[8..10]) {
-            by_id.insert(id.to_owned(), spans.len());
+            by_id.insert(id, spans.len());
         }
-        parents.push(first_str(&f[10..12]).map(str::to_owned));
-        spans.push(Span { service: svc.to_owned(), start, dur_us: dur, error, row: i + 1 });
+        parents.push(first_str(&f[10..12]));
+        let service = *service_ids.entry(svc).or_insert_with_key(|s| {
+            services.push(s.clone());
+            services.len() as u32 - 1
+        });
+        spans.push(Span { service, start, dur_us: dur, error, row: i + 1 });
     }
     let rule = Extraction::Rule { extractor: "span-stats".into() };
-    let mut edges: BTreeMap<(String, String), usize> = BTreeMap::new();
+    let mut edges: BTreeMap<(&str, &str), usize> = BTreeMap::new();
     for (i, p) in parents.iter().enumerate() {
         if let Some(&j) = p.as_ref().and_then(|p| by_id.get(p))
             && spans[j].service != spans[i].service {
-                edges.entry((spans[j].service.clone(), spans[i].service.clone())).or_insert(spans[i].row);
+                edges.entry((&services[spans[j].service as usize], &services[spans[i].service as usize])).or_insert(spans[i].row);
             }
     }
     let inferred = Extraction::Rule { extractor: "span-parent:inferred".into() };
     for ((from, to), row) in edges {
         let ev = b.record(format!("{key}#{row}"));
         b.facts.push(crate::model::ProposedFact {
-            subject: EntityRef::Provisional { class: ops::APPLICATION, name: from },
+            subject: EntityRef::Provisional { class: ops::APPLICATION, name: from.to_owned() },
             predicate: NamedNode::new_unchecked(ops::DEPENDS_ON),
-            object: app(&to),
+            object: app(to),
             evidence: vec![ev],
             method: inferred.clone(),
         });
     }
-    let mut per: BTreeMap<String, BTreeMap<i64, Vec<usize>>> = BTreeMap::new();
+    let mut per: BTreeMap<&str, BTreeMap<i64, Vec<usize>>> = BTreeMap::new();
     for (i, s) in spans.iter().enumerate() {
-        per.entry(s.service.clone()).or_default().entry(s.start.div_euclid(60_000)).or_default().push(i);
+        per.entry(&services[s.service as usize]).or_default().entry(s.start.div_euclid(60_000)).or_default().push(i);
     }
     for (svc, minutes) in per {
         let stats: BTreeMap<i64, (usize, usize, f64, usize)> = minutes
@@ -316,13 +311,8 @@ pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
                 }
                 fired[k] = m + 5;
                 let ev = b.record(format!("{key}#{row}"));
-                let s = known("ev", &format!("trace/{}/{kind}/{t}", slug(&svc)));
-                b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(class)), &ev, &rule);
-                b.add(s.clone(), evt::ON, app(&svc), &ev, &rule);
-                b.add(s.clone(), evt::AT, dt(t), &ev, &rule);
-                b.add(s.clone(), evt::VALUE, lit(crate::term::decimal(score)), &ev, &rule);
-                b.add(s.clone(), evt::SIGNAL, lit(signal), &ev, &rule);
-                b.add(s, evt::SEVERITY, lit(severity(strength(score))), &ev, &rule);
+                let s = known("ev", &format!("trace/{}/{kind}/{t}", slug(svc)));
+                event(b, &s, Event { class, on: svc, at: t, signal, severity: severity(strength(score)), value: Some(score) }, [], &ev, &rule);
             };
             if errs >= 3 && rate >= d.trace_error_rate.max(3.0 * base_err) {
                 emit(&mut b, "failed", evt::TRACE_FAILED, "TRACE_FAILED", 5.0 * rate / base_err.max(0.01), 0);
