@@ -44,9 +44,9 @@ names, err = rows("SELECT ?s ?n WHERE { { ?s ops:name ?n } UNION { ?s inc:id ?n 
 if err: raise SystemExit(f"{demo} is not an ograph workspace: {err}")
 NAMES = dict(names)
 def cell(c):
-    # --json prints a double or float as a typed literal, an integer or decimal bare, and an
-    # unbound variable as null.
-    m = isinstance(c, str) and re.fullmatch(r'"(.*)"\^\^<http://www\.w3\.org/2001/XMLSchema#(?:double|float)>', c)
+    # --json prints a double as a typed literal, an integer or decimal bare, and an unbound
+    # variable as null. Other typed literals, xsd:float among them, compare as text.
+    m = isinstance(c, str) and re.fullmatch(r'"(.*)"\^\^<http://www\.w3\.org/2001/XMLSchema#double>', c)
     if not m: return NAMES.get(c, c)
     try: x = float(m[1]) + 0.0  # a double's own range; + 0.0 turns -0 into 0
     except ValueError: return c
