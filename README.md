@@ -13,6 +13,7 @@ New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md). Agents use the skill in [
 Install from source on Linux, macOS or Windows (Git Bash). ograph needs Rust 1.85+ and `ogrep` 0.2+ on `PATH`:
 
 ```sh
+cargo install --locked --git https://github.com/eusthace811/ogrep ogrep-cli   # ogrep, if you lack it
 ./x doctor          # checks cargo, the crate registry (Artifactory on a corporate network) and ogrep
 ./x install         # ~/.cargo/bin/ograph, or ~/bin/ograph.exe on Windows
 ./x install-skill   # the agent skill, into ~/.claude/skills and ~/.agents/skills

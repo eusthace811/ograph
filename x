@@ -103,7 +103,8 @@ check_ogrep() {
   local bin="${OGRAPH_OGREP:-ogrep}" version
   if ! version="$("$bin" --version 2>/dev/null)"; then
     echo "ogrep:         MISSING. ograph reads the service catalog with ogrep; without it every fact"
-    echo "               about a service is quarantined. Install ogrep 0.2+ and put it on PATH,"
+    echo "               about a service is quarantined. Install it with"
+    echo "                 cargo install --locked --git https://github.com/eusthace811/ogrep ogrep-cli"
     echo "               or set OGRAPH_OGREP=/path/to/ogrep."
     return 1
   fi

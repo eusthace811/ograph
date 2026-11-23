@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: ./x test
+        shell: bash
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup component add clippy
+      - run: ./x clippy --workspace --all-targets --locked -- -D warnings
+
+  demo:
+    name: Demo end to end (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: cargo install --locked --git https://github.com/eusthace811/ogrep ogrep-cli
+      - run: ./x install "$HOME/.cargo/bin"
+      - run: ./x doctor
+      - name: Harvest the demo and ask the four questions
+        working-directory: examples/demo
+        run: |
+          # Windows runners name it python, not python3.
+          "$(command -v python3 || command -v python)" generate.py
+          ograph harvest
+          ograph validate | grep -x '0 violations.*'
+          ograph before INC-5377
+          ograph chains INC-5377 | tee chains.txt
+          grep -q '1\. ledger-db' chains.txt
+          ograph similar INC-5377
+          ograph blast ledger-db

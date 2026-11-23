@@ -24,7 +24,13 @@ uses a registry for one run, and `./x vendor` prepares an offline build.
 ograph also needs `ogrep` 0.2 or newer on `PATH`. It reads the service catalog (Backstage,
 Compose, Kubernetes and Prometheus files), and only the catalog can create applications. Without
 it the harvest still runs, but every fact about a service is quarantined as "not in the catalog",
-so the questions have nothing to answer. `OGRAPH_OGREP=/path/to/ogrep` points at another binary.
+so the questions have nothing to answer. Install it from [its repository](https://github.com/eusthace811/ogrep):
+
+```bash
+cargo install --locked --git https://github.com/eusthace811/ogrep ogrep-cli
+```
+
+`OGRAPH_OGREP=/path/to/ogrep` points at another binary.
 
 ## 2. Try it on the demo
 
@@ -172,6 +178,6 @@ ograph ontology diff new.ttl    # before changing the ontology; BREAKING lines n
 | `unknown field ...` on any command | A typo in `.ograph/config.toml`. The message names the expected keys |
 | `the ontology declares no X (did you mean Y?)` | A misspelled name in a SPARQL query |
 | `verdict not recorded: the ontology refuses ...` | `.ograph/ontology.ttl` is older than the binary. Run `ograph ontology check` and update it |
-| `DEGRADED: ogrep not runnable` on the catalog line, and almost everything quarantined | `ogrep` is not on `PATH`; install it or set `OGRAPH_OGREP`, then harvest again |
+| `DEGRADED: ogrep not runnable` on the catalog line, and almost everything quarantined | `ogrep` is not on `PATH`; install it (section 1) or set `OGRAPH_OGREP`, then harvest again |
 | Windows: `running pi` fails in a harvest with `[llm.extract]` | npm installs pi as `pi.cmd`, which Windows starts only through `cmd`. Begin the command with `"cmd", "/C", "pi", ...` |
 | Windows: `./x install` says ograph.exe is still running | Stop `ograph serve` (Ctrl-C), or `taskkill //IM ograph.exe //F` |
