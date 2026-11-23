@@ -166,8 +166,8 @@ pub fn downstream(s: &Snapshot, ids: &Ids, app: Id, depth: usize) -> anyhow::Res
         let mut next = Vec::new();
         for x in frontier {
             for y in s.objects(x, ids.depends)? {
-                if !dist.contains_key(&y) {
-                    dist.insert(y, d);
+                if let std::collections::hash_map::Entry::Vacant(e) = dist.entry(y) {
+                    e.insert(d);
                     next.push(y);
                 }
             }
@@ -228,13 +228,12 @@ pub fn incident_anchor(s: &Snapshot, ids: &Ids, incident: Id) -> anyhow::Result<
 pub fn candidates(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::Result<(Id, i64, Vec<Signal>)> {
     let (app, t) = incident_anchor(s, ids, incident)?;
     let mut scope = downstream(s, ids, app, st.depth)?;
-    if st.ignore_dependencies {
-        if let Some(c) = s.iri(ops::APPLICATION)? {
+    if st.ignore_dependencies
+        && let Some(c) = s.iri(ops::APPLICATION)? {
             for a in s.subjects(ids.ty, c)? {
                 scope.entry(a).or_insert(1);
             }
         }
-    }
     let (from, to) = (term::time_id(t - st.window_s * 1000), term::time_id(t + st.after_s * 1000));
     let mut out = Vec::new();
     let mut names = FxHashMap::default();
@@ -329,7 +328,8 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
                 break;
             }
             let last = &cands[*path.last().unwrap()];
-            let close = st.link(last, "INCIDENT", t).max(1e-9);
+            // An event inside `after_s` closes as if it happened at the incident.
+            let close = st.link(last, "INCIDENT", t.max(last.at_ms)).max(1e-9);
             let conf = ((logsum + close.ln()) / path.len() as f64).exp();
             let gated = close >= st.min_confidence && conf >= st.min_confidence;
             // Equal confidence prefers the longer path: it explains more of the cascade.

@@ -20,16 +20,14 @@ pub fn lookup(s: &Snapshot, name: &str) -> anyhow::Result<Id> {
             return Ok(id);
         }
     }
-    if let (Some(p), Some(v)) = (s.iri(inc::ID)?, s.id(&oxrdf::Literal::new_simple_literal(name).into())?) {
-        if let Some(&i) = s.subjects(p, v)?.first() {
+    if let (Some(p), Some(v)) = (s.iri(inc::ID)?, s.id(&oxrdf::Literal::new_simple_literal(name).into())?)
+        && let Some(&i) = s.subjects(p, v)?.first() {
             return Ok(i);
         }
-    }
-    if let (Some(p), Some(v)) = (s.iri(ops::NAME)?, s.id(&oxrdf::Literal::new_simple_literal(name).into())?) {
-        if let Some(&i) = s.subjects(p, v)?.first() {
+    if let (Some(p), Some(v)) = (s.iri(ops::NAME)?, s.id(&oxrdf::Literal::new_simple_literal(name).into())?)
+        && let Some(&i) = s.subjects(p, v)?.first() {
             return Ok(i);
         }
-    }
     anyhow::bail!("nothing in the graph is called {name}")
 }
 
@@ -264,16 +262,22 @@ pub fn why(s: &Snapshot, node: &str) -> anyhow::Result<Provenance> {
         for q in s.quads([None, Some(fp), None], GraphSel::Union) {
             let [sub, _, o, _] = q?;
             let Some(text) = literal(s, o) else { continue };
-            if text.contains(&short) || text.contains(&me) {
-                if let Some(r) = s.object(sub, rp)?.and_then(|v| literal(s, v)) {
-                    if s.object(sub, ids_type(s)?)?.is_some_and(|c| literal(s, c).as_deref() == Some(harv::QUARANTINED)) {
+            if (mentions(&text, &short) || mentions(&text, &me))
+                && let Some(r) = s.object(sub, rp)?.and_then(|v| literal(s, v))
+                    && s.object(sub, ids_type(s)?)?.is_some_and(|c| literal(s, c).as_deref() == Some(harv::QUARANTINED)) {
                         quarantined.push((text, r));
                     }
-                }
-            }
         }
     }
     Ok(Provenance { node: vocab::compact(&me), facts, quarantined })
+}
+
+/// `text` names `node` as a whole term, so `id:app/cart` is not found in `id:app/cartservice`.
+fn mentions(text: &str, node: &str) -> bool {
+    let name_char = |c: char| c.is_alphanumeric() || matches!(c, '-' | '_' | '.' | '/' | '%');
+    text.match_indices(node).any(|(i, _)| {
+        !text[..i].ends_with(name_char) && !text[i + node.len()..].starts_with(name_char)
+    })
 }
 
 fn ids_type(s: &Snapshot) -> anyhow::Result<Id> {
@@ -333,4 +337,18 @@ pub fn news(s: &Snapshot, since_ms: Option<i64>) -> anyhow::Result<Vec<NewsHit>>
     }
     out.sort_by(|a, b| b.at.cmp(&a.at));
     Ok(out)
+}
+
+/// A duration such as `90`, `90s`, `10m`, `2h` or `1d`, in seconds.
+pub fn duration_s(s: &str) -> anyhow::Result<i64> {
+    let (num, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
+    let n: i64 = num.parse()?;
+    let scale = match unit {
+        "" | "s" => 1,
+        "m" => 60,
+        "h" => 3600,
+        "d" => 86_400,
+        _ => anyhow::bail!("unknown unit in {s}"),
+    };
+    n.checked_mul(scale).ok_or_else(|| anyhow::anyhow!("duration {s} is too long"))
 }

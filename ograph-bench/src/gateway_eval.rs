@@ -1,4 +1,4 @@
-//! Gateway gate: generated bad writes of 17 kinds mixed with good ones. Passes when no bad fact
+//! Gateway gate: generated bad writes of 18 kinds mixed with good ones. Passes when no bad fact
 //! reaches a harvest graph, every bad fact is quarantined with a reason, every good fact is
 //! committed, a full SHACL audit of the store is clean, and re-submitting writes nothing.
 
@@ -27,7 +27,7 @@ fn bad_fact_committed(store: &Store, b: &Batch) -> anyhow::Result<usize> {
     for r in rows {
         let (s, p, o) = (r[0].clone().unwrap(), r[1].clone().unwrap(), r[2].clone().unwrap());
         let last = b.facts.iter().rev().find(|f| matches!(&f.subject, EntityRef::Known(k) if oxrdf::Term::from(k.clone()) == s)).map(|f| f.predicate.clone());
-        let flagged = last.is_some_and(|lp| oxrdf::Term::from(lp) == p.clone().into());
+        let flagged = last.is_some_and(|lp| oxrdf::Term::from(lp) == p.clone());
         if flagged {
             println!("  BAD FACT COMMITTED: {s} {p} {o}");
             n += 1;
@@ -111,6 +111,7 @@ fn main() -> anyhow::Result<()> {
     kind(&mut b, "unknown-class", &|b, s, r| b.add(s, RDF_TYPE, obj(NamedNode::new_unchecked("https://ograph.dev/evt#Gremlin")), &r, &rl));
     kind(&mut b, "app-outside-catalog", &|b, s, r| { if let EntityRef::Known(n) = &s { b.add(EntityRef::Known(NamedNode::new_unchecked(n.as_str().replace("/ev/", "/app/"))), RDF_TYPE, obj(NamedNode::new_unchecked(ops::APPLICATION)), &r, &rl) } });
     kind(&mut b, "near-twin-app-name", &|b, s, r| { b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::ALERT)), &r, &rl); b.add(s.clone(), evt::AT, dt(t0), &r, &rl); b.add(s, evt::ON, Object::Entity(EntityRef::Provisional { class: ops::APPLICATION, name: "inventory-service-uk".into() }), &r, &rl) });
+    kind(&mut b, "variant-app-name", &|b, s, r| { b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::ALERT)), &r, &rl); b.add(s.clone(), evt::AT, dt(t0), &r, &rl); b.add(s, evt::ON, Object::Entity(EntityRef::Provisional { class: ops::APPLICATION, name: "inventory-service-eu-canary".into() }), &r, &rl) });
     kind(&mut b, "unknown-app-name", &|b, s, r| { b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::ALERT)), &r, &rl); b.add(s.clone(), evt::AT, dt(t0), &r, &rl); b.add(s, evt::ON, Object::Entity(EntityRef::Provisional { class: ops::APPLICATION, name: "Ledger Service".into() }), &r, &rl) });
     kind(&mut b, "fuzzy-app-name", &|b, s, r| { b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::ALERT)), &r, &rl); b.add(s.clone(), evt::AT, dt(t0), &r, &rl); b.add(s, evt::ON, Object::Entity(EntityRef::Provisional { class: ops::APPLICATION, name: "currencies-svc".into() }), &r, &rl) });
     kind(&mut b, "bad-iri", &|b, _s, r| b.add(EntityRef::Known(NamedNode::new_unchecked("https://ograph.dev/id/ev/Has Space")), RDF_TYPE, obj(NamedNode::new_unchecked(evt::ALERT)), &r, &rl));

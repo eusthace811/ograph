@@ -37,21 +37,10 @@ fn arg<'a>(p: &'a Value, k: &str) -> anyhow::Result<&'a str> {
     p.get(k).and_then(Value::as_str).ok_or_else(|| anyhow::anyhow!("missing parameter {k}"))
 }
 
-fn secs(s: &str) -> i64 {
-    let (n, u) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
-    let n: i64 = n.parse().unwrap_or(10);
-    match u {
-        "h" => n * 3600,
-        "d" => n * 86_400,
-        "s" | "" => n,
-        _ => n * 60,
-    }
-}
-
 pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
     let snap = ws.store.snapshot()?;
     Ok(match method {
-        "before" => serde_json::to_value(query::before(&snap, arg(p, "incident")?, p.get("window").and_then(Value::as_str).map_or(ws.config.correlation.window_s, secs), 4)?)?,
+        "before" => serde_json::to_value(query::before(&snap, arg(p, "incident")?, p.get("window").and_then(Value::as_str).map_or(Ok(ws.config.correlation.window_s), query::duration_s)?, 4)?)?,
         "chains" => {
             let ids = correlate::Ids::new(&snap)?;
             let mut st = ws.config.correlation.clone();
@@ -68,7 +57,6 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
         "news" => serde_json::to_value(query::news(&snap, None)?)?,
         "sparql" => {
             let q = arg(p, "query")?;
-            anyhow::ensure!(!q.to_uppercase().contains("INSERT") && !q.to_uppercase().contains("DELETE"), "read-only");
             sparql::check_names(q, &ws.ontology)?;
             serde_json::to_value(sparql::run(&snap, q, Some(p.get("limit").and_then(Value::as_u64).unwrap_or(200) as usize))?)?
         }
@@ -76,7 +64,12 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
             drop(snap);
             let ev: Vec<String> = p.get("evidence").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect()).unwrap_or_default();
             anyhow::ensure!(!ev.is_empty(), "a verdict needs evidence");
-            serde_json::to_value(ws.verdict(arg(p, "chain")?, arg(p, "decision")? == "accept", arg(p, "by")?, &ev)?)?
+            let accept = match arg(p, "decision")? {
+                "accept" => true,
+                "reject" => false,
+                other => anyhow::bail!("decision must be accept or reject, not {other}"),
+            };
+            serde_json::to_value(ws.verdict(arg(p, "chain")?, accept, arg(p, "by")?, &ev)?)?
         }
         "harvest" => {
             drop(snap);

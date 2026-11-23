@@ -154,7 +154,6 @@ pub struct Drain {
     /// compares integers instead of strings.
     ids: Vec<Vec<u32>>,
     /// Template indexes by length, ascending.
-    by_len: HashMap<usize, Vec<usize>>,
     vocab: HashMap<String, u32>,
 }
 
@@ -187,7 +186,9 @@ impl LineToken<'_> {
 }
 
 impl Drain {
-    pub fn add(&mut self, file: &str, line_number: usize, line: &str) {
+    /// Adds a line and returns the index of the template it joined or created, or `None` for
+    /// a blank line.
+    pub fn add(&mut self, file: &str, line_number: usize, line: &str) -> Option<usize> {
         let (time, rest) = leading_timestamp(line);
         let tokens: Vec<LineToken> = rest
             .split_whitespace()
@@ -200,9 +201,7 @@ impl Drain {
                 }
             })
             .collect();
-        let Some(first) = tokens.first().map(LineToken::as_str) else {
-            return;
-        };
+        let first = tokens.first()?.as_str();
         let line: Vec<u32> = tokens
             .iter()
             .map(|t| match t {
@@ -242,10 +241,9 @@ impl Drain {
                 t.first_seen = Some(t.first_seen.map_or(time, |f| f.min(time)));
                 t.last_seen = Some(t.last_seen.map_or(time, |l| l.max(time)));
             }
-            return;
+            return Some(i);
         }
         slots.push(self.templates.len());
-        self.by_len.entry(tokens.len()).or_default().push(self.templates.len());
         let ids = tokens
             .iter()
             .map(|t| match t {
@@ -264,29 +262,11 @@ impl Drain {
             last_seen: time,
             example: (file.to_string(), line_number),
         });
+        Some(self.templates.len() - 1)
     }
 
     fn word_id(&self, w: &str) -> u32 {
         self.vocab.get(w).copied().unwrap_or(UNKNOWN)
-    }
-
-    /// The template of `line`'s length whose words agree with the line's at the most
-    /// positions; ties go to the later template, and 0 when none has that length.
-    pub fn most_words_in_common(&self, line: &str) -> usize {
-        let words: Vec<u32> = line.split_whitespace().map(|w| self.word_id(w)).collect();
-        let Some(same_len) = self.by_len.get(&words.len()) else {
-            return 0;
-        };
-        same_len
-            .iter()
-            .max_by_key(|&&i| {
-                self.ids[i]
-                    .iter()
-                    .zip(&words)
-                    .filter(|(a, b)| a == b && **b != UNKNOWN)
-                    .count()
-            })
-            .map_or(0, |&i| i)
     }
 
     /// Templates, most frequent first; ties by first sighting, then text.

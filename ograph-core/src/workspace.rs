@@ -5,13 +5,14 @@ use crate::correlate::{self, Settings};
 use crate::enrich::{self, Ctx, Detect, Source};
 use crate::gateway::{self, Outcome};
 use crate::llm::{Llm, LlmConfig};
-use crate::model::{Batch, EntityRef, Extraction, known, lit, obj};
+use crate::model::{Batch, EntityRef, Extraction, known, lit, obj, slug};
 use crate::ontology::Ontology;
 use crate::store::Store;
 use crate::term;
-use crate::vocab::{RDF_TYPE, corr, inc, rca};
+use crate::vocab::{self, RDF_TYPE, corr, inc, rca};
 use oxrdf::NamedNode;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Default)]
@@ -67,6 +68,9 @@ pub struct Workspace {
     pub config: Config,
     pub ontology: Ontology,
     pub store: Store,
+    /// Held by every write, so a write never commits facts checked against a stale snapshot
+    /// while `serve` runs its watcher and requests side by side.
+    writer: std::sync::Mutex<()>,
 }
 
 pub fn find(start: &Path) -> Option<PathBuf> {
@@ -104,7 +108,7 @@ impl Workspace {
         let read = |n: &str, d: &str| std::fs::read_to_string(dir.join(n)).unwrap_or_else(|_| d.to_owned());
         let ontology = Ontology::load(&read("ontology.ttl", crate::ontology::DEFAULT_TTL), &read("shapes.ttl", crate::ontology::DEFAULT_SHAPES))?;
         let store = Store::open(&dir.join("store.redb"))?;
-        Ok(Self { root: root.to_owned(), dir, config, ontology, store })
+        Ok(Self { root: root.to_owned(), dir, config, ontology, store, writer: Default::default() })
     }
 
     pub fn llm(&self) -> Option<Llm> {
@@ -115,32 +119,64 @@ impl Workspace {
     /// Runs every source in layer order, then correlation for every incident. Each source file
     /// is one batch through the gateway.
     pub fn harvest(&self, only: Option<&str>, mut progress: impl FnMut(&Outcome, f64)) -> anyhow::Result<Vec<Outcome>> {
+        let _write = self.writer.lock().unwrap_or_else(|e| e.into_inner());
         let llm = self.llm();
         let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology };
         let mut sources = self.config.sources.clone();
         sources.sort();
         let mut out = Vec::new();
-        for src in sources.iter().filter(|s| only.is_none_or(|o| o == s.name())) {
+        let mut kept = HashSet::new();
+        let ran: Vec<&Source> = sources.iter().filter(|s| only.is_none_or(|o| o == s.name())).collect();
+        for src in &ran {
             for batch in enrich::harvest(src, &ctx) {
                 let t = std::time::Instant::now();
                 let o = gateway::submit_with(&self.store, &self.ontology, &batch, now_ms(), false)?;
                 progress(&o, t.elapsed().as_secs_f64());
+                kept.extend([batch.graph(), batch.quarantine_graph()]);
                 out.push(o);
             }
         }
+        let mut names: Vec<&str> = ran.iter().map(|s| s.name()).collect();
         if only.is_none_or(|o| o == "correlation") {
             self.store.flush()?;
-            for o in self.correlate_all()? {
+            for (o, b) in self.correlate_all()? {
                 progress(&o, 0.0);
+                kept.extend([b.graph(), b.quarantine_graph()]);
                 out.push(o);
             }
+            names.push("correlation");
         }
+        self.prune(&names, &kept)?;
         self.store.flush()?;
         Ok(out)
     }
 
+    /// Clears the graphs of `sources` that this run did not write: files that were deleted or
+    /// renamed, and incidents that no longer have chains.
+    fn prune(&self, sources: &[&str], kept: &HashSet<NamedNode>) -> anyhow::Result<()> {
+        let prefixes: Vec<String> = sources
+            .iter()
+            .flat_map(|s| [format!("{}harvest/{}/", vocab::GRAPH, slug(s)), format!("{}/{}/", vocab::QUARANTINE, slug(s))])
+            .collect();
+        let snap = self.store.snapshot()?;
+        let mut stale = Vec::new();
+        for (g, _) in snap.graphs()? {
+            if let oxrdf::Term::NamedNode(n) = snap.term(g)?
+                && prefixes.iter().any(|p| n.as_str().starts_with(p.as_str()))
+                && !kept.contains(&n)
+            {
+                stale.push(g);
+            }
+        }
+        drop(snap);
+        if !stale.is_empty() {
+            self.store.transact_with(false, |tx| stale.into_iter().try_for_each(|g| tx.clear_graph(g).map(drop)))?;
+        }
+        Ok(())
+    }
+
     /// Writes the chains of every incident, one correlation batch per incident.
-    pub fn correlate_all(&self) -> anyhow::Result<Vec<Outcome>> {
+    pub fn correlate_all(&self) -> anyhow::Result<Vec<(Outcome, Batch)>> {
         let snap = self.store.snapshot()?;
         let (Ok(ids), Some(c)) = (correlate::Ids::new(&snap), snap.iri(inc::INCIDENT)?) else { return Ok(vec![]) };
         let incidents = snap.subjects(ids.ty, c)?;
@@ -150,11 +186,12 @@ impl Workspace {
             batches.push(chain_batch(&a));
         }
         drop(snap);
-        batches.iter().map(|b| gateway::submit(&self.store, &self.ontology, b, now_ms())).collect()
+        batches.into_iter().map(|b| Ok((gateway::submit(&self.store, &self.ontology, &b, now_ms())?, b))).collect()
     }
 
     /// Records a human verdict on a chain. An accepted chain also writes `inc:cause`.
     pub fn verdict(&self, chain: &str, accept: bool, by: &str, evidence: &[String]) -> anyhow::Result<Outcome> {
+        let _write = self.writer.lock().unwrap_or_else(|e| e.into_inner());
         let snap = self.store.snapshot()?;
         let chain_iri = resolve_iri(chain);
         let cid = snap.iri(&chain_iri)?.ok_or_else(|| anyhow::anyhow!("no chain {chain}"))?;

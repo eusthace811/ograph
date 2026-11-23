@@ -332,9 +332,6 @@ impl Shapes {
         }
         let mut shapes = Vec::new();
         let mut sibling_qualified: HashMap<Term, Vec<Term>> = HashMap::new();
-        for (_, prop) in g.with_predicate(&sh("property")) {
-            let _ = prop;
-        }
         for (parent, _) in g.with_predicate(&sh("property")) {
             let props = g.objects(&parent, &sh("property"));
             let qs: Vec<Term> = props.iter().flat_map(|p| g.objects(p, &sh("qualifiedValueShape"))).collect();
@@ -360,11 +357,10 @@ impl Shapes {
         }
         let ty = rdf::TYPE.into_owned();
         let types = g.objects(&id, &ty);
-        if types.contains(&rdfs::CLASS.into_owned().into()) || types.contains(&NamedNode::new_unchecked("http://www.w3.org/2002/07/owl#Class").into()) {
-            if types.iter().any(|t| *t == sh("NodeShape").into() || *t == sh("PropertyShape").into()) {
+        if (types.contains(&rdfs::CLASS.into_owned().into()) || types.contains(&NamedNode::new_unchecked("http://www.w3.org/2002/07/owl#Class").into()))
+            && types.iter().any(|t| *t == sh("NodeShape").into() || *t == sh("PropertyShape").into()) {
                 targets.push(Target::Class(id.clone()));
             }
-        }
         for n in all("targetNode") {
             targets.push(Target::Node(n));
         }
@@ -495,6 +491,14 @@ impl Shapes {
     pub fn from_shapes(shapes: Vec<Shape>) -> Self {
         let index = shapes.iter().enumerate().map(|(i, s)| (s.id.clone(), i)).collect();
         Self { shapes, index, sibling_qualified: HashMap::new() }
+    }
+
+    /// These shapes with `first` ahead of them, keeping what parsing learned about them.
+    pub fn after(mut self, mut first: Vec<Shape>) -> Self {
+        first.append(&mut self.shapes);
+        self.index = first.iter().enumerate().map(|(i, s)| (s.id.clone(), i)).collect();
+        self.shapes = first;
+        self
     }
 }
 
@@ -648,11 +652,10 @@ impl<'a> Validator<'a> {
             Constraint::UniqueLang => {
                 let mut count: HashMap<String, usize> = HashMap::new();
                 for v in values {
-                    if let Term::Literal(l) = v {
-                        if let Some(lang) = l.language() {
+                    if let Term::Literal(l) = v
+                        && let Some(lang) = l.language() {
                             *count.entry(lang.to_lowercase()).or_default() += 1;
                         }
-                    }
                 }
                 for (lang, n) in count {
                     if n > 1 {

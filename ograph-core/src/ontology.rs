@@ -125,10 +125,7 @@ impl Ontology {
             })
             .unwrap_or_default();
         let mut ont = Self { graph, classes, properties, vocabularies, shapes: Shapes::from_shapes(vec![]), version };
-        let hand = parse(shapes_ttl)?;
-        let mut shapes = ont.derived_shapes();
-        shapes.extend(Shapes::parse(&hand).shapes);
-        ont.shapes = Shapes::from_shapes(shapes);
+        ont.shapes = Shapes::parse(&parse(shapes_ttl)?).after(ont.derived_shapes());
         Ok(ont)
     }
 
@@ -155,8 +152,8 @@ impl Ontology {
         for p in self.properties.values() {
             let pred = NamedNode::new_unchecked(&p.iri);
             let id = |what: &str| Term::from(NamedNode::new_unchecked(format!("https://ograph.dev/shape/{}/{what}", vocab::compact(&p.iri).replace(':', "-"))));
-            if let Some(d) = &p.domain {
-                if d != "https://ograph.dev/meta#Thing" {
+            if let Some(d) = &p.domain
+                && d != "https://ograph.dev/meta#Thing" {
                     out.push(Shape {
                         id: id("domain"),
                         targets: vec![Target::SubjectsOf(pred.clone())],
@@ -166,7 +163,6 @@ impl Ontology {
                         message: Some(format!("subject of {} must be a {}", vocab::compact(&p.iri), vocab::compact(d))),
                     });
                 }
-            }
             let mut c = Vec::new();
             match &p.range {
                 Some(Range::Class(r)) if r != "https://ograph.dev/meta#Thing" => c.push(Constraint::Class(NamedNode::new_unchecked(r).into())),
@@ -210,11 +206,10 @@ impl Ontology {
                     problems.push(format!("{} refers to undeclared class {}", vocab::compact(&p.iri), vocab::compact(c)));
                 }
             }
-            if let Some(Range::Datatype(d)) = &p.range {
-                if !d.starts_with(xsd::STRING.as_str().trim_end_matches("string")) {
+            if let Some(Range::Datatype(d)) = &p.range
+                && !d.starts_with(xsd::STRING.as_str().trim_end_matches("string")) {
                     problems.push(format!("{} has non-XSD datatype {d}", vocab::compact(&p.iri)));
                 }
-            }
         }
         problems
     }

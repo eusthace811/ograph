@@ -51,7 +51,7 @@ two_sided = ["workload", "throughput", "requests"]  # metrics where a drop also 
 
 [correlation]
 window_s = 1800             # 30 minutes (Netflix uses 10; see docs/EVIDENCE.md)
-after_s = 0
+after_s = 0                 # seconds after the incident still searched; such an event closes its chain at the incident
 min_confidence = 0.6        # Netflix: chains under 0.6 are discarded
 w_time = 0.6                # Netflix: time_proximity * 0.6 + severity * 0.4
 w_severity = 0.4
@@ -102,7 +102,7 @@ Enrichers never write to the store. A batch goes through these checks in order:
 1. **IRI scheme.** IRIs must have the form `https://ograph.dev/id/<kind>/<slug>`.
 2. **Catalog.** Applications and teams must resolve against the catalog:
    - an exact name or alias is accepted;
-   - a fuzzy match at Jaro-Winkler 0.93 or above is accepted and counted (tied scores go to the first IRI in order), unless another entity scores within 0.03 of it or the name is a sibling: the same words but one, and that word unlike its counterpart (`inventory-service-uk` against `inventory-service-eu`, `v1` against `v2`). Those are quarantined as ambiguous;
+   - a fuzzy match at Jaro-Winkler 0.93 or above is accepted and counted (tied scores go to the first IRI in order), unless another entity scores within 0.03 of it or the name is a sibling: the same words but one, and that word unlike its counterpart (`inventory-service-uk` against `inventory-service-eu`, `v1` against `v2`), or the same words plus more (`inventory-service-eu-canary` against `inventory-service-eu`). Those are quarantined as ambiguous;
    - a match from 0.80 to 0.93 is quarantined as ambiguous;
    - anything lower is quarantined as missing.
 3. **Catalog-only types.** Only the catalog may create an application.
@@ -114,4 +114,4 @@ Enrichers never write to the store. A batch goes through these checks in order:
 9. **Evidence.** Each fact needs evidence that names a record this harvest read.
 10. **Incremental SHACL.** Shapes run on the nodes the batch touches, seen as the store will be after the commit. They are the derived domain, range, datatype, vocabulary and functional shapes, plus `shapes.ttl`. A violation that no single fact caused, such as a missing required value, rejects the node. The checks repeat until no violation is left.
 
-Rejected facts go to `g:quarantine/<source>/<key>` with their reason. Accepted facts replace `g:harvest/<source>/<key>`, and only the difference is written, so an unchanged re-harvest writes one quad: the harvest time.
+Rejected facts go to `g:quarantine/<source>/<key>` with their reason. Accepted facts replace `g:harvest/<source>/<key>`, and only the difference is written, so an unchanged re-harvest writes one quad: the harvest time. The key is the file's path relative to the workspace, percent-encoded but otherwise kept, so two files never share a graph. A file that cannot be read at all keeps its last good facts and is marked degraded. A full harvest clears the graphs of files that no longer exist and of incidents that no longer have chains; `--only KIND` clears only that kind's.

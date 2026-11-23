@@ -60,18 +60,24 @@ pub enum Resolution {
 }
 
 fn norm(s: &str) -> String {
-    s.to_lowercase().chars().filter(|c| c.is_ascii_alphanumeric()).collect()
+    s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
 fn words(s: &str) -> Vec<String> {
-    s.to_lowercase().split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_owned).collect()
+    s.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_owned).collect()
 }
 
 /// `a` names a sibling of `b` rather than misspelling it: the same words but one, and that one
-/// unlike its counterpart (`inventory-service-uk` against `inventory-service-eu`, `v1` against `v2`).
+/// unlike its counterpart (`inventory-service-uk` against `inventory-service-eu`, `v1` against
+/// `v2`), or the same words plus some (`payments-v2` against `payments`).
 fn sibling(a: &[String], b: &[String]) -> bool {
+    if a.len() != b.len() {
+        let (short, long) = if a.len() < b.len() { (a, b) } else { (b, a) };
+        let mut rest = long.iter();
+        return short.iter().all(|w| rest.any(|x| x == w));
+    }
     let mut diff = a.iter().zip(b).filter(|(x, y)| x != y);
-    a.len() == b.len() && matches!((diff.next(), diff.next()), (Some((x, y)), None) if strsim::jaro_winkler(x, y) < SIBLING_WORD)
+    matches!((diff.next(), diff.next()), (Some((x, y)), None) if strsim::jaro_winkler(x, y) < SIBLING_WORD)
 }
 
 const CATALOG_CLASSES: [&str; 2] = [ops::APPLICATION, ops::TEAM];
@@ -112,6 +118,9 @@ impl Catalog {
 
     pub fn resolve(&self, class: &'static str, name: &str) -> Resolution {
         let key = norm(name);
+        if key.is_empty() {
+            return Resolution::Missing;
+        }
         if let Some((n, _)) = self.names.get(&(class, key.clone())) {
             return Resolution::Exact(n.clone());
         }
@@ -262,8 +271,8 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
         if !matches!(f.method, Extraction::Catalog { .. }) || f.predicate != ty {
             continue;
         }
-        if let (EntityRef::Known(s), Object::Entity(EntityRef::Known(c))) = (&f.subject, &f.object) {
-            if let Some(class) = CATALOG_CLASSES.iter().find(|k| **k == c.as_str()) {
+        if let (EntityRef::Known(s), Object::Entity(EntityRef::Known(c))) = (&f.subject, &f.object)
+            && let Some(class) = CATALOG_CLASSES.iter().find(|k| **k == c.as_str()) {
                 let names: Vec<String> = batch
                     .facts
                     .iter()
@@ -275,7 +284,6 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                     .collect();
                 catalog.add(class, s, &names.iter().map(String::as_str).collect::<Vec<_>>());
             }
-        }
     }
     let mut rejected = Vec::new();
     let mut fuzzy = 0;
@@ -330,18 +338,16 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
             rejected.push(reject("no evidence".into()));
             continue;
         }
-        if !matches!(f.method, Extraction::Human { .. }) {
-            if let Some(e) = f.evidence.iter().find(|e| !batch.records.contains(&e.0)) {
+        if !matches!(f.method, Extraction::Human { .. })
+            && let Some(e) = f.evidence.iter().find(|e| !batch.records.contains(&e.0)) {
                 rejected.push(reject(format!("evidence {} is not a record this harvest read", e.0)));
                 continue;
             }
-        }
-        if let Extraction::Llm { confidence, .. } = &f.method {
-            if confidence.get() < MIN_LLM_CONFIDENCE {
+        if let Extraction::Llm { confidence, .. } = &f.method
+            && confidence.get() < MIN_LLM_CONFIDENCE {
                 rejected.push(reject(format!("model confidence {:.2} is below {MIN_LLM_CONFIDENCE}", confidence.get())));
                 continue;
             }
-        }
         let s = match resolve(&f.subject, catalog_method, &mut fuzzy, &mut minted) {
             Ok(s) => s,
             Err(e) => {
@@ -370,12 +376,11 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                 continue;
             }
         }
-        if let (Some(v), Term::Literal(l)) = (ont.vocabulary(p), &o) {
-            if !v.iter().any(|t| t.value == l.value()) {
+        if let (Some(v), Term::Literal(l)) = (ont.vocabulary(p), &o)
+            && !v.iter().any(|t| t.value == l.value()) {
                 rejected.push(reject(format!("\"{}\" is not in the closed vocabulary of {}", l.value(), vocab::compact(p))));
                 continue;
             }
-        }
         if let Term::NamedNode(on) = &o
             && matches!(f.method, Extraction::Llm { .. })
             && NEEDS_SUPPORT.contains(&p)
@@ -398,9 +403,9 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
         accepted.push(Resolved { triple: Triple::new(n, ty.clone(), NamedNode::new_unchecked(class)), fact: usize::MAX });
     }
     // Incremental SHACL on the touched nodes, repeated until no violation remains, because
-    // removing a fact can break another shape.
+    // removing a fact can break another shape. Each pass drops a fact or stops.
     let mut overlay = Overlay { snap, ont, add: oxrdf::Graph::new(), replaced, ids: RefCell::default() };
-    for _ in 0..4 {
+    loop {
         overlay.add = accepted.iter().map(|r| r.triple.clone()).collect();
         let focus: Vec<Term> = {
             let mut f: Vec<Term> = accepted.iter().map(|r| Term::from(r.triple.subject.clone())).collect();
@@ -512,6 +517,10 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, du
         let mut ids = Vec::with_capacity(triples.len());
         for t in &triples {
             ids.push([tx.intern(&t.subject.clone().into())?, tx.intern(&t.predicate.clone().into())?, tx.intern(&t.object)?]);
+        }
+        if batch.failed() {
+            // Keep the last good facts of an unreadable file, such as one caught mid-write.
+            ids.extend(tx.graph_quads(gid)?.into_iter().filter(|q| q[0] != gid).map(|[s, p, o, _]| [s, p, o]));
         }
         let (r1, a1) = tx.replace_graph(gid, ids)?;
         let mut qids = Vec::with_capacity(quarantine.len());

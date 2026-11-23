@@ -63,7 +63,7 @@ Interleaved, sequential runs on 12 cases (3 each) give a median of 0.228 s befor
 |---|---|
 | SHACL Core, W3C suite (`shacl-core.txt`) | 98 of 98 on `sh:conforms` and result count. rudof's measured 92 came from a harness that ignored `sht:dataGraph`; with a fixed harness it would likely match |
 | `ograph ontology check` | 0 problems. Every IRI the code uses is declared |
-| Gateway gate, 17 kinds of bad write plus 43 good events (`gateway.txt`) | 0 bad facts committed, every kind quarantined with its reason, 43 of 43 good events committed (3 of them misspelled names that must still resolve), full audit clean, and a re-submit writes 1 quad (the harvest time) |
+| Gateway gate, 18 kinds of bad write plus 43 good events (`gateway.txt`) | 0 bad facts committed, every kind quarantined with its reason, 43 of 43 good events committed (3 of them misspelled names that must still resolve), full audit clean, and a re-submit writes 1 quad (the harvest time) |
 
 The rudof `shacl` crate was measured and rejected:
 
@@ -141,7 +141,7 @@ Models run through pi on its existing login, `openai/gpt-6-luna` at $0.10 in and
 
 | Check | Result |
 |---|---|
-| Accuracy on 16 labeled threads | 15 of 16, then 16 and 15 in two repeat runs with no cache. The first prompt scored 13 of 16 in one run. See Phase 9 for what changed |
+| Accuracy on 16 labeled threads | 15 of 16, then 16 and 15 in two repeat runs with no cache. The first prompt scored 13 of 16 in one run. See Phase 9 for what changed. The gate fails below 14 of 16 (85%) |
 | Replay | A re-harvest made 0 model calls and wrote 1 quad (the harvest time) |
 | Broken model (`scripts/eval/bad_model.py`) | Exercises non-JSON, out-of-vocabulary, invented-app, low-confidence and invented-call answers, plus a fabricated quote. All were quarantined, dropped or marked degraded. 0 invalid facts were committed, and the audit is clean |
 | Correct rejections with the real model | The model named the vendors CardRail and MailRelay as applications. The catalog gate refused to create them |

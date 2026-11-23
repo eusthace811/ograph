@@ -95,11 +95,16 @@ impl Batch {
     }
 
     pub fn graph(&self) -> NamedNode {
-        NamedNode::new_unchecked(format!("{}harvest/{}/{}", crate::vocab::GRAPH, slug(&self.source), slug(&self.key)))
+        NamedNode::new_unchecked(format!("{}harvest/{}/{}", crate::vocab::GRAPH, slug(&self.source), path_iri(&self.key)))
     }
 
     pub fn quarantine_graph(&self) -> NamedNode {
-        NamedNode::new_unchecked(format!("{}/{}/{}", crate::vocab::QUARANTINE, slug(&self.source), slug(&self.key)))
+        NamedNode::new_unchecked(format!("{}/{}/{}", crate::vocab::QUARANTINE, slug(&self.source), path_iri(&self.key)))
+    }
+
+    /// A batch whose source could not be read at all: it carries no facts, only the reason.
+    pub fn failed(&self) -> bool {
+        self.facts.is_empty() && !self.degraded.is_empty()
     }
 
     pub fn record(&mut self, id: impl Into<String>) -> EvidenceRef {
@@ -130,6 +135,20 @@ pub fn slug(s: &str) -> String {
         }
     }
     out.trim_matches('-').to_owned()
+}
+
+/// A relative path as an IRI path, percent-encoding everything but unreserved characters and
+/// `/`. Unlike [`slug`] it is injective, so two source files never share a graph.
+fn path_iri(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'~' | b'/') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 pub fn entity(kind: &str, name: &str) -> NamedNode {

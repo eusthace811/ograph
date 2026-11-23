@@ -125,10 +125,11 @@ pub fn metrics(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
         let cells: Vec<&str> = line.split(',').collect();
         let Some(t) = cells.get(tcol).and_then(|c| parse_time(&serde_json::Value::String(c.trim().to_owned()))) else { continue };
         for (c, cell) in cells.iter().enumerate() {
-            if c != tcol {
-                if let Ok(v) = cell.trim().parse::<f64>() {
-                    cols[c].push((t, v, row + 2));
-                }
+            if c != tcol
+                && let Some(col) = cols.get_mut(c)
+                && let Ok(v) = cell.trim().parse::<f64>()
+            {
+                col.push((t, v, row + 2));
             }
         }
     }
@@ -171,8 +172,9 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let mut b = Batch::new("logs", key, "drain-burst-v1");
     let text = std::fs::read_to_string(path)?;
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    // Per service: one Drain, and per template the (minute, first line, count) buckets.
-    let mut per: BTreeMap<String, (Drain, Vec<(i64, usize, bool)>)> = BTreeMap::new();
+    // Per service: one Drain, and per line its (time ms, template index, error-like).
+    type Lines = Vec<(i64, usize, bool)>;
+    let mut per: BTreeMap<String, (Drain, Lines)> = BTreeMap::new();
     for (i, line) in text.lines().enumerate() {
         let (svc, t, msg, level) = if line.trim_start().starts_with('{') {
             let Ok(f) = json_fields(line, ["ts", "timestamp", "time", "service", "container_name", "app", "message", "msg", "log", "level", "severity"]) else { continue };
@@ -185,11 +187,8 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
         };
         let errorish = level.as_deref().is_some_and(|l| matches!(l, "error" | "err" | "fatal" | "critical" | "warn" | "warning")) || error_like().is_match(&msg);
         let entry = per.entry(svc).or_default();
-        let before = entry.0.templates.len();
-        entry.0.add(key, i + 1, &msg);
-        let idx = template_of(&entry.0, &msg, before);
+        let Some(idx) = entry.0.add(key, i + 1, &msg) else { continue };
         entry.1.push((t, idx, errorish));
-        let _ = i;
     }
     let m = Extraction::Rule { extractor: "drain-burst".into() };
     for (svc, (drain, lines)) in per {
@@ -236,13 +235,6 @@ fn first_str(fields: &[Option<serde_json::Value>]) -> Option<&str> {
 }
 
 /// The template a just-added line joined: the new one if Drain created it, else the best match.
-fn template_of(drain: &Drain, msg: &str, before: usize) -> usize {
-    if drain.templates.len() > before {
-        return drain.templates.len() - 1;
-    }
-    drain.most_words_in_common(msg)
-}
-
 struct Span {
     service: String,
     start: i64,
@@ -277,11 +269,10 @@ pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let rule = Extraction::Rule { extractor: "span-stats".into() };
     let mut edges: BTreeMap<(String, String), usize> = BTreeMap::new();
     for (i, p) in parents.iter().enumerate() {
-        if let Some(&j) = p.as_ref().and_then(|p| by_id.get(p)) {
-            if spans[j].service != spans[i].service {
+        if let Some(&j) = p.as_ref().and_then(|p| by_id.get(p))
+            && spans[j].service != spans[i].service {
                 edges.entry((spans[j].service.clone(), spans[i].service.clone())).or_insert(spans[i].row);
             }
-        }
     }
     let inferred = Extraction::Rule { extractor: "span-parent:inferred".into() };
     for ((from, to), row) in edges {

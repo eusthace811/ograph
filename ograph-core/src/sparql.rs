@@ -83,11 +83,10 @@ impl<'a> QueryableDataset<'a> for View<'a> {
     }
 
     fn externalize_expression_term(&self, id: Id) -> StoreResult<ExpressionTerm> {
-        if id & EPHEMERAL == 0 {
-            if let Some(t) = term::inline_expression(id) {
+        if id & EPHEMERAL == 0
+            && let Some(t) = term::inline_expression(id) {
                 return Ok(t);
             }
-        }
         if let Some(t) = self.memo.borrow().get(&id) {
             return Ok(t.clone());
         }
@@ -97,11 +96,10 @@ impl<'a> QueryableDataset<'a> for View<'a> {
     }
 
     fn internalize_expression_term(&self, term: ExpressionTerm) -> StoreResult<Id> {
-        if let ExpressionTerm::DateTimeLiteral(dt) = &term {
-            if let Some(m) = term::millis_of(*dt) {
+        if let ExpressionTerm::DateTimeLiteral(dt) = &term
+            && let Some(m) = term::millis_of(*dt) {
                 return Ok(term::time_id(m));
             }
-        }
         self.internalize_term(term.into())
     }
 }
@@ -180,12 +178,9 @@ pub fn run(snap: &Snapshot, query: &str, limit: Option<usize>) -> anyhow::Result
             let variables: Vec<String> = sols.variables().iter().map(|v| v.as_str().to_owned()).collect();
             let vars: Vec<Variable> = sols.variables().to_vec();
             let mut rows = Vec::new();
-            for s in sols {
+            for s in sols.take(limit.unwrap_or(usize::MAX)) {
                 let s = s?;
                 rows.push(vars.iter().map(|v| s.get(v).map(show)).collect());
-                if limit.is_some_and(|l| rows.len() >= l) {
-                    break;
-                }
             }
             Answer::Solutions { variables, rows }
         }

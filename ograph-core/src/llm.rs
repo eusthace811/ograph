@@ -90,23 +90,38 @@ impl Llm {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (cmd, args) = self.config.command.split_first().ok_or_else(|| anyhow::anyhow!("empty llm command"))?;
         let mut child = Command::new(cmd).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
-        child.stdin.take().unwrap().write_all(format!("{prompt}\n\n{input}").as_bytes())?;
+        // Feed and drain the pipes on their own threads, so a large prompt or answer cannot
+        // fill a pipe buffer and stall the child until the timeout.
+        let mut stdin = child.stdin.take().expect("piped");
+        let text = format!("{prompt}\n\n{input}");
+        let feed = std::thread::spawn(move || stdin.write_all(text.as_bytes()));
+        let drain = |r: Option<Box<dyn std::io::Read + Send>>| {
+            std::thread::spawn(move || {
+                let mut buf = Vec::new();
+                r.map(|mut r| r.read_to_end(&mut buf));
+                buf
+            })
+        };
+        let stdout = drain(child.stdout.take().map(|r| Box::new(r) as _));
+        let stderr = drain(child.stderr.take().map(|r| Box::new(r) as _));
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(self.config.timeout_s);
-        loop {
-            if child.try_wait()?.is_some() {
-                break;
+        let status = loop {
+            if let Some(status) = child.try_wait()? {
+                break status;
             }
             if std::time::Instant::now() > deadline {
                 let _ = child.kill();
+                let _ = child.wait();
                 anyhow::bail!("model command timed out after {} s", self.config.timeout_s);
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        let _ = feed.join();
+        let (out, err) = (stdout.join().unwrap_or_default(), stderr.join().unwrap_or_default());
+        if !status.success() {
+            anyhow::bail!("model command failed: {}", String::from_utf8_lossy(&err).trim());
         }
-        let out = child.wait_with_output()?;
-        if !out.status.success() {
-            anyhow::bail!("model command failed: {}", String::from_utf8_lossy(&out.stderr).trim());
-        }
-        Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        Ok(String::from_utf8_lossy(&out).trim().to_owned())
     }
 
     /// Runs `ask` over many inputs with `parallel` workers, keeping input order.
@@ -158,4 +173,16 @@ pub fn quoted(text: &str, quote: &str) -> bool {
     let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
     let q = squash(quote.trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace()));
     q.len() >= 3 && squash(text).contains(&q)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn answer_larger_than_a_pipe_buffer_arrives() {
+        let config = LlmConfig { command: vec!["sh".into(), "-c".into(), "cat >/dev/null; head -c 200000 /dev/zero | tr '\\0' a".into()], model: "t".into(), parallel: 1, timeout_s: 5 };
+        let llm = Llm::new(config, std::env::temp_dir().join("ograph-llm-test-none/llm.jsonl"));
+        assert_eq!(llm.run("p", &"x".repeat(200_000)).unwrap().len(), 200_000);
+    }
 }

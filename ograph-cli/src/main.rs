@@ -123,18 +123,6 @@ enum Cmd {
     },
 }
 
-fn duration_s(s: &str) -> anyhow::Result<i64> {
-    let (num, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
-    let n: i64 = num.parse()?;
-    Ok(match unit {
-        "" | "s" => n,
-        "m" => n * 60,
-        "h" => n * 3600,
-        "d" => n * 86_400,
-        _ => anyhow::bail!("unknown unit in {s}"),
-    })
-}
-
 fn print<T: serde::Serialize>(json: bool, v: &T, human: impl FnOnce(&T)) {
     if json {
         println!("{}", serde_json::to_string(v).unwrap());
@@ -191,7 +179,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         }
         Cmd::Before { incident, window, depth } => {
             let snap = ws.store.snapshot()?;
-            let b = query::before(&snap, &incident, duration_s(&window)?, depth)?;
+            let b = query::before(&snap, &incident, query::duration_s(&window)?, depth)?;
             let found = !b.events.is_empty();
             print(json, &b, |b| {
                 println!("{} on {} at {}; scope: {}", b.incident, b.app, b.at, b.scope.iter().map(|(a, d)| format!("{a}({d})")).collect::<Vec<_>>().join(" "));
@@ -231,12 +219,13 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 };
             }
             if let Some(w) = window {
-                st.window_s = duration_s(&w)?;
+                st.window_s = query::duration_s(&w)?;
             }
             if !set.is_empty() {
                 let mut v = serde_json::to_value(&st)?;
                 for kv in &set {
                     let (k, val) = kv.split_once('=').ok_or_else(|| anyhow::anyhow!("--set wants key=value"))?;
+                    anyhow::ensure!(v.get(k).is_some(), "--set: no setting {k}");
                     v[k] = serde_json::from_str(val).unwrap_or_else(|_| serde_json::Value::String(val.to_owned()));
                 }
                 st = serde_json::from_value(v)?;
@@ -270,7 +259,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         }
         Cmd::News { since } => {
             let snap = ws.store.snapshot()?;
-            let since = since.map(|s| duration_s(&s).map(|d| workspace::now_ms() - d * 1000)).transpose()?;
+            let since = since.map(|s| query::duration_s(&s).map(|d| workspace::now_ms() - d * 1000)).transpose()?;
             let v = query::news(&snap, since)?;
             let found = !v.is_empty();
             print(json, &v, |v| {

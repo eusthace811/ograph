@@ -26,7 +26,7 @@ ograph lab                         # one HTML page over the whole graph
 
 - **Raw telemetry stays in its own systems.** ograph keeps only episodes, such as "a burst of this log template" or "this metric left its band", with a pointer back to the first raw record. It does not keep every line, point or span. On one RCAEval case that is 368 quads instead of 3.9 million, and it ranks root causes better (0.93 against 0.63 top-1 for what SPARQL alone can express; see `docs/EVIDENCE.md`).
 - **The gateway owns every write.** Enrichers propose facts. The gateway checks:
-  - IRIs, and catalog membership with fuzzy matching that refuses near-twins such as `-uk` against `-eu`;
+  - IRIs, and catalog membership with fuzzy matching that refuses near-twins such as `-uk` against `-eu` and variants such as `-canary`;
   - closed vocabularies, model confidence and evidence;
   - incremental SHACL on the nodes the batch touches.
 
@@ -47,7 +47,7 @@ ograph lab                         # one HTML page over the whole graph
 | W2, the 10 minutes before an incident | 0.003 ms native, 0.17 ms SPARQL, 0.10 ms Oxigraph |
 | W3, blast radius of the hub application | 15 ms native, 18 ms SPARQL, 137 ms Oxigraph |
 | SHACL Core, W3C test suite | 98 of 98 |
-| Gateway, 17 kinds of bad write plus a broken model | 0 invalid facts committed, every rejection quarantined with a reason |
+| Gateway, 18 kinds of bad write plus a broken model | 0 invalid facts committed, every rejection quarantined with a reason |
 | Model-proposed dependencies | Committed only when a catalog or trace edge backs them. Co-occurring events were tested as support and rejected: 0.18 precision against a 0.14 base rate |
 | Thread classifier on 16 labeled threads | Mean 15.7 of 16 over 9 uncached runs, up from 13. It quotes the cause or answers UNKNOWN; voting across samples or models did not help |
 | Ontology coverage on 10 held-out questions | 6, 6, 6 and 5 of 6 covered and 4 of 4 gaps in four runs, up from 3 or 4 covered |

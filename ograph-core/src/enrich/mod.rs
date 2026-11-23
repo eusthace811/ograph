@@ -162,10 +162,18 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
     out
 }
 
-/// Seconds or milliseconds since the epoch (number or numeric string), or RFC 3339 / ISO 8601
+/// Seconds, milliseconds, microseconds or nanoseconds since the epoch (number or numeric string), or RFC 3339 / ISO 8601
 /// with any fraction (cut to milliseconds) and any offset (no offset means UTC).
 pub fn parse_time(v: &serde_json::Value) -> Option<i64> {
-    let from_num = |n: f64| Some(if n.abs() > 1e12 { n as i64 } else { (n * 1000.0).round() as i64 });
+    let from_num = |n: f64| {
+        let scale = match n.abs() {
+            x if x > 1e17 => 1e-6,
+            x if x > 1e14 => 1e-3,
+            x if x > 1e12 => 1.0,
+            _ => 1000.0,
+        };
+        Some((n * scale).round() as i64)
+    };
     match v {
         serde_json::Value::Number(n) => from_num(n.as_f64()?),
         serde_json::Value::String(s) => s.parse::<f64>().ok().map_or_else(|| parse_iso(s), from_num),
