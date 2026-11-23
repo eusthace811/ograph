@@ -1,0 +1,4 @@
+load encode + intern + permute in memory: 1303 ms
+load dictionary tables written: 2710 ms
+load quad and time indexes sorted and written: 5795 ms
+load committed: 8408 ms

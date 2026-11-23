@@ -1,0 +1,8 @@
+W2 inc/48305, 7 runs each, new connection per run
+
+| variant | connect + first query median (ms) | max | second query on that connection median (ms) |
+|---|---|---|---|
+| graph, VLE *0..1 | 453.7 | 496.1 | 2.775 |
+| graph, UNION | 8.9 | 9.1 | 2.960 |
+| hybrid, VLE *0..1 | 35.9 | 36.4 | 0.641 |
+| hybrid, UNION | 5.3 | 5.7 | 0.526 |

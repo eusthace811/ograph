@@ -1,0 +1,40 @@
+[package]
+name = "ograph-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "store_bench"
+path = "src/store_bench.rs"
+
+[dependencies]
+ograph-core.workspace = true
+oxrdf.workspace = true
+spargebra.workspace = true
+spareval.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+oxigraph = { version = "=0.5.13", default-features = false }
+oxttl.workspace = true
+
+[[bin]]
+name = "shacl_case"
+path = "src/shacl_case.rs"
+
+[[bin]]
+name = "gateway_eval"
+path = "src/gateway_eval.rs"
+
+[[bin]]
+name = "profile_query"
+path = "src/profile_query.rs"
+
+[[bin]]
+name = "purekg_bench"
+path = "src/purekg_bench.rs"
+
+[[bin]]
+name = "confirm_eval"
+path = "src/confirm_eval.rs"

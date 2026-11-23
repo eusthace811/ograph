@@ -1,0 +1,12 @@
+age: docker start 66 ms, first correct W1 at 181 ms
+age: docker start 49 ms, first correct W1 at 120 ms
+age: docker start 60 ms, first correct W1 at 133 ms
+hg: docker start 63 ms, first correct W1 at 10257 ms
+hg: docker start 62 ms, first correct W1 at 9915 ms
+hg: docker start 61 ms, first correct W1 at 9850 ms
+page cache dropped: age: docker start 77 ms, first correct W1 at 361 ms
+page cache dropped: age: docker start 62 ms, first correct W1 at 167 ms
+page cache dropped: age: docker start 66 ms, first correct W1 at 179 ms
+page cache dropped: hg: docker start 67 ms, first correct W1 at 10185 ms
+page cache dropped: hg: docker start 63 ms, first correct W1 at 9752 ms
+page cache dropped: hg: docker start 66 ms, first correct W1 at 9839 ms

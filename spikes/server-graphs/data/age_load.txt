@@ -1,0 +1,60 @@
+     1421 ms  SELECT load_labels_from_file('obs','event','event.csv', true, true)
+     1336 ms  SELECT load_edges_from_file('obs','about','about.csv', true)
+      542 ms  SELECT load_edges_from_file('obs_h','affects','affects.csv', true)
+     1197 ms  INSERT INTO public.events SELECT e.id, e.kind, a.end_id, e.at FROM ev_stage e JOIN ab_stage a ON a.start_id = e.id
+
+| phase | ms |
+|---|---|
+| graph indexes | 826 |
+| graph: full graph, events as vertices | 3157 |
+| hybrid indexes | 1097 |
+| hybrid: graph without events, events in a plain table | 2318 |
+| total | 7398 |
+SELECT count(*) FROM obs.app: 20000
+SELECT count(*) FROM obs.incident: 100000
+SELECT count(*) FROM obs.event: 1000000
+SELECT count(*) FROM obs.depends_on: 60089
+SELECT count(*) FROM obs.affects: 100000
+SELECT count(*) FROM obs.about: 1000000
+SELECT count(*) FROM public.events: 1000000
+
+| schema | size (tables + indexes + toast) |
+|---|---|
+| obs | 346 MB |
+| obs_h | 43 MB |
+| public | 112 MB |
+
+| relation | size | kind |
+|---|---|---|
+| obs.event | 137 MB | r |
+| public.events | 61 MB | r |
+| obs.about | 57 MB | r |
+| obs.event_at_btree | 39 MB | i |
+| public.events_app_at | 30 MB | i |
+| obs.about_end_id_idx | 28 MB | i |
+| obs.about_start_id_idx | 21 MB | i |
+| public.events_pkey | 21 MB | i |
+| obs.event_pkey | 21 MB | i |
+| obs_h.incident | 14 MB | r |
+| obs.incident | 14 MB | r |
+| obs_h.affects | 6144 kB | r |
+| obs.affects | 5888 kB | r |
+| obs.incident_id_btree | 3992 kB | i |
+| obs_h.hincident_id_btree | 3992 kB | i |
+| obs_h.depends_on | 3584 kB | r |
+| obs.depends_on | 3536 kB | r |
+| obs_h.app | 2816 kB | r |
+| obs.app | 2760 kB | r |
+| obs.affects_end_id_idx | 2536 kB | i |
+| obs_h.affects_end_id_idx | 2536 kB | i |
+| obs.affects_start_id_idx | 2208 kB | i |
+| obs_h.affects_start_id_idx | 2208 kB | i |
+| obs.incident_pkey | 2208 kB | i |
+| obs_h.incident_pkey | 2208 kB | i |
+| obs_h.depends_on_end_id_idx | 1768 kB | i |
+| obs.depends_on_end_id_idx | 1768 kB | i |
+| obs_h.depends_on_start_id_idx | 1336 kB | i |
+| obs.depends_on_start_id_idx | 1336 kB | i |
+| obs_h.happ_props_gin | 1296 kB | i |
+| obs.app_props_gin | 1296 kB | i |
+database: 617 MB

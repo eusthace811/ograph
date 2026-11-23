@@ -1,0 +1,50 @@
+W1 order: AGE returns ascending numeric incident id: true
+
+### W1 (1938 rows)
+
+| engine | median (ms) | max (ms) | server planning (ms) | server execution (ms) |
+|---|---|---|---|---|
+| AGE | 4.958 | 7.076 | 0.072 | 3.694 |
+| AGE hybrid | 4.654 | 6.211 | 0.071 | 3.578 |
+
+### W2, 20 incidents
+
+| engine | min of medians (ms) | p50 | p90 | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| AGE graph | 0.907 | 1.127 | 1.484 | 1.985 | 2.018 |
+| AGE hybrid | 0.318 | 0.327 | 0.335 | 0.368 | 0.427 |
+
+| incident | rows | AGE graph median | server plan+exec | AGE hybrid median | server plan+exec |
+|---|---|---|---|---|---|
+| inc/74487 | 3 | 1.331 | 1.060 | 0.368 | 0.149 |
+| inc/9346 | 0 | 0.960 | 0.788 | 0.326 | 0.138 |
+| inc/72203 | 5 | 0.978 | 0.810 | 0.329 | 0.138 |
+| inc/23674 | 3 | 1.088 | 0.950 | 0.335 | 0.148 |
+| inc/48305 | 2 | 1.985 | 1.968 | 0.328 | 0.135 |
+| inc/71798 | 3 | 0.932 | 0.778 | 0.326 | 0.133 |
+| inc/89182 | 5 | 1.209 | 1.096 | 0.328 | 0.141 |
+| inc/77985 | 2 | 1.134 | 0.980 | 0.331 | 0.139 |
+| inc/4425 | 2 | 1.484 | 1.397 | 0.327 | 0.138 |
+| inc/71083 | 5 | 0.931 | 0.754 | 0.318 | 0.141 |
+| inc/5516 | 3 | 0.907 | 0.786 | 0.325 | 0.132 |
+| inc/18990 | 1 | 1.034 | 0.896 | 0.322 | 0.133 |
+| inc/39344 | 5 | 0.922 | 0.763 | 0.325 | 0.134 |
+| inc/89190 | 2 | 1.464 | 1.348 | 0.331 | 0.142 |
+| inc/34680 | 5 | 1.157 | 1.010 | 0.323 | 0.135 |
+| inc/81327 | 1 | 1.127 | 1.007 | 0.328 | 0.140 |
+| inc/41991 | 3 | 0.992 | 0.837 | 0.325 | 0.135 |
+| inc/19797 | 1 | 1.301 | 1.175 | 0.326 | 0.138 |
+| inc/71000 | 2 | 1.660 | 1.610 | 0.345 | 0.142 |
+| inc/33743 | 3 | 1.039 | 0.884 | 0.327 | 0.142 |
+W3 Cypher VLE app/5549: Err("db error") after 120009 ms
+W3 Cypher VLE app/0: Err("db error") after 120001 ms
+
+### W3, 20 start apps (recursive CTE over the AGE edge table)
+
+| engine | min of medians (ms) | p50 | p90 | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| AGE SQL CTE | 1.178 | 1.222 | 4.331 | 29.980 | 31.999 |
+| AGE hybrid SQL CTE | 1.194 | 1.230 | 4.337 | 29.954 | 33.952 |
+app/0: rows 19999, client median 29.980 ms, server plan+exec 28.661 ms
+app/5549: rows 32, client median 1.288 ms, server plan+exec 1.553 ms
+app/6813: rows 6, client median 1.202 ms, server plan+exec 1.516 ms

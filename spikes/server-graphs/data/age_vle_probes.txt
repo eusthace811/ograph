@@ -1,0 +1,3 @@
+first VLE query on a new connection (builds AGE's in-memory graph context): 477 ms
+W3 Cypher VLE unanchored, app/5549: Some("canceling statement due to statement timeout") after 120001 ms
+W3 Cypher VLE anchored, hub: Some("canceling statement due to statement timeout") after 120001 ms

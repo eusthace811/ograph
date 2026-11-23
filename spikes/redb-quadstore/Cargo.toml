@@ -1,0 +1,15 @@
+[package]
+name = "redb-quadstore"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+oxigraph = { version = "0.5.13", default-features = false }
+oxrdf = "0.3.5"
+oxsdatatypes = "0.2.4"
+redb = "5.0.0"
+spareval = { version = "0.2.9", features = ["sep-0002"] }
+spargebra = "0.4.8"
+
+[profile.release]
+debug = 1

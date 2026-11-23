@@ -1,0 +1,8 @@
+== age after 5 bench runs
+anon 12 MiB
+file 516 MiB
+shmem 350 MiB
+== hugegraph after 5 bench runs
+anon 3736 MiB
+file 187 MiB
+shmem 0 MiB

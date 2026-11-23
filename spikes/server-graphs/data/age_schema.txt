@@ -1,0 +1,123 @@
+LOAD
+SET
+ create_graph 
+--------------
+ 
+(1 row)
+
+ create_vlabel 
+---------------
+ 
+(1 row)
+
+ create_vlabel 
+---------------
+ 
+(1 row)
+
+ create_vlabel 
+---------------
+ 
+(1 row)
+
+ create_elabel 
+---------------
+ 
+(1 row)
+
+== 1. default AGE: wrong endpoint labels, missing property, bad severity
+ r 
+---
+(0 rows)
+
+ r 
+---
+(0 rows)
+
+ r 
+---
+(0 rows)
+
+ r 
+---
+(0 rows)
+
+    a    |    b    
+---------+---------
+ "app"   | "app"
+ "event" | "event"
+(2 rows)
+
+== 2. add Postgres constraints to the label tables
+DELETE 2
+DELETE 2
+DELETE 2
+DELETE 2
+ALTER TABLE
+ALTER TABLE
+ERROR:  invalid perminfoindex 0 in RTE with relid 0
+ERROR:  invalid perminfoindex 0 in RTE with relid 0
+ERROR:  invalid perminfoindex 0 in RTE with relid 0
+ r 
+---
+(0 rows)
+
+ incidents_after 
+-----------------
+               1
+(1 row)
+
+== 3. provenance as edge properties, queried by confidence and source
+                                                                                                              r                                                                                                               
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"id": 1688849860263940, "label": "affects", "end_id": 844424930131971, "start_id": 1125899906842629, "properties": {"source": "pagerduty", "confidence": 0.8, "evidence_id": "PD-123", "observed_at": 1791292887198}}::edge
+(1 row)
+
+CREATE INDEX
+ i | a |    e     |       t       
+---+---+----------+---------------
+ 7 | 8 | "PD-123" | 1791292887198
+(1 row)
+
+ drop_graph 
+------------
+ 
+(1 row)
+
+LOAD
+SET
+== 2b. same constraints, check what was rejected and the error via plain SQL
+ create_graph 
+--------------
+ 
+(1 row)
+
+ create_vlabel 
+---------------
+ 
+(1 row)
+
+ create_vlabel 
+---------------
+ 
+(1 row)
+
+ create_elabel 
+---------------
+ 
+(1 row)
+
+ALTER TABLE
+ALTER TABLE
+ERROR:  invalid perminfoindex 0 in RTE with relid 0
+ events_left_behind 
+--------------------
+                  0
+(1 row)
+
+ERROR:  new row for relation "incident" violates check constraint "incident_shape"
+ drop_graph 
+------------
+ 
+(1 row)
+

@@ -1,0 +1,4 @@
+schema 20 ms
+graph/vertices/batch: 1120000 of 1120000 written in 2491 ms
+graph/edges/batch: 1160089 of 1160089 written in 2190 ms
+load total 5515 ms

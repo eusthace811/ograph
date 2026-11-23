@@ -1,0 +1,59 @@
+W1 order: AGE returns ascending numeric incident id: true
+
+### W1 (1938 rows)
+
+| engine | median (ms) | max (ms) | server planning (ms) | server execution (ms) |
+|---|---|---|---|---|
+| AGE | 5.350 | 9.185 | 0.080 | 3.884 |
+| AGE hybrid | 5.371 | 8.130 | 0.075 | 3.703 |
+
+round trip floor, SELECT 1 x50: median 0.111 ms
+
+### W2, 20 incidents
+
+| engine | min of medians (ms) | p50 | p90 | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| AGE graph | 0.920 | 1.129 | 1.478 | 1.968 | 2.016 |
+| AGE hybrid | 0.327 | 0.336 | 0.353 | 0.397 | 0.499 |
+
+| incident | rows | AGE graph median | server plan+exec | AGE hybrid median | server plan+exec |
+|---|---|---|---|---|---|
+| inc/74487 | 3 | 1.354 | 1.062 | 0.397 | 0.161 |
+| inc/9346 | 0 | 0.968 | 0.794 | 0.332 | 0.143 |
+| inc/72203 | 5 | 0.994 | 0.817 | 0.345 | 0.146 |
+| inc/23674 | 3 | 1.106 | 0.945 | 0.347 | 0.150 |
+| inc/48305 | 2 | 1.968 | 1.884 | 0.332 | 0.141 |
+| inc/71798 | 3 | 0.944 | 0.777 | 0.332 | 0.143 |
+| inc/89182 | 5 | 1.219 | 1.076 | 0.336 | 0.147 |
+| inc/77985 | 2 | 1.129 | 0.982 | 0.337 | 0.147 |
+| inc/4425 | 2 | 1.478 | 1.355 | 0.333 | 0.144 |
+| inc/71083 | 5 | 0.939 | 0.770 | 0.329 | 0.140 |
+| inc/5516 | 3 | 0.920 | 0.744 | 0.327 | 0.140 |
+| inc/18990 | 1 | 1.047 | 0.888 | 0.327 | 0.140 |
+| inc/39344 | 5 | 0.934 | 0.767 | 0.330 | 0.140 |
+| inc/89190 | 2 | 1.459 | 1.333 | 0.341 | 0.151 |
+| inc/34680 | 5 | 1.299 | 1.216 | 0.372 | 0.155 |
+| inc/81327 | 1 | 1.182 | 1.021 | 0.353 | 0.149 |
+| inc/41991 | 3 | 1.006 | 0.843 | 0.336 | 0.142 |
+| inc/19797 | 1 | 1.307 | 1.171 | 0.330 | 0.149 |
+| inc/71000 | 2 | 1.663 | 1.577 | 0.336 | 0.148 |
+| inc/33743 | 3 | 1.047 | 0.891 | 0.331 | 0.145 |
+
+first VLE query on a new connection (builds AGE's in-memory graph context): 517 ms
+
+### W3 Cypher VLE, 18 of 19 non-hub start apps that finish within 10 s
+
+| engine | min of medians (ms) | p50 | p90 | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| AGE Cypher VLE | 0.185 | 0.230 | 0.318 | 8.342 | 8.764 |
+VLE timeouts: app/1 (19829 expected rows, Some("canceling statement due to statement timeout") after 9999 ms)
+
+### W3, 20 start apps (recursive CTE over the AGE edge table)
+
+| engine | min of medians (ms) | p50 | p90 | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| AGE SQL CTE | 0.909 | 0.959 | 2.996 | 25.631 | 27.312 |
+| AGE hybrid SQL CTE | 0.906 | 0.961 | 3.004 | 25.503 | 27.779 |
+app/0: rows 19999, client median 25.631 ms, server plan+exec 27.931 ms
+app/5549: rows 32, client median 0.948 ms, server plan+exec 1.484 ms
+app/6813: rows 6, client median 0.919 ms, server plan+exec 1.456 ms

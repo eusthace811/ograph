@@ -1,0 +1,11 @@
+schema 706 ms
+graph/vertices/batch: 1120000 of 1120000 written in 2239 ms
+graph/edges/batch: 1160089 of 1160089 written in 2011 ms
+load total 5753 ms
+g.V().hasLabel('app').count(): [20000]
+g.V().hasLabel('event').count(): [1000000]
+g.V().hasLabel('incident').count(): [100000]
+g.E().count(): [1160089]
+g.V().hasLabel('app').inE('about').count(): [1000000]
+g.V().hasLabel('app').outE('dependsOn').count(): [60089]
+g.V().hasLabel('app').inE('affects').count(): [100000]

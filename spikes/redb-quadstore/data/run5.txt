@@ -1,0 +1,65 @@
+generated 3520089 quads in 440.654 ms
+
+| store | bulk load (ms) | on disk (MiB) | open (ms) | quads |
+|---|---|---|---|---|
+| redb + spareval | 8632.293 | 544.0 | 6.098 | 3520089 |
+| oxigraph in-memory | 1799.240 | n/a | n/a | 3520089 |
+
+### W1 Bedrock incidents (1938 rows, ORDER BY identical across engines: true)
+
+| engine | median (ms) | max (ms) | rows |
+|---|---|---|---|
+| redb+spareval | 8.133 | 8.415 | 1938 |
+| redb+spareval memo | 4.094 | 4.222 | 1938 |
+| oxigraph | 3.479 | 4.940 | 1938 |
+| native redb | 2.062 | 2.389 | 1938 |
+
+### W2 correlation window, 20 incidents
+
+rows per instance: min 0 / median 3 / max 5 (total 56, 1 instances returned 0 rows)
+
+| engine | min of medians (ms) | p50 of medians | p90 of medians | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| redb+spareval | 0.127 | 0.316 | 0.594 | 0.954 | 1.036 |
+| redb+spareval memo | 0.100 | 0.229 | 0.456 | 0.696 | 0.781 |
+| oxigraph | 0.047 | 0.094 | 0.185 | 0.288 | 0.306 |
+| native redb | 0.077 | 0.103 | 0.114 | 0.116 | 0.239 |
+
+| incident | rows | SPARQL candidates (history in scope) | native candidates (window) | redb+spareval ms | native ms |
+|---|---|---|---|---|---|
+| inc/74487 | 3 | 271 | 218 | 0.316 | 0.088 |
+| inc/9346 | 0 | 129 | 234 | 0.163 | 0.095 |
+| inc/72203 | 5 | 130 | 256 | 0.150 | 0.107 |
+| inc/23674 | 3 | 237 | 255 | 0.318 | 0.109 |
+| inc/48305 | 2 | 850 | 244 | 0.848 | 0.110 |
+| inc/71798 | 3 | 123 | 243 | 0.151 | 0.098 |
+| inc/89182 | 5 | 308 | 243 | 0.412 | 0.114 |
+| inc/77985 | 2 | 239 | 181 | 0.262 | 0.077 |
+| inc/4425 | 2 | 509 | 252 | 0.594 | 0.109 |
+| inc/71083 | 5 | 132 | 243 | 0.186 | 0.100 |
+| inc/5516 | 3 | 104 | 238 | 0.127 | 0.101 |
+| inc/18990 | 1 | 201 | 237 | 0.228 | 0.102 |
+| inc/39344 | 5 | 131 | 239 | 0.179 | 0.098 |
+| inc/89190 | 2 | 454 | 250 | 0.485 | 0.107 |
+| inc/34680 | 5 | 301 | 275 | 0.379 | 0.116 |
+| inc/81327 | 1 | 296 | 232 | 0.422 | 0.099 |
+| inc/41991 | 3 | 182 | 251 | 0.259 | 0.107 |
+| inc/19797 | 1 | 360 | 237 | 0.387 | 0.102 |
+| inc/71000 | 2 | 710 | 249 | 0.954 | 0.115 |
+| inc/33743 | 3 | 188 | 251 | 0.216 | 0.103 |
+
+hub app/0: 854 direct dependents, blast radius 19999 apps
+
+### W3 blast radius, 20 start apps
+
+rows per instance: min 1 / median 8 / max 19999 (total 42185, 0 instances returned 0 rows)
+
+| engine | min of medians (ms) | p50 of medians | p90 of medians | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| redb+spareval | 0.007 | 0.011 | 1.348 | 14.850 | 16.196 |
+| redb+spareval memo | 0.007 | 0.011 | 1.341 | 14.890 | 20.455 |
+| oxigraph | 0.007 | 0.012 | 12.419 | 135.146 | 137.152 |
+| native redb | 0.001 | 0.005 | 1.199 | 12.809 | 12.898 |
+app/0: rows 19999, medians 14.850 / 14.890 / 135.146 / 12.809 ms
+app/5549: rows 32, medians 0.025 / 0.025 / 0.033 / 0.017 ms
+app/6813: rows 6, medians 0.010 / 0.010 / 0.011 / 0.004 ms

@@ -1,0 +1,30 @@
+== 1. edge 'affects' from an event (schema says incident -> app)
+  POST graph/edges {"label":"affects","outV":20000000,"inV":0,"outVLabel":"event","inVLabel":"app","properties":{}}
+{"exception":"class java.lang.IllegalArgumentException","message":"Undefined link of edge label 'affects': 'event' -> 'app'","cause":"","trace":["com.google.common.base.Preconditions.checkArgument(Preconditions.java:167)","org.apache.hugegraph.util.E.checkArgu
+== 1b. same through Gremlin
+  -> Undefined link of edge label 'affects': 'event' -> 'app'
+== 2. incident missing openedAt (not in nullableKeys)
+  POST graph/vertices {"label":"incident","id":99000001,"properties":{"severity":"SEV1"}}
+{"exception":"class java.lang.IllegalArgumentException","message":"All non-null property keys [severity, openedAt] of vertex label 'incident' must be set, missed keys [openedAt]","cause":"","trace":["com.google.common.base.Preconditions.checkArgument(Precondit
+== 3. severity outside SEV1..SEV3 (no enum type exists)
+  POST graph/vertices {"label":"incident","id":99000002,"properties":{"severity":"SEV9","openedAt":0}}
+{"id":99000002,"label":"incident","type":"vertex","properties":{"severity":"SEV9","openedAt":0}}
+== 3b. wrong data type for openedAt
+  POST graph/vertices {"label":"incident","id":99000003,"properties":{"severity":"SEV1","openedAt":"yesterday"}}
+{"exception":"class java.lang.IllegalArgumentException","message":"Invalid property value 'yesterday' for key 'openedAt', expect a value of type Long, actual type String","cause":"","trace":["com.google.common.base.Preconditions.checkArgument(Preconditions.jav
+== 3c. undeclared property
+  POST graph/vertices {"label":"incident","id":99000004,"properties":{"severity":"SEV1","openedAt":0,"color":"red"}}
+{"exception":"class java.lang.IllegalArgumentException","message":"Undefined property key: 'color'","cause":"","trace":["com.google.common.base.Preconditions.checkArgument(Preconditions.java:167)","org.apache.hugegraph.util.E.checkArgument(E.java:52)","org.apa
+== 4. provenance: append nullable edge properties and a range index on confidence
+  -> ['ok']
+  POST graph/vertices {"label":"incident","id":99000005,"properties":{"severity":"SEV2","openedAt":1791292887198}}
+{"id":99000005,"label":"incident","type":"vertex","properties":{"severity":"SEV2","openedAt":1791292887198}}
+  POST graph/edges {"label":"affects","outV":99000005,"inV":0,"outVLabel":"incident","inVLabel":"app","properties":{"source":"pagerduty","evidenceId":"PD-123","confidence":0.8,"observedAt":1791292887198}}
+{"id":"L99000005>2>2>>L0","label":"affects","type":"edge","outV":99000005,"outVLabel":"incident","inV":0,"inVLabel":"app","properties":{"source":"pagerduty","evidenceId":"PD-123","confidence":0.8,"observedAt":1791292887198}}
+== 4b. query by two provenance properties (only confidence is indexed)
+  -> Don't accept query based on properties [confidence, source] that are not indexed in label 'affects', may not match secondary/range condition
+== 4c. query by the indexed one, filter the other in the traversal
+  -> [{'inc': 99000005, 'app': 0, 'evidence': 'PD-123'}]
+== cleanup
+  -> ['dropped']
+  -> [100000]

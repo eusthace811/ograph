@@ -1,0 +1,42 @@
+generated 3520089 quads in 419.816 ms
+
+| store | bulk load (ms) | on disk (MiB) | open (ms) | quads |
+|---|---|---|---|---|
+| redb + spareval | 8296.375 | 544.0 | 5.553 | 3520089 |
+| oxigraph in-memory | 1774.094 | n/a | n/a | 3520089 |
+
+### W1 Bedrock incidents (1938 rows, ORDER BY identical across engines: true)
+
+| engine | median (ms) | max (ms) | rows |
+|---|---|---|---|
+| redb+spareval | 8.161 | 8.264 | 1938 |
+| redb+spareval memo | 4.126 | 4.182 | 1938 |
+| oxigraph | 3.647 | 4.904 | 1938 |
+| native redb | 4.848 | 4.973 | 1938 |
+
+### W2 correlation window, 20 incidents
+
+rows per instance: min 0 / median 3 / max 5 (total 56, 1 instances returned 0 rows)
+
+| engine | min of medians (ms) | p50 of medians | p90 of medians | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| redb+spareval | 0.124 | 0.311 | 0.573 | 0.914 | 0.958 |
+| redb+spareval memo | 0.100 | 0.217 | 0.438 | 0.686 | 0.724 |
+| oxigraph | 0.046 | 0.088 | 0.175 | 0.277 | 0.293 |
+| native redb | 0.071 | 0.096 | 0.107 | 0.109 | 0.129 |
+
+hub app/0: 854 direct dependents, blast radius 19999 apps
+
+### W3 blast radius, 20 start apps
+
+rows per instance: min 1 / median 8 / max 19999 (total 42185, 0 instances returned 0 rows)
+
+| engine | min of medians (ms) | p50 of medians | p90 of medians | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| redb+spareval | 0.007 | 0.011 | 1.347 | 14.764 | 14.890 |
+| redb+spareval memo | 0.007 | 0.011 | 1.321 | 14.789 | 14.949 |
+| oxigraph | 0.007 | 0.012 | 12.520 | 135.267 | 136.757 |
+| native redb | 0.001 | 0.005 | 1.208 | 12.876 | 14.090 |
+app/0: rows 19999, medians 14.764 / 14.789 / 135.267 / 12.876 ms
+app/5549: rows 32, medians 0.025 / 0.025 / 0.032 / 0.017 ms
+app/6813: rows 6, medians 0.010 / 0.010 / 0.011 / 0.004 ms

@@ -1,0 +1,26 @@
+round trip floor x50: Gremlin script `1` median 0.827 ms, GET /versions median 0.275 ms
+
+### W1 (1938 rows)
+
+| engine | median (ms) | max (ms) |
+|---|---|---|
+| HugeGraph Gremlin | 9.546 | 15.708 |
+
+### W2, 20 incidents
+
+| engine | min of medians (ms) | p50 | p90 | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| HugeGraph adjacency | 1.054 | 2.136 | 4.544 | 5.366 | 7.314 |
+| HugeGraph range index | 1.679 | 2.454 | 6.323 | 7.407 | 16.097 |
+
+### W3, 20 start apps
+
+| engine | min of medians (ms) | p50 | p90 | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| HugeGraph Gremlin repeat | 0.936 | 1.447 | 6.892 | 65.966 | 138.666 |
+| HugeGraph kneighbor REST | 2.420 | 5.594 | 98.678 | 267.535 | 488.967 |
+
+server time from Gremlin profile() (ms): W1 8.380, W2 inc/48305 1.350, W3 app/0 70.685, W3 app/5549 0.131
+app/0: rows 19999, medians 65.966 / 267.535 ms
+app/5549: rows 32, medians 1.843 / 15.372 ms
+app/6813: rows 6, medians 1.428 / 4.591 ms

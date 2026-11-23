@@ -1,0 +1,19 @@
+round trip floor x50: Gremlin script `1` median 1.665 ms, GET /versions median 0.217 ms
+
+### W1 (1938 rows)
+
+| engine | median (ms) | max (ms) |
+|---|---|---|
+| HugeGraph Gremlin | 14.439 | 16.111 |
+
+### W2, 20 incidents
+
+| engine | min of medians (ms) | p50 | p90 | max of medians | max of all runs |
+|---|---|---|---|---|---|
+| HugeGraph adjacency | 0.845 | 1.466 | 2.076 | 2.777 | 3.577 |
+| HugeGraph range index | 1.554 | 2.382 | 3.533 | 4.322 | 4.639 |
+
+thread 'main' (246183) panicked at src/bin/bench.rs:391:5:
+gremlin 503 Service Unavailable: {"cause":"","exception":"class jakarta.ws.rs.ServiceUnavailableException","message":"The server available memory 61(MB) is below than threshold 64(MB) and can't process the request, you can config restserver.min_free_memory to adjust it or try again later"}
+g.V(app).repeat(__.in('dependsOn').dedup()).emit().dedup().id()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
