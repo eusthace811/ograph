@@ -121,7 +121,7 @@ pub fn parse(query: &str) -> anyhow::Result<spargebra::Query> {
         if parser.clone().parse_update(query).is_ok_and(|u| !u.operations.is_empty()) {
             anyhow::bail!("read-only: SPARQL updates are not allowed");
         }
-        match unescaped_slash(&parser, query) {
+        match unescaped_id(&parser, query) {
             Some(name) => anyhow::bail!("{e}: write {name} as {} inside a query, or use the full IRI", escape_id(name)),
             None => Err(e.into()),
         }
@@ -132,7 +132,7 @@ pub fn parse(query: &str) -> anyhow::Result<spargebra::Query> {
 /// which SPARQL cannot parse: a `/`, or more than one `.`, stops the parser with an error that
 /// does not mention it. Comments, strings and IRIs are matched first, so ids inside them are
 /// skipped, and an id is named only when escaping every id makes the query parse.
-fn unescaped_slash<'q>(parser: &SparqlParser, query: &'q str) -> Option<&'q str> {
+fn unescaped_id<'q>(parser: &SparqlParser, query: &'q str) -> Option<&'q str> {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| {
         let skipped = concat!(

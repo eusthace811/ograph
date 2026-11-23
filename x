@@ -53,6 +53,7 @@ fi
 TARGET_U="$(if [ "$HOST" = windows ]; then cygpath -u "$CARGO_TARGET_DIR"; else echo "$CARGO_TARGET_DIR"; fi)"
 RELEASE_BIN="$TARGET_U/release/ograph$EXE"
 CARGO_CONFIG="${CARGO_HOME:-$HOME/.cargo}/config.toml"
+VENDOR_DIR="$HERE/vendor"; [ "$HOST" = windows ] && VENDOR_DIR="$(cygpath -w "$VENDOR_DIR")"
 
 case "${1:-help}" in
   help|-h|--help) sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -70,8 +71,7 @@ if [ -n "${OGRAPH_CARGO_REGISTRY:-}" ]; then
     --config "source.ograph-mirror.registry=\"$OGRAPH_CARGO_REGISTRY\""
     --config 'source.crates-io.replace-with="ograph-mirror"'
   )
-elif [ -d "$HERE/vendor" ] && [ "${1:-}" != vendor ]; then
-  VENDOR_DIR="$HERE/vendor"; [ "$HOST" = windows ] && VENDOR_DIR="$(cygpath -w "$VENDOR_DIR")"
+elif [ -d "$HERE/vendor" ] && [ "$1" != vendor ]; then
   # Literal TOML strings, so a Windows path's backslashes stay as they are.
   REGISTRY_ARGS=(
     --config "source.vendored-sources.directory='$VENDOR_DIR'"
@@ -152,8 +152,10 @@ case "$1" in
   test)    shift; run_cargo test --workspace --locked "$@" ;;
 
   vendor)  shift
-           vendor_dir="$HERE/vendor"; [ "$HOST" = windows ] && vendor_dir="$(cygpath -w "$vendor_dir")"
-           run_cargo vendor --locked --versioned-dirs "$vendor_dir" "$@" >/dev/null
+           # Quiet on success: cargo's own advice to edit .cargo/config.toml does not apply to ./x.
+           if ! vendored="$(run_cargo vendor --locked --versioned-dirs "$VENDOR_DIR" "$@" 2>&1)"; then
+             printf '%s\n' "$vendored" >&2; exit 1
+           fi
            echo "vendored every locked crate into ./vendor; ./x builds from it offline until you delete it" ;;
 
   doctor)  status=0
@@ -163,7 +165,7 @@ case "$1" in
            echo "install to:    $BIN_DEFAULT"
            if [ -n "${OGRAPH_CARGO_REGISTRY:-}" ]; then
              echo "registry:      $OGRAPH_CARGO_REGISTRY (from OGRAPH_CARGO_REGISTRY)"
-           elif [ -n "${VENDOR_DIR:-}" ]; then
+           elif [ -d "$HERE/vendor" ]; then
              echo "registry:      none, building offline from $VENDOR_DIR"
            elif [ -f "$CARGO_CONFIG" ] && grep -q 'replace-with' "$CARGO_CONFIG"; then
              echo "registry:      crates.io replaced in $CARGO_CONFIG:"

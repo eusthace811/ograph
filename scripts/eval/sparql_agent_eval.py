@@ -4,8 +4,9 @@
 An agent (headless pi with the skills/ograph skill, bash and read) answers each question by
 writing SPARQL. It ends its reply with its final query; that query is run and its rows must
 equal the rows of the question's reference query, as a set, on some choice and order of its
-columns (extra columns are allowed, extra or missing rows are not). Numbers compare by value. "recipe" questions are close
-to a recipe in skills/ograph/references/sparql.md; "novel" ones are not.
+columns (extra columns are allowed, extra or missing rows are not). Numbers compare by value.
+"recipe" questions are close to a recipe in skills/ograph/references/sparql.md; "novel" ones
+are not.
 
 --no-skill runs the same agent without the skill, to measure what the skill adds."""
 import argparse, atexit, concurrent.futures, itertools, json, os, pathlib, re, shutil, statistics, subprocess, tempfile, time
@@ -44,9 +45,9 @@ if err: raise SystemExit(f"{demo} is not an ograph workspace: {err}")
 NAMES = dict(names)
 def cell(c):
     m = re.fullmatch(r'"(.*)"\^\^<http://www\.w3\.org/2001/XMLSchema#\w+>', c)
-    c = m[1] if m else c
+    c = NAMES.get(c, m[1] if m else c)
     try: return str(float(c))
-    except ValueError: return NAMES.get(c, c)
+    except ValueError: return c
 def named(rs): return [[cell(c) for c in r] for r in rs]
 
 def same(got, gold):

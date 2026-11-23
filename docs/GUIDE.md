@@ -118,9 +118,8 @@ ograph sparql 'SELECT ?id ?status WHERE { ?i a inc:Incident ; inc:id ?id ; inc:s
 
 Two things to know: write `/` in ids as `\/` inside a query (and a version's dots as `\.`),
 and match event types by their specific class (`evt:Alert`, `evt:Deployment`, ...), since
-`evt:Event` itself is not stored.
-A misspelled name is an error that suggests the right one. The prefixes and more recipes are in
-`skills/ograph/references/sparql.md`.
+`evt:Event` itself is not stored. A misspelled name is an error that suggests the right one. The
+prefixes and more recipes are in `skills/ograph/references/sparql.md`.
 
 Add `--json` to any command for machine-readable output. Exit codes: 0 found, 1 nothing found,
 2 error.

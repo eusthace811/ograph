@@ -119,7 +119,9 @@ impl Llm {
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(self.config.timeout_s);
         // Stop the whole tree, including whatever the command left behind: on Unix a negative
-        // pid signals the process group, on Windows taskkill /T follows child processes.
+        // pid signals the process group. On Windows taskkill /T follows child processes, but not
+        // from a command that already exited, so its leftovers are found by their parent pid,
+        // which `child` keeps from being reused.
         let kill_group = |child: &mut std::process::Child| {
             #[cfg(unix)]
             let _ = Command::new("kill").args(["-KILL", &format!("-{}", child.id())]).status();
@@ -127,8 +129,6 @@ impl Llm {
             {
                 let pid = child.id();
                 let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]).status();
-                // taskkill /T cannot start from a command that already exited, but its leftovers
-                // still name it as parent, and `child` keeps its pid from being reused.
                 let leftovers = format!("Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}' | ForEach-Object {{ taskkill /T /F /PID $_.ProcessId }}");
                 let _ = Command::new("powershell").args(["-NoProfile", "-Command", &leftovers]).stdout(Stdio::null()).stderr(Stdio::null()).status();
             }
