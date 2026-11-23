@@ -131,14 +131,17 @@ pub fn leading_timestamp(line: &str) -> (Option<i64>, &str) {
 }
 
 fn is_variable(token: &str) -> bool {
-    let t = token.trim_matches(|c: char| ",;:()[]{}\"'".contains(c));
+    let value = token.rsplit_once('=').map_or(token, |(_, v)| v);
+    let t = value.trim_matches(|c: char| ",;:()[]{}\"'".contains(c));
     if t.is_empty() {
         return false;
     }
     let digits = t.bytes().filter(u8::is_ascii_digit).count();
-    // Numbers, ids with digits, hex, durations (12ms), IPs, UUIDs.
+    // Numbers, ids with digits, hex, durations (12ms), IPs, UUIDs, and opaque upper-case ids
+    // such as product SKUs (L9ECAV7KIM), which carry too few digits for the first rule.
     digits > 0 && (digits * 2 >= t.len() || t.contains('-') && t.len() >= 16 || t.starts_with("0x"))
         || (t.len() >= 16 && t.bytes().all(|c| c.is_ascii_hexdigit()))
+        || (digits > 0 && t.len() >= 8 && t.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()))
 }
 
 /// Groups lines into templates.
