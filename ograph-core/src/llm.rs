@@ -94,8 +94,8 @@ impl Llm {
     fn run(&self, prompt: &str, input: &str) -> anyhow::Result<String> {
         let (cmd, args) = self.config.command.split_first().ok_or_else(|| anyhow::anyhow!("empty llm command"))?;
         let mut command = Command::new(cmd);
-        #[cfg(windows)]
         // Less a second: Windows stamps process creation from a clock that lags by up to ~16 ms.
+        #[cfg(windows)]
         let spawned_ms = std::time::UNIX_EPOCH.elapsed().map_or(0, |d| d.as_millis()).saturating_sub(1000);
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut command, 0);

@@ -44,18 +44,19 @@ names, err = rows("SELECT ?s ?n WHERE { { ?s ops:name ?n } UNION { ?s inc:id ?n 
 if err: raise SystemExit(f"{demo} is not an ograph workspace: {err}")
 NAMES = dict(names)
 def cell(c):
-    # --json prints a double or float as a typed literal and an integer or decimal bare.
-    m = re.fullmatch(r'"(.*)"\^\^<http://www\.w3\.org/2001/XMLSchema#(?:double|float)>', c)
+    # --json prints a double or float as a typed literal, an integer or decimal bare, and an
+    # unbound variable as null.
+    m = isinstance(c, str) and re.fullmatch(r'"(.*)"\^\^<http://www\.w3\.org/2001/XMLSchema#(?:double|float)>', c)
     if not m: return NAMES.get(c, c)
-    return format(decimal.Decimal(m[1]).normalize(), "f")
+    try: return format(decimal.Decimal(m[1]).normalize(), "f")
+    except decimal.InvalidOperation: return c
 def named(rs): return [[cell(c) for c in r] for r in rs]
 
 def same(got, gold):
     got, gold = named(got), named(gold)
     want = {tuple(r) for r in gold}
-    if not got or not want: return not got and not want
-    k = len(gold[0])
-    return any({tuple(r[i] for i in cols) for r in got} == want for cols in itertools.permutations(range(len(got[0])), k))
+    if not got: return False
+    return any({tuple(r[i] for i in cols) for r in got} == want for cols in itertools.permutations(range(len(got[0])), len(gold[0])))
 
 PROMPT = """Answer this question about the ograph workspace in the current directory by writing SPARQL and running it with `ograph sparql`. Use only `ograph sparql`, not the other ograph commands. Run as many queries as you need.
 
