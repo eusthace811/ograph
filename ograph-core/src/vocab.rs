@@ -114,7 +114,6 @@ pub const RDFS_LABEL: &str = "http://www.w3.org/2000/01/rdf-schema#label";
 pub const DATA: &str = "https://ograph.dev/id/";
 pub const GRAPH: &str = "https://ograph.dev/graph/";
 pub const QUARANTINE: &str = "https://ograph.dev/graph/quarantine";
-pub const ONTOLOGY_GRAPH: &str = "https://ograph.dev/graph/ontology";
 
 pub fn all() -> impl Iterator<Item = &'static str> {
     [ops::ALL, evt::ALL, inc::ALL, disc::ALL, corr::ALL, rca::ALL, harv::ALL].into_iter().flatten().copied()
@@ -136,10 +135,6 @@ pub const PREFIXES: &[(&str, &str)] = &[
     ("owl", "http://www.w3.org/2002/07/owl#"),
     ("sh", "http://www.w3.org/ns/shacl#"),
 ];
-
-pub fn sparql_prologue() -> String {
-    PREFIXES.iter().map(|(p, ns)| format!("PREFIX {p}: <{ns}>\n")).collect()
-}
 
 pub fn compact(iri: &str) -> String {
     for (p, ns) in PREFIXES {

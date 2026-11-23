@@ -44,10 +44,6 @@ fn pack(kind: Kind, payload: u64) -> Id {
     ((kind as Id) << KIND_SHIFT) | (payload & PAYLOAD)
 }
 
-pub fn is_dict(id: Id) -> bool {
-    id & EPHEMERAL == 0 && kind(id) == Kind::Dict
-}
-
 /// Milliseconds since the Unix epoch, for an inline dateTime id.
 pub fn millis(id: Id) -> Option<i64> {
     (id & EPHEMERAL == 0 && kind(id) == Kind::DateTime).then(|| (id & PAYLOAD) as i64 - TIME_BIAS)

@@ -1,6 +1,6 @@
 //! Drain log templating, copied from ogrep-core (MIT, same authors).
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 /// Share of token positions that must agree for a line to join a template.
 pub const SIMILARITY: f64 = 0.5;
@@ -32,11 +32,6 @@ impl Token {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Template {
     pub tokens: Vec<Token>,
-    pub count: usize,
-    pub first_seen: Option<i64>,
-    pub last_seen: Option<i64>,
-    /// Where the first line of this template was seen: `(file, line)`.
-    pub example: (String, usize),
 }
 
 impl Template {
@@ -45,28 +40,6 @@ impl Template {
         shown.join(" ")
     }
 
-    /// The runs of constant tokens between the variable ones, in order.
-    pub fn constant_runs(&self) -> Vec<Vec<&str>> {
-        self.tokens
-            .split(|t| !matches!(t, Token::Word(_)))
-            .filter(|run| !run.is_empty())
-            .map(|run| run.iter().map(Token::as_str).collect())
-            .collect()
-    }
-
-    /// The longest run of constant tokens, the part most likely to be written
-    /// literally in the code that logs it.
-    pub fn constant_part(&self) -> String {
-        let len = |run: &[Token]| run.iter().map(|t| t.as_str().len() + 1).sum::<usize>();
-        let mut best: &[Token] = &[];
-        for run in self.tokens.split(|t| !matches!(t, Token::Word(_))) {
-            if len(run) > len(best) {
-                best = run;
-            }
-        }
-        let words: Vec<&str> = best.iter().map(Token::as_str).collect();
-        words.join(" ")
-    }
 }
 
 /// Seconds since the epoch for a leading ISO 8601 timestamp, and the rest of
@@ -148,13 +121,12 @@ fn is_variable(token: &str) -> bool {
 #[derive(Default)]
 pub struct Drain {
     /// Templates by length, then by first token as shown.
-    groups: HashMap<usize, HashMap<String, Vec<usize>>>,
+    groups: FxHashMap<usize, FxHashMap<String, Vec<usize>>>,
     pub templates: Vec<Template>,
     /// Each template's tokens as ids from `vocab`, `MASKED` or `GENERALISED`, so matching
     /// compares integers instead of strings.
     ids: Vec<Vec<u32>>,
-    /// Template indexes by length, ascending.
-    vocab: HashMap<String, u32>,
+    vocab: FxHashMap<String, u32>,
 }
 
 const MASKED: u32 = u32::MAX;
@@ -188,8 +160,8 @@ impl LineToken<'_> {
 impl Drain {
     /// Adds a line and returns the index of the template it joined or created, or `None` for
     /// a blank line.
-    pub fn add(&mut self, file: &str, line_number: usize, line: &str) -> Option<usize> {
-        let (time, rest) = leading_timestamp(line);
+    pub fn add(&mut self, line: &str) -> Option<usize> {
+        let (_, rest) = leading_timestamp(line);
         let tokens: Vec<LineToken> = rest
             .split_whitespace()
             .map(|t| {
@@ -211,7 +183,7 @@ impl Drain {
             .collect();
         let by_first = self.groups.entry(tokens.len()).or_default();
         if !by_first.contains_key(first) {
-            by_first.insert(first.to_string(), Vec::new());
+            by_first.insert(first.to_owned(), Vec::new());
         }
         let slots = by_first.get_mut(first).expect("just inserted");
         // As in Drain3: similarity counts equal tokens (a line has no
@@ -236,11 +208,6 @@ impl Drain {
                     *id = GENERALISED;
                 }
             }
-            t.count += 1;
-            if let Some(time) = time {
-                t.first_seen = Some(t.first_seen.map_or(time, |f| f.min(time)));
-                t.last_seen = Some(t.last_seen.map_or(time, |l| l.max(time)));
-            }
             return Some(i);
         }
         slots.push(self.templates.len());
@@ -255,25 +222,11 @@ impl Drain {
             })
             .collect();
         self.ids.push(ids);
-        self.templates.push(Template {
-            tokens: tokens.into_iter().map(LineToken::to_owned).collect(),
-            count: 1,
-            first_seen: time,
-            last_seen: time,
-            example: (file.to_string(), line_number),
-        });
+        self.templates.push(Template { tokens: tokens.into_iter().map(LineToken::to_owned).collect() });
         Some(self.templates.len() - 1)
     }
 
     fn word_id(&self, w: &str) -> u32 {
         self.vocab.get(w).copied().unwrap_or(UNKNOWN)
     }
-
-    /// Templates, most frequent first; ties by first sighting, then text.
-    pub fn sorted(mut self) -> Vec<Template> {
-        self.templates
-            .sort_by_cached_key(|t| (std::cmp::Reverse(t.count), t.first_seen, t.text()));
-        self.templates
-    }
 }
-

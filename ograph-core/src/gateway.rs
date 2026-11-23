@@ -11,7 +11,7 @@ use crate::shacl::{self, Graph};
 use crate::store::{GraphSel, Snapshot, Store};
 use crate::term::{self, Id};
 use crate::vocab::{self, RDF_TYPE, RDFS_LABEL, corr, harv, ops};
-use oxrdf::vocab::{rdf, xsd};
+use oxrdf::vocab::xsd;
 use oxrdf::{Literal, NamedNode, Term, Triple};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::RefCell;
@@ -47,6 +47,7 @@ fn iri_scheme() -> &'static regex::Regex {
 }
 
 /// Names and aliases of catalog entities, normalized, per class.
+#[derive(Default)]
 pub struct Catalog {
     names: HashMap<(&'static str, String), (NamedNode, Vec<String>)>,
     known: FxHashSet<String>,
@@ -84,7 +85,7 @@ const CATALOG_CLASSES: [&str; 2] = [ops::APPLICATION, ops::TEAM];
 
 impl Catalog {
     pub fn from_snapshot(snap: &Snapshot) -> crate::store::Result<Self> {
-        let mut c = Catalog { names: HashMap::new(), known: FxHashSet::default() };
+        let mut c = Catalog::default();
         let (Some(ty), name, alias) = (snap.iri(RDF_TYPE)?, snap.iri(ops::NAME)?, snap.iri(ops::ALIAS)?) else { return Ok(c) };
         for class in CATALOG_CLASSES {
             let Some(cid) = snap.iri(class)? else { continue };
@@ -262,7 +263,7 @@ fn kind_of(class: &str) -> String {
 
 /// Runs the checks without writing. Returns the accepted triples and the rejections.
 pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id>) -> (Vec<(Triple, usize)>, Vec<Rejection>, usize) {
-    let mut catalog = Catalog::from_snapshot(snap).unwrap_or(Catalog { names: HashMap::new(), known: FxHashSet::default() });
+    let mut catalog = Catalog::from_snapshot(snap).unwrap_or_default();
     let ty = NamedNode::new_unchecked(RDF_TYPE);
     let name_p = NamedNode::new_unchecked(ops::NAME);
     let alias_p = NamedNode::new_unchecked(ops::ALIAS);
@@ -499,7 +500,7 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, du
         triples.push(f(corr::CONFIDENCE, term::decimal(confidence.get()).into()));
         triples.push(f(harv::METHOD, s("llm")));
         for e in evidence {
-            triples.push(f(evt_source(), s(&e.0)));
+            triples.push(f(vocab::evt::SOURCE_RECORD, s(&e.0)));
         }
     }
     let mut quarantine = Vec::new();
@@ -542,17 +543,9 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, du
     })
 }
 
-fn evt_source() -> &'static str {
-    crate::vocab::evt::SOURCE_RECORD
-}
-
 pub fn sha2_hash(s: &str) -> [u8; 32] {
     use sha2::Digest;
     sha2::Sha256::digest(s.as_bytes()).into()
-}
-
-pub fn rdf_type() -> NamedNode {
-    rdf::TYPE.into_owned()
 }
 
 /// Full SHACL audit of the store, the `ograph validate` command.

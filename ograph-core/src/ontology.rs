@@ -133,10 +133,6 @@ impl Ontology {
         self.classes.contains_key(iri)
     }
 
-    pub fn is_subclass(&self, sub: &str, sup: &str) -> bool {
-        self.classes.get(sub).is_some_and(|s| s.contains(sup))
-    }
-
     pub fn property(&self, iri: &str) -> Option<&Property> {
         self.properties.get(iri)
     }

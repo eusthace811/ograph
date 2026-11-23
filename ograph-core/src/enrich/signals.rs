@@ -175,7 +175,7 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     // Per service: one Drain, and per line its (time ms, template index, error-like).
     type Lines = Vec<(i64, usize, bool)>;
     let mut per: BTreeMap<String, (Drain, Lines)> = BTreeMap::new();
-    for (i, line) in text.lines().enumerate() {
+    for line in text.lines() {
         let (svc, t, msg, level) = if line.trim_start().starts_with('{') {
             let Ok(f) = json_fields(line, ["ts", "timestamp", "time", "service", "container_name", "app", "message", "msg", "log", "level", "severity"]) else { continue };
             let Some(t) = f[0..3].iter().find_map(|v| v.as_ref().and_then(parse_time)) else { continue };
@@ -187,13 +187,13 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
         };
         let errorish = level.as_deref().is_some_and(|l| matches!(l, "error" | "err" | "fatal" | "critical" | "warn" | "warning")) || error_like().is_match(&msg);
         let entry = per.entry(svc).or_default();
-        let Some(idx) = entry.0.add(key, i + 1, &msg) else { continue };
+        let Some(idx) = entry.0.add(&msg) else { continue };
         entry.1.push((t, idx, errorish));
     }
     let m = Extraction::Rule { extractor: "drain-burst".into() };
     for (svc, (drain, lines)) in per {
         let Some(t0) = lines.iter().map(|l| l.0).min() else { continue };
-        let mut buckets: HashMap<usize, BTreeMap<i64, (usize, i64)>> = HashMap::new();
+        let mut buckets: BTreeMap<usize, BTreeMap<i64, (usize, i64)>> = BTreeMap::new();
         for &(t, idx, errorish) in &lines {
             if errorish {
                 let e = buckets.entry(idx).or_default().entry(t.div_euclid(60_000)).or_insert((0, t));
@@ -234,7 +234,6 @@ fn first_str(fields: &[Option<serde_json::Value>]) -> Option<&str> {
     fields.iter().find_map(|v| v.as_ref()?.as_str())
 }
 
-/// The template a just-added line joined: the new one if Drain created it, else the best match.
 struct Span {
     service: String,
     start: i64,

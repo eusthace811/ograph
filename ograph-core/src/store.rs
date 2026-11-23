@@ -511,13 +511,6 @@ impl Snapshot {
         self.quads([None, Some(p), Some(o)], GraphSel::Union).map(|q| q.map(|q| q[0])).collect()
     }
 
-    /// Events at `[from, to]` (inline time ids), in time order.
-    pub fn events_between(&self, from: Id, to: Id) -> Result<Vec<(Id, Id)>> {
-        self.time.range([from, 0]..=[to, Id::MAX])?.map(|r| {
-            let k = r?.0.value();
-            Ok((k[0], k[1]))
-        }).collect()
-    }
 
     /// Events on `app` at `[from, to]`, in time order, as `(time id, event)`.
     pub fn events_on(&self, app: Id, from: Id, to: Id) -> Result<Vec<(Id, Id)>> {
