@@ -1,3 +1,6 @@
+// The stand-in for ogrep is a shell script, which Windows cannot run as a command.
+#![cfg(unix)]
+
 use ograph_core::workspace::Workspace;
 use std::path::{Path, PathBuf};
 

@@ -10,6 +10,14 @@ ograph builds an ontology-driven observability knowledge graph and queries it fr
 
 New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md). Agents use the skill in [`skills/ograph/`](skills/ograph/SKILL.md).
 
+Install from source on Linux, macOS or Windows (Git Bash). ograph needs Rust 1.85+ and `ogrep` 0.2+ on `PATH`:
+
+```sh
+./x doctor          # checks cargo, the crate registry (Artifactory on a corporate network) and ogrep
+./x install         # ~/.cargo/bin/ograph, or ~/bin/ograph.exe on Windows
+./x install-skill   # the agent skill, into ~/.claude/skills and ~/.agents/skills
+```
+
 ```sh
 ograph init
 ograph harvest                     # one named graph per source file, then correlation

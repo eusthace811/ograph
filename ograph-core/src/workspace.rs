@@ -441,7 +441,8 @@ pub fn chain_batch(a: &correlate::Analysis, max: usize) -> Batch {
     b
 }
 
-#[cfg(test)]
+// These tests use shell scripts as stand-ins for ogrep and the model command.
+#[cfg(all(test, unix))]
 mod tests {
     use super::Workspace;
     use std::path::{Path, PathBuf};

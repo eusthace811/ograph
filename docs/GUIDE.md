@@ -7,10 +7,22 @@ investigation. `docs/REFERENCE.md` has every option and format.
 
 ## 1. Install
 
+ograph builds from source with Rust 1.85 or newer, on Linux, macOS and Windows (Git Bash). It
+is pure Rust, so no C compiler is needed. On Windows, rustup's MSVC toolchain also needs the
+Visual Studio Build Tools for the linker.
+
 ```bash
-cargo install --path ograph-cli      # puts `ograph` in ~/.cargo/bin
+./x doctor        # checks cargo, the crate registry and ogrep, and says what to fix
+./x install       # release build into ~/.cargo/bin (Windows: ~/bin, which Git Bash has on PATH)
+hash -r
 ograph --version
 ```
+
+On a corporate network, cargo downloads crates from whatever `~/.cargo/config.toml` puts in
+place of crates.io, usually an Artifactory Cargo remote. If `./x doctor` cannot fetch the
+crates, it prints the lines to add. `OGRAPH_CARGO_REGISTRY=sparse+https://<host>/artifactory/api/cargo/<repo>/index/`
+uses a registry for one run, and `./x vendor` prepares an offline build. On Windows, stop any
+`ograph serve` before reinstalling, since Windows won't replace a running `.exe`.
 
 ograph also needs `ogrep` 0.2 or newer on `PATH`. It reads the service catalog (Backstage,
 Compose, Kubernetes and Prometheus files), and only the catalog can create applications. Without
@@ -137,11 +149,12 @@ the investigation order and the rules (chains are hypotheses; verdicts only afte
 confirms):
 
 ```bash
-cp -R skills/ograph ~/.claude/skills/          # Claude Code, all projects
-cp -R skills/ograph .claude/skills/            # or one project
+./x install-skill                              # ~/.claude/skills and ~/.agents/skills
+./x install-skill .claude/skills               # or one project
 ```
 
-Agents that read Agent Skills folders from another directory take the same folder.
+Agents that read Agent Skills folders from another directory take the same folder:
+`./x install-skill DIR`.
 
 **MCP clients.** Point them at `ograph serve --mcp --root /path/to/workspace`. The tools are
 `before`, `chains`, `blast`, `similar`, `why`, `news`, `sparql` and `verdict`.
@@ -171,3 +184,5 @@ ograph ontology diff new.ttl    # before changing the ontology; BREAKING lines n
 | `the ontology declares no X (did you mean Y?)` | A misspelled name in a SPARQL query |
 | `verdict not recorded: the ontology refuses ...` | `.ograph/ontology.ttl` is older than the binary. Run `ograph ontology check` and update it |
 | `DEGRADED: ogrep not runnable` on the catalog line, and almost everything quarantined | `ogrep` is not on `PATH`; install it or set `OGRAPH_OGREP`, then harvest again |
+| Windows: `running pi` fails in a harvest with `[llm.extract]` | npm installs pi as `pi.cmd`, which Windows starts only through `cmd`. Begin the command with `"cmd", "/C", "pi", ...` |
+| Windows: `./x install` says ograph.exe is still running | Stop `ograph serve` (Ctrl-C), or `taskkill //IM ograph.exe //F` |

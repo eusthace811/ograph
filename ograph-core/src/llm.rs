@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use anyhow::Context;
-use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
@@ -95,9 +94,11 @@ impl Llm {
     fn run(&self, prompt: &str, input: &str) -> anyhow::Result<String> {
         let (cmd, args) = self.config.command.split_first().ok_or_else(|| anyhow::anyhow!("empty llm command"))?;
         // Its own process group, so a timeout also stops whatever the command started.
-        let mut child = Command::new(cmd)
+        let mut command = Command::new(cmd);
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
+        let mut child = command
             .args(args)
-            .process_group(0)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -118,9 +119,13 @@ impl Llm {
             });
         }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(self.config.timeout_s);
-        // A negative pid signals the whole group, including whatever the command left behind.
+        // Stop the whole tree, including whatever the command left behind: on Unix a negative
+        // pid signals the process group, on Windows taskkill /T follows child processes.
         let kill_group = |child: &mut std::process::Child| {
+            #[cfg(unix)]
             let _ = Command::new("kill").args(["-KILL", &format!("-{}", child.id())]).status();
+            #[cfg(windows)]
+            let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &child.id().to_string()]).status();
             let _ = child.kill();
             let _ = child.wait();
         };
@@ -205,7 +210,8 @@ pub fn quoted(text: &str, quote: &str) -> bool {
     q.len() >= 3 && squash(text).contains(&q)
 }
 
-#[cfg(test)]
+// These tests use shell scripts as stand-ins for ogrep and the model command.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
