@@ -1,4 +1,5 @@
 /target/
+/vendor/
 /data/
 .DS_Store
 spikes/redb-quadstore/target/

@@ -94,6 +94,8 @@ impl Llm {
     fn run(&self, prompt: &str, input: &str) -> anyhow::Result<String> {
         let (cmd, args) = self.config.command.split_first().ok_or_else(|| anyhow::anyhow!("empty llm command"))?;
         let mut command = Command::new(cmd);
+        #[cfg(windows)]
+        let spawned_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut command, 0);
         let mut child = command
@@ -120,8 +122,9 @@ impl Llm {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(self.config.timeout_s);
         // Stop the whole tree, including whatever the command left behind: on Unix a negative
         // pid signals the process group. On Windows taskkill /T follows child processes, but not
-        // from a command that already exited, so its leftovers are found by their parent pid,
-        // which `child` keeps from being reused.
+        // from a command that already exited, so its leftovers are found by their parent pid.
+        // `child` keeps that pid from being reused, and the start time rules out processes
+        // orphaned earlier by an exited process that had the same pid.
         let kill_group = |child: &mut std::process::Child| {
             #[cfg(unix)]
             let _ = Command::new("kill").args(["-KILL", &format!("-{}", child.id())]).status();
@@ -129,7 +132,11 @@ impl Llm {
             {
                 let pid = child.id();
                 let _ = Command::new("taskkill").args(["/T", "/F", "/PID", &pid.to_string()]).status();
-                let leftovers = format!("Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}' | ForEach-Object {{ taskkill /T /F /PID $_.ProcessId }}");
+                let leftovers = format!(
+                    "$t = [DateTimeOffset]::FromUnixTimeMilliseconds({spawned_ms}).LocalDateTime; \
+                     Get-CimInstance Win32_Process -Filter 'ParentProcessId={pid}' | \
+                     Where-Object {{ $_.CreationDate -ge $t }} | ForEach-Object {{ taskkill /T /F /PID $_.ProcessId }}"
+                );
                 let _ = Command::new("powershell").args(["-NoProfile", "-Command", &leftovers]).stdout(Stdio::null()).stderr(Stdio::null()).status();
             }
             let _ = child.kill();

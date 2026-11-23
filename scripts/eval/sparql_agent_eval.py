@@ -4,7 +4,7 @@
 An agent (headless pi with the skills/ograph skill, bash and read) answers each question by
 writing SPARQL. It ends its reply with its final query; that query is run and its rows must
 equal the rows of the question's reference query, as a set, on some choice and order of its
-columns (extra columns are allowed, extra or missing rows are not). Numbers compare by value.
+columns (extra columns are allowed, extra or missing rows are not). Doubles compare by value.
 "recipe" questions are close to a recipe in skills/ograph/references/sparql.md; "novel" ones
 are not.
 
@@ -16,7 +16,7 @@ ap.add_argument("--bin", required=True); ap.add_argument("--demo", required=True
 ap.add_argument("--model", default="openai/gpt-5.6-terra"); ap.add_argument("--repeat", type=int, default=1)
 ap.add_argument("--parallel", type=int, default=2); ap.add_argument("--no-skill", action="store_true"); ap.add_argument("--only", type=int, nargs="*")
 a = ap.parse_args()
-if a.repeat < 1: ap.error("--repeat must be 1 or more")
+if a.repeat < 1 or a.parallel < 1: ap.error("--repeat and --parallel must be 1 or more")
 binp = pathlib.Path(a.bin).resolve(); demo = pathlib.Path(a.demo).resolve()
 skill = pathlib.Path(__file__).resolve().parents[2] / "skills" / "ograph"
 if not (demo / "sparql-questions.json").is_file(): ap.error(f"{demo} has no sparql-questions.json")
@@ -44,10 +44,11 @@ names, err = rows("SELECT ?s ?n WHERE { { ?s ops:name ?n } UNION { ?s inc:id ?n 
 if err: raise SystemExit(f"{demo} is not an ograph workspace: {err}")
 NAMES = dict(names)
 def cell(c):
-    m = re.fullmatch(r'"(.*)"\^\^<http://www\.w3\.org/2001/XMLSchema#\w+>', c)
-    c = NAMES.get(c, m[1] if m else c)
-    try: return str(float(c))
-    except ValueError: return c
+    # --json prints a double or float as a typed literal and an integer or decimal bare.
+    m = re.fullmatch(r'"(.*)"\^\^<http://www\.w3\.org/2001/XMLSchema#(?:double|float)>', c)
+    if not m: return NAMES.get(c, c)
+    x = float(m[1])
+    return str(int(x)) if x.is_integer() else str(x)
 def named(rs): return [[cell(c) for c in r] for r in rs]
 
 def same(got, gold):
@@ -101,9 +102,12 @@ results, times = {}, []
 with concurrent.futures.ThreadPoolExecutor(a.parallel) as pool:
     for n, ok, why, secs in pool.map(timed, [t for t in todo for _ in range(a.repeat)]):
         results.setdefault(n, []).append(ok); times.append(secs)
-        print(f"Q{n:<2} {questions[n - 1]['kind']:<6} {'ERROR' if ok is None else 'PASS' if ok else 'FAIL'} {secs:5.1f} s  {questions[n - 1]['q'][:70]}" + (f"\n       {why}" if why else ""), flush=True)
+        q, verdict = questions[n - 1], "ERROR" if ok is None else "PASS" if ok else "FAIL"
+        print(f"Q{n:<2} {q['kind']:<6} {verdict} {secs:5.1f} s  {q['q'][:70]}" + (f"\n       {why}" if why else ""), flush=True)
 for kind in ("recipe", "novel", "all"):
     runs = [ok for n, oks in results.items() if kind == "all" or questions[n - 1]["kind"] == kind for ok in oks]
     scored = [ok for ok in runs if ok is not None]
-    print(f"{kind}: {sum(scored)}/{len(scored)} correct ({sum(scored) / max(len(scored), 1):.2f})" + (f"; {len(runs) - len(scored)} not scored: pi failed" if len(scored) < len(runs) else ""))
+    unscored = len(runs) - len(scored)
+    print(f"{kind}: {sum(scored)}/{len(scored)} correct ({sum(scored) / max(len(scored), 1):.2f})"
+          + (f"; {unscored} not scored: pi failed" if unscored else ""))
 print(f"median time per run: {statistics.median(times):.1f} s")

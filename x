@@ -34,10 +34,12 @@ esac
 if [ "$HOST" = windows ]; then
   EXE=.exe
   MANIFEST="$(cygpath -w "$HERE/Cargo.toml")"
+  VENDOR_DIR="$(cygpath -w "$HERE/vendor")"
   BIN_DEFAULT="$HOME/bin"
 else
   EXE=
   MANIFEST="$HERE/Cargo.toml"
+  VENDOR_DIR="$HERE/vendor"
   BIN_DEFAULT="${CARGO_HOME:-$HOME/.cargo}/bin"
 fi
 # Pinned so `install` copies the binary this build wrote, whatever target-dir a cargo config sets.
@@ -53,7 +55,6 @@ fi
 TARGET_U="$(if [ "$HOST" = windows ]; then cygpath -u "$CARGO_TARGET_DIR"; else echo "$CARGO_TARGET_DIR"; fi)"
 RELEASE_BIN="$TARGET_U/release/ograph$EXE"
 CARGO_CONFIG="${CARGO_HOME:-$HOME/.cargo}/config.toml"
-VENDOR_DIR="$HERE/vendor"; [ "$HOST" = windows ] && VENDOR_DIR="$(cygpath -w "$VENDOR_DIR")"
 
 case "${1:-help}" in
   help|-h|--help) sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -153,7 +154,7 @@ case "$1" in
 
   vendor)  shift
            # Quiet on success: cargo's own advice to edit .cargo/config.toml does not apply to ./x.
-           if ! vendored="$(run_cargo vendor --locked --versioned-dirs "$VENDOR_DIR" "$@" 2>&1)"; then
+           if ! vendored="$(run_cargo vendor --locked --versioned-dirs --respect-source-config "$VENDOR_DIR" "$@" 2>&1)"; then
              printf '%s\n' "$vendored" >&2; exit 1
            fi
            echo "vendored every locked crate into ./vendor; ./x builds from it offline until you delete it" ;;
@@ -191,20 +192,22 @@ case "$1" in
            else
              echo "FAILED: cargo cannot fetch the locked crates. Output:" >&2
              printf '%s\n' "$fetched" | tail -15 | sed 's/^/  /' >&2
-             echo "" >&2
-             echo "On a corporate network, point cargo at the Artifactory Cargo remote, in" >&2
-             echo "$CARGO_CONFIG:" >&2
-             echo "" >&2
-             echo '  [registries.artifactory]' >&2
-             echo '  index = "sparse+https://<host>/artifactory/api/cargo/<repo>/index/"' >&2
-             echo '' >&2
-             echo '  [source.artifactory]' >&2
-             echo '  registry = "sparse+https://<host>/artifactory/api/cargo/<repo>/index/"' >&2
-             echo '' >&2
-             echo '  [source.crates-io]' >&2
-             echo '  replace-with = "artifactory"' >&2
-             echo "" >&2
-             echo "or set OGRAPH_CARGO_REGISTRY for a single run (see the top of ./x)." >&2
+             cat >&2 <<EOF
+
+On a corporate network, point cargo at the Artifactory Cargo remote, in
+$CARGO_CONFIG:
+
+  [registries.artifactory]
+  index = "sparse+https://<host>/artifactory/api/cargo/<repo>/index/"
+
+  [source.artifactory]
+  registry = "sparse+https://<host>/artifactory/api/cargo/<repo>/index/"
+
+  [source.crates-io]
+  replace-with = "artifactory"
+
+or set OGRAPH_CARGO_REGISTRY for a single run (see the top of ./x).
+EOF
              status=1
            fi
            exit "$status" ;;

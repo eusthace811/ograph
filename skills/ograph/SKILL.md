@@ -118,7 +118,8 @@ Inside SPARQL, escape a `/` in a prefixed name, and the dots of a version (`id:a
 8. The graph keeps episodes and pointers, not raw detail. For a config change's old and new
    value, a log line or a metric curve, open the event's `source_record` (`--json`) in its file.
 
-Report an investigation as [references/investigation.md](references/investigation.md) "What to report" lists.
+Report as the "What to report" section of
+[references/investigation.md](references/investigation.md) lists.
 
 ## Specific tasks
 
