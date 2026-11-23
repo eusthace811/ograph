@@ -13,9 +13,7 @@ Visual Studio Build Tools for the linker.
 
 ```bash
 ./x doctor        # checks cargo, the crate registry and ogrep, and says what to fix
-./x install       # release build into ~/.cargo/bin (Windows: ~/bin, which Git Bash has on PATH)
-hash -r
-ograph --version
+./x install       # release build into ~/.cargo/bin (Windows: ~/bin); it says what to run next
 ```
 
 On a corporate network, cargo downloads crates from whatever `~/.cargo/config.toml` puts in

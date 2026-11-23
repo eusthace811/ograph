@@ -38,7 +38,9 @@ def rows(q):
     return (answer["rows"], None) if "rows" in answer else (None, f"a {answer['kind']} answer, not SELECT rows")
 
 # A node and its name are the same answer: `id:app/ledger-db` counts as `ledger-db`, `id:inc/inc-5377` as `INC-5377`.
-NAMES = dict(rows("SELECT ?s ?n WHERE { { ?s ops:name ?n } UNION { ?s inc:id ?n } }")[0])
+names, err = rows("SELECT ?s ?n WHERE { { ?s ops:name ?n } UNION { ?s inc:id ?n } }")
+if err: raise SystemExit(f"{demo} is not an ograph workspace: {err}")
+NAMES = dict(names)
 def named(rs): return [[NAMES.get(c, c) for c in r] for r in rs]
 
 def same(got, gold):
@@ -54,9 +56,7 @@ Question: {q}
 
 End your reply with the one SPARQL query whose result answers the question, in a ```sparql block."""
 
-def ask(item):
-    n, q = item
-    t = time.time()
+def ask(q, n):
     for attempt in range(3):
         # An empty reply, a failed exit or a hang is the provider (rate limit, outage), not the agent.
         try:
@@ -70,13 +70,18 @@ def ask(item):
             why = "no reply within 300 s"
         if attempt < 2: time.sleep(30 * (attempt + 1))
     else:
-        return n, None, f"pi failed 3 times, last: {why}", time.time() - t
+        return None, f"pi failed 3 times, last: {why}"
     blocks = re.findall(r"```sparql\s*\n(.*?)```", p.stdout, re.S)
-    if not blocks: return n, False, "no ```sparql block in the reply", time.time() - t
+    if not blocks: return False, "no ```sparql block in the reply"
     got, err = rows(blocks[-1])
-    if err: return n, False, f"final query failed: {err}", time.time() - t
+    if err: return False, f"final query failed: {err}"
     ok = same(got, gold[n])
-    return n, ok, "" if ok else f"got {sorted(map(tuple, got), key=str)[:6]} want {sorted(map(tuple, gold[n]), key=str)[:6]}", time.time() - t
+    return ok, "" if ok else f"got {sorted(map(tuple, got), key=str)[:6]} want {sorted(map(tuple, gold[n]), key=str)[:6]}"
+
+def timed(item):
+    n, q = item
+    t = time.time()
+    return (n, *ask(q, n), time.time() - t)
 
 todo = [(n, q) for n, q in enumerate(questions, 1) if not a.only or n in a.only]
 if not todo: raise SystemExit(f"no question matches --only; there are {len(questions)}")
@@ -87,7 +92,7 @@ for n, q in todo:
 print(f"model {a.model}, {len(todo)} questions x {a.repeat}, " + ("no skill" if a.no_skill else "skill skills/ograph"))
 results, times = {}, []
 with concurrent.futures.ThreadPoolExecutor(a.parallel) as pool:
-    for n, ok, why, secs in pool.map(ask, [t for t in todo for _ in range(a.repeat)]):
+    for n, ok, why, secs in pool.map(timed, [t for t in todo for _ in range(a.repeat)]):
         results.setdefault(n, []).append(ok); times.append(secs)
         print(f"Q{n:<2} {questions[n - 1]['kind']:<6} {'ERROR' if ok is None else 'PASS' if ok else 'FAIL'} {secs:5.1f} s  {questions[n - 1]['q'][:70]}" + (f"\n       {why}" if why else ""), flush=True)
 for kind in ("recipe", "novel", "all"):
