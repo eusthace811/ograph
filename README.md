@@ -8,7 +8,7 @@ ograph builds an ontology-driven observability knowledge graph and queries it fr
 - **Questions.** It answers four investigation questions on native indexes.
 - **SPARQL and agents.** Everything else is SPARQL, available to people and to agents through pi or MCP.
 
-New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md). For a plain-language tour with diagrams, open [`docs/ograph-explained.html`](docs/ograph-explained.html) in a browser. Agents use the skill in [`skills/ograph/`](skills/ograph/SKILL.md).
+New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md). For a plain-language tour with diagrams, read [ograph, explained](https://eusthace811.github.io/ograph/). Agents use the skill in [`skills/ograph/`](skills/ograph/SKILL.md).
 
 Install a prebuilt release on Linux, macOS or Windows (Git Bash). It also installs `ogrep` 0.2+, which ograph needs on `PATH`:
 
