@@ -25,17 +25,6 @@ pub enum Extraction {
     Human { who: String },
 }
 
-impl Extraction {
-    pub fn label(&self) -> String {
-        match self {
-            Extraction::Rule { extractor } => format!("rule:{extractor}"),
-            Extraction::Catalog { catalog } => format!("catalog:{catalog}"),
-            Extraction::Llm { model, .. } => format!("llm:{model}"),
-            Extraction::Human { who } => format!("human:{who}"),
-        }
-    }
-}
-
 /// An entity. Applications and teams must resolve against the catalog; other classes (vendors,
 /// news subjects) may be minted from a name.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

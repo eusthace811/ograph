@@ -358,7 +358,6 @@ dependencies = [
  "oxttl",
  "serde_json",
  "spareval",
- "spargebra",
 ]
 
 [[package]]
@@ -368,7 +367,6 @@ dependencies = [
  "anyhow",
  "clap",
  "ograph-core",
- "oxrdf",
  "serde",
  "serde_json",
 ]
@@ -380,7 +378,6 @@ dependencies = [
  "anyhow",
  "hex",
  "oxrdf",
- "oxrdfio",
  "oxsdatatypes",
  "oxttl",
  "redb",
@@ -390,7 +387,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "siphasher",
- "sparesults",
  "spareval",
  "spargebra",
  "strsim",

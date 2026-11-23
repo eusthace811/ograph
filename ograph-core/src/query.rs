@@ -20,14 +20,13 @@ pub fn lookup(s: &Snapshot, name: &str) -> anyhow::Result<Id> {
             return Ok(id);
         }
     }
-    if let (Some(p), Some(v)) = (s.iri(inc::ID)?, s.id(&oxrdf::Literal::new_simple_literal(name).into())?)
-        && let Some(&i) = s.subjects(p, v)?.first() {
+    for p in [inc::ID, ops::NAME] {
+        if let (Some(p), Some(v)) = (s.iri(p)?, s.id(&oxrdf::Literal::new_simple_literal(name).into())?)
+            && let Some(&i) = s.subjects(p, v)?.first()
+        {
             return Ok(i);
         }
-    if let (Some(p), Some(v)) = (s.iri(ops::NAME)?, s.id(&oxrdf::Literal::new_simple_literal(name).into())?)
-        && let Some(&i) = s.subjects(p, v)?.first() {
-            return Ok(i);
-        }
+    }
     anyhow::bail!("nothing in the graph is called {name}")
 }
 
@@ -259,12 +258,13 @@ pub fn why(s: &Snapshot, node: &str) -> anyhow::Result<Provenance> {
     let mut quarantined = Vec::new();
     if let (Some(fp), Some(rp)) = (fact_p, s.iri(harv::REASON)?) {
         let short = vocab::compact(&me);
+        let ty = s.iri(crate::vocab::RDF_TYPE)?.ok_or_else(|| anyhow::anyhow!("empty store"))?;
         for q in s.quads([None, Some(fp), None], GraphSel::Union) {
             let [sub, _, o, _] = q?;
             let Some(text) = literal(s, o) else { continue };
             if (mentions(&text, &short) || mentions(&text, &me))
                 && let Some(r) = s.object(sub, rp)?.and_then(|v| literal(s, v))
-                    && s.object(sub, ids_type(s)?)?.is_some_and(|c| literal(s, c).as_deref() == Some(harv::QUARANTINED)) {
+                    && s.object(sub, ty)?.is_some_and(|c| literal(s, c).as_deref() == Some(harv::QUARANTINED)) {
                         quarantined.push((text, r));
                     }
         }
@@ -278,10 +278,6 @@ fn mentions(text: &str, node: &str) -> bool {
     text.match_indices(node).any(|(i, _)| {
         !text[..i].ends_with(name_char) && !text[i + node.len()..].starts_with(name_char)
     })
-}
-
-fn ids_type(s: &Snapshot) -> anyhow::Result<Id> {
-    s.iri(crate::vocab::RDF_TYPE)?.ok_or_else(|| anyhow::anyhow!("empty store"))
 }
 
 #[derive(Serialize)]

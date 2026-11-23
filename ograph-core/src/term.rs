@@ -10,7 +10,7 @@
 
 use oxrdf::vocab::xsd;
 use oxrdf::{BlankNode, Literal, NamedNode, Term};
-use oxsdatatypes::{Boolean, DateTime, Decimal, Integer};
+use oxsdatatypes::{Boolean, DateTime, Integer};
 use std::str::FromStr;
 use std::sync::OnceLock;
 
@@ -138,7 +138,6 @@ pub fn decimal(v: f64) -> Literal {
     let text = format!("{:.4}", if v.is_finite() { v } else { 0.0 });
     let text = text.trim_end_matches('0').trim_end_matches('.');
     let text = if text.is_empty() || text == "-" { "0" } else { text };
-    let _ = Decimal::default();
     Literal::new_typed_literal(text, xsd::DECIMAL)
 }
 

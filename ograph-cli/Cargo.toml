@@ -13,5 +13,4 @@ ograph-core.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
-oxrdf.workspace = true
 serde.workspace = true

@@ -34,8 +34,6 @@ pub struct Llm {
     pub config: LlmConfig,
     cache_path: PathBuf,
     cache: Mutex<HashMap<String, String>>,
-    pub calls: std::sync::atomic::AtomicUsize,
-    pub hits: std::sync::atomic::AtomicUsize,
 }
 
 #[derive(serde::Serialize, Deserialize)]
@@ -58,7 +56,7 @@ impl Llm {
                 }
             }
         }
-        Self { config, cache_path, cache: Mutex::new(cache), calls: Default::default(), hits: Default::default() }
+        Self { config, cache_path, cache: Mutex::new(cache) }
     }
 
     pub fn key(&self, prompt: &str, input: &str) -> String {
@@ -73,7 +71,6 @@ impl Llm {
     pub fn ask(&self, prompt: &str, input: &str) -> anyhow::Result<String> {
         let key = self.key(prompt, input);
         if let Some(a) = self.cached(&key) {
-            self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return Ok(a);
         }
         // One retry: a timeout is usually the transport, not the question.
@@ -89,7 +86,6 @@ impl Llm {
     }
 
     fn run(&self, prompt: &str, input: &str) -> anyhow::Result<String> {
-        self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (cmd, args) = self.config.command.split_first().ok_or_else(|| anyhow::anyhow!("empty llm command"))?;
         // Its own process group, so a timeout also stops whatever the command started.
         let mut child = Command::new(cmd)

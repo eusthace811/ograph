@@ -12,7 +12,7 @@ out = subprocess.run([str(pathlib.Path(a.bin).resolve()), "serve", "--mcp"], inp
 tools = json.loads(out[1])["result"]["tools"]
 skill = (here / "SKILL.md").read_text().split("---", 2)[2].strip()
 src = (here / "pi-extension.ts").read_text()
-src = src.replace("__BIN__", json.dumps(str(pathlib.Path(a.bin).resolve()))).replace("__TOOLS__", json.dumps(tools)).replace("__INSTRUCTIONS__", json.dumps(skill.replace("`ograph_", "`ograph_")))
+src = src.replace("__BIN__", json.dumps(str(pathlib.Path(a.bin).resolve()))).replace("__TOOLS__", json.dumps(tools)).replace("__INSTRUCTIONS__", json.dumps(skill))
 dest = pathlib.Path(a.out) if a.out else pathlib.Path.home() / ".pi" / "agent" / "extensions" / "ograph.ts"
 if a.out:
     dest.write_text(src); print("wrote", dest)
