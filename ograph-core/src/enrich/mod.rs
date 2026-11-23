@@ -105,14 +105,22 @@ pub struct Ctx<'a> {
 
 /// Files under a source path: the path itself, or every regular file below it, sorted.
 pub fn files(root: &Path, path: &Path) -> Vec<PathBuf> {
+    walk(root, path).0
+}
+
+/// [`files`], and the directories below the source path that could not be listed.
+fn walk(root: &Path, path: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let p = if path.is_absolute() { path.to_owned() } else { root.join(path) };
     if p.is_file() {
-        return vec![p];
+        return (vec![p], vec![]);
     }
-    let mut out = Vec::new();
+    let (mut out, mut unreadable) = (Vec::new(), Vec::new());
     let mut stack = vec![p];
     while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            unreadable.push(d);
+            continue;
+        };
         for e in rd.flatten() {
             let path = e.path();
             if path.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')) {
@@ -126,38 +134,57 @@ pub fn files(root: &Path, path: &Path) -> Vec<PathBuf> {
         }
     }
     out.sort();
-    out
+    unreadable.sort();
+    (out, unreadable)
 }
 
+/// A path below the root as `/`-joined components, so a `\` inside a Unix file name stays
+/// part of that name.
 pub fn rel(root: &Path, p: &Path) -> String {
-    p.strip_prefix(root).unwrap_or(p).to_string_lossy().replace('\\', "/")
+    let p = p.strip_prefix(root).unwrap_or(p);
+    let parts: Vec<Cow<str>> = p.components().map(|c| if c == std::path::Component::RootDir { Cow::Borrowed("") } else { c.as_os_str().to_string_lossy() }).collect();
+    parts.join("/")
 }
 
-/// Harvests one source into batches, one per file. A file that fails to parse becomes a
-/// degraded, empty batch instead of stopping the harvest.
+/// Harvests one source into batches, one per file. A file that fails to parse, or a directory
+/// that cannot be listed, becomes a degraded, empty batch instead of stopping the harvest; the
+/// gateway keeps the last good facts of a failed batch's key and of every key below it.
 pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
     if let Source::Catalog { path } = source {
         return vec![catalog::harvest(ctx.root, path)];
     }
-    let mut out = Vec::new();
-    for file in files(ctx.root, source.path()) {
-        let key = rel(ctx.root, &file);
-        let result = match source {
-            Source::Catalog { .. } => unreachable!(),
-            Source::Ownership { .. } => records::ownership(&file, &key),
-            Source::Docs { .. } => docs::harvest(&file, &key),
-            Source::Deployments { .. } => records::deployments(&file, &key),
-            Source::ConfigChanges { .. } => records::config_changes(&file, &key),
-            Source::Alerts { .. } => records::alerts(&file, &key),
-            Source::Incidents { .. } => records::incidents(&file, &key),
-            Source::News { .. } => records::news(&file, &key),
-            Source::Logs { .. } => signals::logs(&file, &key, ctx.detect),
-            Source::Metrics { .. } => signals::metrics(&file, &key, ctx.detect),
-            Source::Traces { .. } => signals::traces(&file, &key, ctx.detect),
-            Source::Discussions { .. } => discussions::harvest(&file, &key, ctx),
-        };
+    let (files, unreadable) = walk(ctx.root, source.path());
+    let mut out: Vec<Batch> = unreadable
+        .iter()
+        .map(|d| {
+            let mut b = Batch::new(source.name(), &rel(ctx.root, d), "failed");
+            b.degraded.push(format!("cannot read directory {}", rel(ctx.root, d)));
+            b
+        })
+        .collect();
+    let files: Vec<(PathBuf, String)> = files.into_iter().map(|f| (f.clone(), rel(ctx.root, &f))).collect();
+    let results = match source {
+        Source::Incidents { .. } => records::incidents(&files),
+        _ => files
+            .iter()
+            .map(|(file, key)| match source {
+                Source::Catalog { .. } | Source::Incidents { .. } => unreachable!(),
+                Source::Ownership { .. } => records::ownership(file, key),
+                Source::Docs { .. } => docs::harvest(file, key),
+                Source::Deployments { .. } => records::deployments(file, key),
+                Source::ConfigChanges { .. } => records::config_changes(file, key),
+                Source::Alerts { .. } => records::alerts(file, key),
+                Source::News { .. } => records::news(file, key),
+                Source::Logs { .. } => signals::logs(file, key, ctx.detect),
+                Source::Metrics { .. } => signals::metrics(file, key, ctx.detect),
+                Source::Traces { .. } => signals::traces(file, key, ctx.detect),
+                Source::Discussions { .. } => discussions::harvest(file, key, ctx),
+            })
+            .collect(),
+    };
+    for ((_, key), result) in files.iter().zip(results) {
         out.push(result.unwrap_or_else(|e| {
-            let mut b = Batch::new(source.name(), &key, "failed");
+            let mut b = Batch::new(source.name(), key, "failed");
             b.degraded.push(format!("{key}: {e:#}"));
             b
         }));
@@ -180,14 +207,21 @@ pub fn parse_time_str(s: &str) -> Option<i64> {
     s.parse::<f64>().ok().map_or_else(|| parse_iso(s), epoch_ms)
 }
 
+/// Unix seconds below 1e10, milliseconds below 1e13, microseconds below 1e16, nanoseconds
+/// above. The cast saturates, so NaN and infinities land outside [`plausible`].
 fn epoch_ms(n: f64) -> Option<i64> {
     let scale = match n.abs() {
-        x if x > 1e17 => 1e-6,
-        x if x > 1e14 => 1e-3,
-        x if x > 1e12 => 1.0,
-        _ => 1000.0,
+        x if x < 1e10 => 1000.0,
+        x if x < 1e13 => 1.0,
+        x if x < 1e16 => 1e-3,
+        _ => 1e-6,
     };
-    Some((n * scale).round() as i64)
+    plausible((n * scale).round() as i64)
+}
+
+/// Times from 1971 to 2200. Anything else is a year, a compact date or an overflow, not a time.
+fn plausible(ms: i64) -> Option<i64> {
+    (31_536_000_000..7_258_118_400_000).contains(&ms).then_some(ms)
 }
 
 pub fn parse_iso(s: &str) -> Option<i64> {
@@ -211,7 +245,7 @@ pub fn parse_iso(s: &str) -> Option<i64> {
         None => main.to_owned(),
     };
     let dt: oxsdatatypes::DateTime = format!("{main}{zone}").parse().ok()?;
-    crate::term::millis_of(dt.adjust(Some(oxsdatatypes::TimezoneOffset::UTC))?)
+    plausible(crate::term::millis_of(dt.adjust(Some(oxsdatatypes::TimezoneOffset::UTC))?)?)
 }
 
 pub fn app(name: &str) -> Object {
@@ -347,7 +381,23 @@ pub fn str_field<'a>(v: &'a serde_json::Value, names: &[&str]) -> Option<&'a str
 
 #[cfg(test)]
 mod tests {
-    use super::parse_iso;
+    use super::{parse_iso, parse_time_str};
+
+    #[test]
+    fn an_epoch_number_is_read_by_its_magnitude() {
+        let y2000 = Some(946_684_800_000);
+        for s in ["946684800", "946684800000", "946684800000000", "946684800000000000"] {
+            assert_eq!(parse_time_str(s), y2000, "{s}");
+        }
+    }
+
+    #[test]
+    fn a_number_that_is_not_a_plausible_time_is_rejected() {
+        for s in ["nan", "inf", "-inf", "2026", "20261122", "1e30", "-1700000000", "9999999999999"] {
+            assert_eq!(parse_time_str(s), None, "{s}");
+        }
+        assert_eq!(parse_time_str("2300-01-01T00:00:00Z"), None);
+    }
 
     #[test]
     fn every_offset_spelling_is_the_same_instant() {

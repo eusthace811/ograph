@@ -1,12 +1,13 @@
 //! Record sources: incidents, alerts, deployments, config changes, ownership and news. Each
 //! record becomes one event node whose evidence is `file#n`, the n-th record of the file
-//! counting from 0 (an array element, or a non-blank JSON line).
+//! counting from 1 (an array element, or a non-blank JSON line).
 
 use super::{Event, app, dt, event, json_records, parse_time, str_field};
 use crate::model::{Batch, EntityRef, Extraction, Object, entity, known, lit, obj, slug};
 use crate::vocab::{RDF_TYPE, evt, inc, ops};
 use oxrdf::NamedNode;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 fn class(c: &str) -> Object {
     obj(NamedNode::new_unchecked(c))
@@ -16,42 +17,68 @@ fn rule(name: &str) -> Extraction {
     Extraction::Rule { extractor: name.into() }
 }
 
-pub fn incidents(path: &Path, key: &str) -> anyhow::Result<Batch> {
-    let mut b = Batch::new("incidents", key, "incidents-v1");
-    let m = rule("incident-export");
-    for (i, r) in json_records(path)?.iter().enumerate() {
-        let ev = b.record(format!("{key}#{}", i + 1));
-        let id = str_field(r, &["id", "number", "key"]).ok_or_else(|| anyhow::anyhow!("record {} has no id", i + 1))?;
-        let s = known("inc", id);
-        b.add(s.clone(), RDF_TYPE, class(inc::INCIDENT), &ev, &m);
-        b.add(s.clone(), inc::ID, lit(id), &ev, &m);
-        if let Some(t) = str_field(r, &["title", "summary", "name"]) {
-            b.add(s.clone(), inc::TITLE, lit(t), &ev, &m);
+/// Incident exports. An incident may appear in several records and files, each stating some of
+/// its fields: a field comes from the last record that states it, in file path order and then
+/// record order, so a later export of an incident updates it rather than conflicting with it.
+pub fn incidents(files: &[(PathBuf, String)]) -> Vec<anyhow::Result<Batch>> {
+    let parsed: Vec<anyhow::Result<Vec<serde_json::Value>>> = files.iter().map(|(p, _)| json_records(p)).collect();
+    let fields: Vec<Vec<IncidentRecord>> = parsed.iter().map(|r| r.iter().flatten().map(incident_fields).collect()).collect();
+    let mut last: HashMap<(&str, &str), (usize, usize)> = HashMap::new();
+    for (f, records) in fields.iter().enumerate() {
+        for (r, (id, values)) in records.iter().enumerate() {
+            for (p, _) in values {
+                last.insert((id.as_str(), *p), (f, r));
+            }
         }
-        if let Some(svc) = str_field(r, &["service", "app", "application"]) {
-            b.add(s.clone(), evt::ON, app(svc), &ev, &m);
-        }
-        if let Some(t) = ["opened", "opened_at", "created_at", "at"].iter().find_map(|f| r.get(*f).and_then(parse_time)) {
-            b.add(s.clone(), evt::AT, dt(t), &ev, &m);
-        }
-        if let Some(t) = ["resolved", "resolved_at"].iter().find_map(|f| r.get(*f).and_then(parse_time)) {
-            b.add(s.clone(), inc::RESOLVED_AT, dt(t), &ev, &m);
-        }
-        if let Some(v) = str_field(r, &["severity"]) {
-            b.add(s.clone(), evt::SEVERITY, lit(v), &ev, &m);
-        }
-        if let Some(v) = str_field(r, &["status"]) {
-            b.add(s.clone(), inc::STATUS, lit(v), &ev, &m);
-        }
-        if let Some(v) = str_field(r, &["mitigation"]) {
-            b.add(s.clone(), inc::MITIGATION, lit(v), &ev, &m);
-        }
-        if let Some(v) = str_field(r, &["fault", "fault_type"]) {
-            b.add(s.clone(), inc::FAULT_TYPE, lit(v), &ev, &m);
-        }
-        b.add(s, evt::SIGNAL, lit("INCIDENT"), &ev, &m);
     }
-    Ok(b)
+    let m = rule("incident-export");
+    let mut out = Vec::with_capacity(files.len());
+    for (f, ((_, key), parsed)) in files.iter().zip(parsed).enumerate() {
+        out.push(parsed.map(|_| {
+            let mut b = Batch::new("incidents", key, "incidents-v1");
+            for (r, (id, values)) in fields[f].iter().enumerate() {
+                if id.is_empty() {
+                    continue;
+                }
+                let ev = b.record(format!("{key}#{}", r + 1));
+                let s = known("inc", id);
+                b.add(s.clone(), RDF_TYPE, class(inc::INCIDENT), &ev, &m);
+                b.add(s.clone(), inc::ID, lit(id.as_str()), &ev, &m);
+                for (p, o) in values {
+                    if last[&(id.as_str(), *p)] == (f, r) {
+                        b.add(s.clone(), p, o.clone(), &ev, &m);
+                    }
+                }
+                b.add(s, evt::SIGNAL, lit("INCIDENT"), &ev, &m);
+            }
+            b
+        }));
+    }
+    out
+}
+
+/// The id of an incident record (empty when it has none) and the fields it states.
+type IncidentRecord = (String, Vec<(&'static str, Object)>);
+
+fn incident_fields(r: &serde_json::Value) -> IncidentRecord {
+    let id = ["id", "number", "key"].iter().find_map(|f| match r.get(*f)? {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) if n.is_i64() || n.is_u64() => Some(n.to_string()),
+        _ => None,
+    });
+    let time = |names: &[&str]| names.iter().find_map(|f| r.get(*f).and_then(parse_time)).map(dt);
+    let text = |names: &[&str]| str_field(r, names).map(lit);
+    let values = [
+        (inc::TITLE, text(&["title", "summary", "name"])),
+        (evt::ON, str_field(r, &["service", "app", "application"]).map(app)),
+        (evt::AT, time(&["opened", "opened_at", "created_at", "at"])),
+        (inc::RESOLVED_AT, time(&["resolved", "resolved_at"])),
+        (evt::SEVERITY, text(&["severity"])),
+        (inc::STATUS, text(&["status"])),
+        (inc::MITIGATION, text(&["mitigation"])),
+        (inc::FAULT_TYPE, text(&["fault", "fault_type"])),
+    ];
+    (id.unwrap_or_default(), values.into_iter().filter_map(|(p, o)| Some((p, o?))).collect())
 }
 
 /// Alertmanager webhook payloads (`{"alerts": [...]}`) or one alert per line.

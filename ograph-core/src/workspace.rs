@@ -126,6 +126,7 @@ impl Workspace {
         sources.sort();
         let mut out = Vec::new();
         let mut kept = HashSet::new();
+        let mut kept_below = Vec::new();
         let ran: Vec<&Source> = sources.iter().filter(|s| only.is_none_or(|o| o == s.name())).collect();
         if let Some(o) = only.filter(|o| *o != "correlation" && ran.is_empty()) {
             let mut names: Vec<&str> = sources.iter().map(Source::name).collect();
@@ -149,6 +150,9 @@ impl Workspace {
                 let t = std::time::Instant::now();
                 let o = gateway::submit_with(&self.store, &self.ontology, &batch, now_ms(), false)?;
                 progress(&o, t.elapsed().as_secs_f64());
+                if batch.failed() {
+                    kept_below.extend([batch.graph(), batch.quarantine_graph()].map(|g| format!("{}/", g.as_str())));
+                }
                 kept.extend([batch.graph(), batch.quarantine_graph()]);
                 out.push(o);
             }
@@ -170,7 +174,7 @@ impl Workspace {
                 names.push("correlation".to_owned());
             }
         }
-        self.prune(&names, &kept)?;
+        self.prune(&names, &kept, &kept_below)?;
         self.store.flush()?;
         Ok(out)
     }
@@ -193,8 +197,9 @@ impl Workspace {
     }
 
     /// Clears the graphs of `sources` that this run did not write: files that were deleted or
-    /// renamed, and incidents that no longer have chains.
-    fn prune(&self, sources: &[String], kept: &HashSet<NamedNode>) -> anyhow::Result<()> {
+    /// renamed, and incidents that no longer have chains. Graphs under `kept_below`, the keys of
+    /// unreadable directories, stay.
+    fn prune(&self, sources: &[String], kept: &HashSet<NamedNode>, kept_below: &[String]) -> anyhow::Result<()> {
         let prefixes: Vec<String> = sources
             .iter()
             .flat_map(|s| [format!("{}harvest/{}/", vocab::GRAPH, slug(s)), format!("{}/{}/", vocab::QUARANTINE, slug(s))])
@@ -205,6 +210,7 @@ impl Workspace {
             if let oxrdf::Term::NamedNode(n) = snap.term(g)?
                 && prefixes.iter().any(|p| n.as_str().starts_with(p.as_str()))
                 && !kept.contains(&n)
+                && !kept_below.iter().any(|p| n.as_str().starts_with(p.as_str()))
             {
                 stale.push(g);
             }
