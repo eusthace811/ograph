@@ -46,9 +46,3 @@ python3 scripts/agent/install.py --bin "$(which ograph)" --root /path/to/workspa
 
 This writes a pi extension whose tools are `ograph_before`, `ograph_chains`, ... with the
 investigation rules in its prompt. Each pi session starts one `ograph serve --mcp`.
-
-## Rules for any agent
-
-- `verdict` only after a person confirmed the cause, with their evidence and name.
-- Present chains as hypotheses.
-- Cite `source_record` and `why` output for the facts you rely on.

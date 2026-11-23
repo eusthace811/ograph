@@ -47,13 +47,19 @@ else
   MANIFEST="$HERE/Cargo.toml"
   BIN_DEFAULT="${CARGO_HOME:-$HOME/.cargo}/bin"
 fi
-if [ -n "${CARGO_TARGET_DIR:-}" ]; then
-  TARGET_U="$(if [ "$HOST" = windows ]; then cygpath -u "$CARGO_TARGET_DIR"; else echo "$CARGO_TARGET_DIR"; fi)"
-else
-  TARGET_U="$HERE/target"
+# Pinned so `install` copies the binary this build wrote, whatever target-dir a cargo config sets.
+if [ -z "${CARGO_TARGET_DIR:-}" ]; then
+  CARGO_TARGET_DIR="${CARGO_BUILD_TARGET_DIR:-$HERE/target}"
+  [ "$HOST" = windows ] && CARGO_TARGET_DIR="$(cygpath -w "$CARGO_TARGET_DIR")"
+  export CARGO_TARGET_DIR
 fi
+TARGET_U="$(if [ "$HOST" = windows ]; then cygpath -u "$CARGO_TARGET_DIR"; else echo "$CARGO_TARGET_DIR"; fi)"
 RELEASE_BIN="$TARGET_U/release/ograph$EXE"
 CARGO_CONFIG="${CARGO_HOME:-$HOME/.cargo}/config.toml"
+
+case "${1:-help}" in
+  help|-h|--help) sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
 
 if ! command -v cargo >/dev/null 2>&1; then
   echo "x: no cargo on PATH. Install Rust 1.85 or newer with rustup (on Windows, the MSVC toolchain)." >&2
@@ -125,7 +131,7 @@ case "${1:-help}" in
              *) echo "note: $dest is not on PATH. Add to your shell profile:"
                 echo "        export PATH=\"$dest:\$PATH\"" ;;
            esac
-           check_ogrep >/dev/null || { echo ""; check_ogrep || true; } ;;
+           ogrep_msg="$(check_ogrep)" || printf '\n%s\n' "$ogrep_msg" ;;
 
   install-skill)
            shift
@@ -201,9 +207,6 @@ case "${1:-help}" in
              status=1
            fi
            exit "$status" ;;
-
-  help|-h|--help)
-           sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//' ;;
 
   *)       sub="$1"; shift; run_cargo "$sub" "$@" ;;
 esac

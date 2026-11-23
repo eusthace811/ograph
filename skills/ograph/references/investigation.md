@@ -96,22 +96,9 @@ Each item names the vendor, the applications that use it and their business proc
 incident when its applications are in the incident's `scope` and it came shortly before the
 first symptom. Say so as a lead to check, not as a cause.
 
-## Raw detail
-
-The graph keeps episodes, not raw records. A config change stores its key (`max_connections`),
-not the old and new value; a log burst stores its template, not each line. `--json` gives each
-event's `source_record` (`config.jsonl#1`, `logs.jsonl@1795386000000`, `metrics.csv:347`):
-open that record for the detail.
-
 ## Before you cite a fact
 
-```bash
-ograph why id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000
-```
-
-Shows the harvest graph, source, extractor and time of every fact, and for model-proposed
-facts the model, prompt hash and confidence. Facts the gateway refused are listed as
-quarantined with the reason.
+Run `ograph why` on it; [data-quality.md](data-quality.md) "Where a fact came from" says what it shows.
 
 ## What to report
 

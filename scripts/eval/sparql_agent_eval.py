@@ -9,7 +9,7 @@ to a recipe in skills/ograph/references/sparql.md; "novel" ones are not.
 
 Usage: sparql_agent_eval.py --bin target/release/ograph --demo examples/demo [--model M] [--repeat N] [--no-skill]
 --no-skill runs the same agent without the skill, to measure what the skill adds."""
-import argparse, concurrent.futures, itertools, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
+import argparse, concurrent.futures, itertools, json, os, pathlib, re, shutil, subprocess, tempfile, time
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--bin", required=True); ap.add_argument("--demo", required=True)
@@ -27,16 +27,18 @@ bindir = work / "bin"; bindir.mkdir(); (bindir / "ograph").symlink_to(binp)
 env = {**os.environ, "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}"}
 
 def rows(q):
-    p = subprocess.run([str(binp), "--root", str(ws), "--json", "sparql", q], capture_output=True, text=True)
+    try:
+        p = subprocess.run([str(binp), "--root", str(ws), "--json", "sparql", q], capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return None, "query ran over 60 s"
     if p.returncode == 2: return None, p.stderr.strip().splitlines()[-1] if p.stderr.strip() else "error"
-    return json.loads(p.stdout)["rows"] if p.returncode == 0 else [], None
+    if p.returncode == 1: return [], None
+    answer = json.loads(p.stdout)
+    return (answer["rows"], None) if "rows" in answer else (None, f"a {answer['kind']} answer, not SELECT rows")
 
-NAMES = None
-def named(rs):
-    # A node and its ops:name are the same answer: `id:app/ledger-db` counts as `ledger-db`.
-    global NAMES
-    if NAMES is None: NAMES = dict(rows("SELECT ?s ?n WHERE { ?s ops:name ?n }")[0])
-    return [[NAMES.get(c, c) for c in r] for r in rs]
+# A node and its name are the same answer: `id:app/ledger-db` counts as `ledger-db`, `id:inc/inc-5377` as `INC-5377`.
+NAMES = dict(rows("SELECT ?s ?n WHERE { { ?s ops:name ?n } UNION { ?s inc:id ?n } }")[0])
+def named(rs): return [[NAMES.get(c, c) for c in r] for r in rs]
 
 def same(got, gold):
     got, gold = named(got), named(gold)
@@ -55,28 +57,31 @@ def ask(item):
     n, q = item
     t = time.time()
     for attempt in range(3):
+        # An empty reply, a failed exit or a hang is the provider (rate limit, outage), not the agent.
         try:
             # stdin closed: pi -p waits for piped input otherwise.
             p = subprocess.run(["pi", "-p", "--no-session", "--no-extensions", "--no-context-files", "--no-prompt-templates",
                                 "--no-skills", *([] if a.no_skill else ["--skill", str(skill)]), "--tools", "bash,read", "--model", a.model,
                                 PROMPT.format(q=q["q"])], cwd=ws, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300)
+            if p.returncode == 0 and p.stdout.strip(): break
+            why = f"exit {p.returncode}: {(p.stderr or p.stdout).strip()[-200:]}"
         except subprocess.TimeoutExpired:
-            return n, False, "agent timed out after 300 s", time.time() - t
-        # An empty reply or a failed exit is the provider (rate limit, outage), not the agent.
-        if p.returncode == 0 and p.stdout.strip(): break
+            why = "no reply within 300 s"
         time.sleep(30 * (attempt + 1))
     else:
-        return n, None, f"pi failed 3 times: exit {p.returncode}: {(p.stderr or p.stdout).strip()[-200:]}", time.time() - t
+        return n, None, f"pi failed 3 times, last: {why}", time.time() - t
     blocks = re.findall(r"```sparql\s*\n(.*?)```", p.stdout, re.S)
     if not blocks: return n, False, "no ```sparql block in the reply", time.time() - t
     got, err = rows(blocks[-1])
     if err: return n, False, f"final query failed: {err}", time.time() - t
-    gold, gerr = rows(q["gold"])
-    if gerr: raise SystemExit(f"Q{n} reference query failed: {gerr}")
-    ok = same(got, gold)
-    return n, ok, "" if ok else f"got {sorted(map(tuple, got), key=str)[:6]} want {sorted(map(tuple, gold), key=str)[:6]}", time.time() - t
+    ok = same(got, gold[n])
+    return n, ok, "" if ok else f"got {sorted(map(tuple, got), key=str)[:6]} want {sorted(map(tuple, gold[n]), key=str)[:6]}", time.time() - t
 
 todo = [(n, q) for n, q in enumerate(questions, 1) if not a.only or n in a.only]
+gold = {}
+for n, q in todo:
+    gold[n], err = rows(q["gold"])
+    if err: raise SystemExit(f"Q{n} reference query failed: {err}")
 print(f"model {a.model}, {len(todo)} questions x {a.repeat}, " + ("no skill" if a.no_skill else f"skill {skill.relative_to(skill.parents[1])}"))
 results = {}
 with concurrent.futures.ThreadPoolExecutor(a.parallel) as pool:

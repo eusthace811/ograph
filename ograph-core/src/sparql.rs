@@ -118,8 +118,8 @@ pub fn parse(query: &str) -> anyhow::Result<spargebra::Query> {
         parser = parser.with_prefix(*p, *ns)?;
     }
     parser.clone().parse_query(query).or_else(|e| {
-        anyhow::ensure!(parser.parse_update(query).is_err(), "read-only: SPARQL updates are not allowed");
-        match unescaped_slash(query) {
+        anyhow::ensure!(parser.clone().parse_update(query).is_err(), "read-only: SPARQL updates are not allowed");
+        match unescaped_slash(&parser, query) {
             Some(name) => anyhow::bail!("{e}: the / in {name} must be escaped, as {}, or use the full IRI", name.replace('/', "\\/")),
             None => Err(e.into()),
         }
@@ -127,11 +127,17 @@ pub fn parse(query: &str) -> anyhow::Result<spargebra::Query> {
 }
 
 /// A data id written as commands print it (`id:app/ledger-db`), which SPARQL cannot parse: the
-/// parser stops at the `/` with an error that does not mention it.
-fn unescaped_slash(query: &str) -> Option<&str> {
+/// parser stops at the `/` with an error that does not mention it. Named only when escaping
+/// every such id makes the query parse, so an id inside a string or a comment is never blamed.
+fn unescaped_slash<'q>(parser: &SparqlParser, query: &'q str) -> Option<&'q str> {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| regex::Regex::new(r"(?:^|[^\w:\\/<])((?:id|g):[\w.-]+(?:/[\w.-]+)+)").unwrap());
-    re.captures(query).map(|c| c.get(1).unwrap().as_str())
+    let first = re.captures(query)?.get(1)?.as_str();
+    let escaped = re.replace_all(query, |c: &regex::Captures| {
+        let (all, id) = (&c[0], &c[1]);
+        format!("{}{}", &all[..all.len() - id.len()], id.replace('/', "\\/"))
+    });
+    parser.clone().parse_query(&escaped).is_ok().then_some(first)
 }
 
 pub fn show(t: &Term) -> String {
@@ -304,6 +310,10 @@ mod tests {
         let err = super::parse("SELECT ?a WHERE { ?a ops:dependsOn/ops:name ?n . <https://ograph.dev/id/app/x> ?p ?o ").unwrap_err().to_string();
         assert!(!err.contains("must be escaped"), "{err}");
         assert!(super::parse(r"SELECT ?a WHERE { id:app\/payments-api ops:alias ?a }").is_ok());
+        for q in ["SELECT ?a WHERE { ?a ops:name \"see id:app/x\" ; ops:alias }", "SELECT ?a WHERE { # id:app/x\n ?a ops:alias }"] {
+            let err = super::parse(q).unwrap_err().to_string();
+            assert!(!err.contains("must be escaped"), "{q}: {err}");
+        }
     }
 
     #[test]

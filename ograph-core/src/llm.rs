@@ -93,7 +93,6 @@ impl Llm {
 
     fn run(&self, prompt: &str, input: &str) -> anyhow::Result<String> {
         let (cmd, args) = self.config.command.split_first().ok_or_else(|| anyhow::anyhow!("empty llm command"))?;
-        // Its own process group, so a timeout also stops whatever the command started.
         let mut command = Command::new(cmd);
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut command, 0);
@@ -210,7 +209,7 @@ pub fn quoted(text: &str, quote: &str) -> bool {
     q.len() >= 3 && squash(text).contains(&q)
 }
 
-// These tests use shell scripts as stand-ins for ogrep and the model command.
+// These tests use shell scripts as stand-ins for the model command.
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;

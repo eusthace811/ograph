@@ -21,8 +21,7 @@ ograph --version
 On a corporate network, cargo downloads crates from whatever `~/.cargo/config.toml` puts in
 place of crates.io, usually an Artifactory Cargo remote. If `./x doctor` cannot fetch the
 crates, it prints the lines to add. `OGRAPH_CARGO_REGISTRY=sparse+https://<host>/artifactory/api/cargo/<repo>/index/`
-uses a registry for one run, and `./x vendor` prepares an offline build. On Windows, stop any
-`ograph serve` before reinstalling, since Windows won't replace a running `.exe`.
+uses a registry for one run, and `./x vendor` prepares an offline build.
 
 ograph also needs `ogrep` 0.2 or newer on `PATH`. It reads the service catalog (Backstage,
 Compose, Kubernetes and Prometheus files), and only the catalog can create applications. Without
@@ -116,8 +115,8 @@ For vendor news: `ograph news --since 7d`.
 
 ## 5. Ask anything else
 
-Everything is queryable with SPARQL. The prefixes `ops:`, `evt:`, `inc:`, `corr:`, `rca:`,
-`harv:` and `id:` are predeclared.
+Everything is queryable with SPARQL. The ontology's prefixes and `id:` are predeclared; the
+full list is in `skills/ograph/references/sparql.md`.
 
 ```bash
 ograph sparql 'SELECT ?app WHERE { ?a ops:dependsOn+ id:app\/ledger-db ; ops:name ?app }'

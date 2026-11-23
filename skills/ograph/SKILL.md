@@ -18,21 +18,7 @@ catalog harvest line says `DEGRADED: ogrep not runnable` and every fact about a 
 quarantined, so every answer comes back empty. Fix that first.
 
 ```bash
-# find the workspace (commands search upward for .ograph/), refresh it
-# the last line counts quarantined facts: check them if an expected event is missing
-ograph harvest
-# 1. what happened in the 10 minutes before the incident, on its app and its dependencies
-ograph before INC-5377
-# ranked root-cause candidates, each with its evidence chain (hypotheses, not conclusions)
-ograph chains INC-5377
-# 2. what the suspected cause affects: dependents, business processes, open incidents
-ograph blast ledger-db
-# 3. past incidents like this one, their accepted causes and the mitigations that worked
-ograph similar INC-5377
-# 4. vendor news that touches our applications
-ograph news --since 7d
-# where a fact came from before you rely on it
-ograph why INC-5377
+ograph harvest    # commands search upward for .ograph/; the last line counts quarantined facts
 ```
 
 ## Commands
@@ -132,30 +118,7 @@ used (`<https://ograph.dev/id/app/ledger-db>`).
 8. The graph keeps episodes and pointers, not raw detail. For a config change's old and new
    value, a log line or a metric curve, open the event's `source_record` (`--json`) in its file.
 
-## Example: investigate an incident
-
-```bash
-ograph before INC-5377
-ograph chains INC-5377
-ograph similar INC-5377
-ograph blast ledger-db
-ograph why id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000
-```
-
-Report it as [references/investigation.md](references/investigation.md) "What to report" lists.
-
-## Example: a person confirms the cause
-
-```bash
-ograph chains INC-5377 --json        # take the chain id of the confirmed application
-ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept --evidence PM-5377 --by "jane (oncall)"
-# read it back: incident, state, who, cause application
-ograph sparql 'SELECT ?id ?state ?by ?cause WHERE { ?v a rca:Verdict ; rca:state ?state ; rca:by ?by ; rca:onChain ?c . ?c corr:leadsTo/inc:id ?id ; corr:candidateApp/ops:name ?cause }'
-ograph validate
-```
-
-From now on, `similar` on a later incident that looks like INC-5377 lists ledger-db as its
-cause.
+Report an investigation as [references/investigation.md](references/investigation.md) "What to report" lists.
 
 ## Specific tasks
 
