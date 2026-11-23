@@ -1,0 +1,48 @@
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix ops:  <https://ograph.dev/ops#> .
+@prefix evt:  <https://ograph.dev/evt#> .
+@prefix inc:  <https://ograph.dev/inc#> .
+@prefix disc: <https://ograph.dev/disc#> .
+@prefix corr: <https://ograph.dev/corr#> .
+@prefix rca:  <https://ograph.dev/rca#> .
+@prefix shape: <https://ograph.dev/shape/> .
+
+# Hand-written shapes: what must be present. Domain, range, vocabularies and functional
+# properties are derived from ograph.ttl in code, so they are not repeated here.
+
+shape:Event a sh:NodeShape ;
+  sh:targetClass evt:Deployment, evt:ConfigChange, evt:Alert, evt:LogError, evt:MetricAnomaly, evt:TraceFailed, evt:TraceSlow, evt:E2EFailure, inc:Incident ;
+  sh:property [ sh:path evt:at ; sh:minCount 1 ; sh:message "an event needs a time" ] ;
+  sh:property [ sh:path evt:on ; sh:minCount 1 ; sh:message "an event needs the application it happened on" ] .
+
+shape:News a sh:NodeShape ;
+  sh:targetClass evt:NewsItem ;
+  sh:property [ sh:path evt:at ; sh:minCount 1 ] ;
+  sh:property [ sh:path evt:summary ; sh:minCount 1 ] .
+
+shape:Application a sh:NodeShape ;
+  sh:targetClass ops:Application ;
+  sh:property [ sh:path ops:name ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path ops:ownedBy ; sh:maxCount 1 ] .
+
+shape:Incident a sh:NodeShape ;
+  sh:targetClass inc:Incident ;
+  sh:property [ sh:path inc:id ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path inc:status ; sh:maxCount 1 ] .
+
+shape:Thread a sh:NodeShape ;
+  sh:targetClass disc:Thread ;
+  sh:property [ sh:path disc:category ; sh:maxCount 1 ] ;
+  sh:property [ sh:path disc:sentiment ; sh:maxCount 1 ] .
+
+shape:Chain a sh:NodeShape ;
+  sh:targetClass corr:Chain ;
+  sh:property [ sh:path corr:leadsTo ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path corr:confidence ; sh:minCount 1 ; sh:maxCount 1 ; sh:minInclusive 0 ; sh:maxInclusive 1 ] .
+
+shape:Verdict a sh:NodeShape ;
+  sh:targetClass rca:Verdict ;
+  sh:property [ sh:path rca:onChain ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path rca:state ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path rca:evidence ; sh:minCount 1 ] .

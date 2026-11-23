@@ -1,0 +1,154 @@
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix og:   <https://ograph.dev/meta#> .
+@prefix ops:  <https://ograph.dev/ops#> .
+@prefix evt:  <https://ograph.dev/evt#> .
+@prefix inc:  <https://ograph.dev/inc#> .
+@prefix disc: <https://ograph.dev/disc#> .
+@prefix corr: <https://ograph.dev/corr#> .
+@prefix rca:  <https://ograph.dev/rca#> .
+@prefix harv: <https://ograph.dev/harv#> .
+
+# ograph ontology, version 1. Modules follow Netflix's namespaces: OPS (catalog), events
+# (ALERT, LOG, METRIC, TIMELINE), INCIDENT, SLACK (disc), CORRELATION, RCA and HARVEST.
+# Only what the four benchmark questions need is modeled.
+
+<https://ograph.dev/ontology> a owl:Ontology ; owl:versionInfo "1" .
+
+# ---------- OPS: the catalog ----------
+og:Thing a owl:Class .
+ops:Application a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A deployable service in the authoritative catalog." .
+ops:Team a owl:Class ; rdfs:subClassOf og:Thing .
+ops:Region a owl:Class ; rdfs:subClassOf og:Thing .
+ops:BusinessProcess a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A business capability that one or more applications support, such as payments." .
+ops:Vendor a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "An external organization an application depends on. May be provisional." .
+
+ops:dependsOn a owl:ObjectProperty ; rdfs:domain ops:Application ; rdfs:range ops:Application .
+ops:ownedBy a owl:ObjectProperty ; rdfs:domain ops:Application ; rdfs:range ops:Team .
+ops:inRegion a owl:ObjectProperty ; rdfs:domain ops:Application ; rdfs:range ops:Region .
+ops:supports a owl:ObjectProperty ; rdfs:domain ops:Application ; rdfs:range ops:BusinessProcess .
+ops:usesVendor a owl:ObjectProperty ; rdfs:domain ops:Application ; rdfs:range ops:Vendor .
+ops:name a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string .
+ops:tier a owl:DatatypeProperty ; rdfs:domain ops:Application ; rdfs:range xsd:string .
+ops:alias a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string .
+
+# ---------- Events: one class per signal type ----------
+evt:Event a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "Something that happened at a time, on an application." .
+evt:Deployment a owl:Class ; rdfs:subClassOf evt:Event .
+evt:ConfigChange a owl:Class ; rdfs:subClassOf evt:Event .
+evt:Alert a owl:Class ; rdfs:subClassOf evt:Event .
+evt:LogError a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A burst of one log template at error level. Raw lines stay in the log system." .
+evt:MetricAnomaly a owl:Class ; rdfs:subClassOf evt:Event .
+evt:TraceFailed a owl:Class ; rdfs:subClassOf evt:Event .
+evt:TraceSlow a owl:Class ; rdfs:subClassOf evt:Event .
+evt:Experiment a owl:Class ; rdfs:subClassOf evt:Event .
+evt:E2EFailure a owl:Class ; rdfs:subClassOf evt:Event .
+evt:NewsItem a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An external news development about a vendor or a technology we run." .
+
+evt:at a owl:DatatypeProperty, owl:FunctionalProperty ; rdfs:domain evt:Event ; rdfs:range xsd:dateTime .
+evt:on a owl:ObjectProperty ; rdfs:domain evt:Event ; rdfs:range ops:Application .
+evt:signal a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:string .
+evt:severity a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:string .
+evt:summary a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:string .
+evt:sourceRecord a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string ; rdfs:comment "Pointer back to the raw record in its source system." .
+evt:version a owl:DatatypeProperty ; rdfs:domain evt:Deployment ; rdfs:range xsd:string .
+evt:template a owl:DatatypeProperty ; rdfs:domain evt:LogError ; rdfs:range xsd:string .
+evt:metric a owl:DatatypeProperty ; rdfs:domain evt:MetricAnomaly ; rdfs:range xsd:string .
+evt:value a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:decimal .
+evt:count a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:integer .
+evt:mentions a owl:ObjectProperty ; rdfs:domain evt:NewsItem ; rdfs:range og:Thing .
+
+# ---------- INCIDENT ----------
+inc:Incident a owl:Class ; rdfs:subClassOf evt:Event .
+inc:id a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string .
+inc:title a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string .
+inc:status a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string .
+inc:resolvedAt a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:dateTime .
+inc:mitigation a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string .
+inc:cause a owl:ObjectProperty ; rdfs:domain inc:Incident ; rdfs:range evt:Event ; rdfs:comment "An accepted cause, written only by a verdict." .
+inc:faultType a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string .
+
+# ---------- SLACK: discussion threads ----------
+disc:Thread a owl:Class ; rdfs:subClassOf og:Thing .
+disc:about a owl:ObjectProperty ; rdfs:domain disc:Thread ; rdfs:range og:Thing .
+disc:category a owl:DatatypeProperty ; rdfs:domain disc:Thread ; rdfs:range xsd:string .
+disc:sentiment a owl:DatatypeProperty ; rdfs:domain disc:Thread ; rdfs:range xsd:string .
+disc:textHash a owl:DatatypeProperty ; rdfs:domain disc:Thread ; rdfs:range xsd:string .
+disc:channel a owl:DatatypeProperty ; rdfs:domain disc:Thread ; rdfs:range xsd:string .
+disc:at a owl:DatatypeProperty ; rdfs:domain disc:Thread ; rdfs:range xsd:dateTime .
+
+# ---------- CORRELATION ----------
+corr:Chain a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A candidate causal chain. A hypothesis, never a conclusion." .
+corr:rootCause a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range evt:Event .
+corr:leadsTo a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range inc:Incident .
+corr:link a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range evt:Event .
+corr:candidateApp a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range ops:Application .
+corr:confidence a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:decimal .
+corr:rank a owl:DatatypeProperty ; rdfs:domain corr:Chain ; rdfs:range xsd:integer .
+
+# ---------- RCA: verdicts ----------
+rca:Verdict a owl:Class ; rdfs:subClassOf og:Thing .
+rca:onChain a owl:ObjectProperty ; rdfs:domain rca:Verdict ; rdfs:range corr:Chain .
+rca:state a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:string .
+rca:by a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:string .
+rca:evidence a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:string .
+rca:at a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:dateTime .
+
+# ---------- HARVEST ----------
+harv:Harvest a owl:Class ; rdfs:subClassOf og:Thing .
+harv:Quarantined a owl:Class ; rdfs:subClassOf og:Thing .
+harv:LlmFact a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "Provenance of one fact a model proposed: model, prompt hash, confidence." .
+harv:source a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string .
+harv:at a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:dateTime .
+harv:extractor a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string .
+harv:status a owl:DatatypeProperty ; rdfs:domain harv:Harvest ; rdfs:range xsd:string .
+harv:reason a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string .
+harv:fact a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string .
+harv:model a owl:DatatypeProperty ; rdfs:domain harv:LlmFact ; rdfs:range xsd:string .
+harv:promptHash a owl:DatatypeProperty ; rdfs:domain harv:LlmFact ; rdfs:range xsd:string .
+harv:method a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string .
+
+# ---------- Closed vocabularies, with a definition per value ----------
+# The LLM prompt is generated from these, and the gateway enforces them, so they cannot disagree.
+og:vocabulary a owl:AnnotationProperty .
+og:value a owl:AnnotationProperty .
+
+evt:signal og:vocabulary
+  [ og:value "DEPLOYMENT" ; rdfs:comment "A new version of code was rolled out." ],
+  [ og:value "CONFIG_CHANGE" ; rdfs:comment "A runtime setting, flag or limit changed without a deploy." ],
+  [ og:value "ALERT" ; rdfs:comment "A monitor fired." ],
+  [ og:value "INCIDENT" ; rdfs:comment "A declared incident." ],
+  [ og:value "LOG_ERROR" ; rdfs:comment "A burst of error log lines with one template." ],
+  [ og:value "METRIC_ANOMALY" ; rdfs:comment "A metric left its normal band." ],
+  [ og:value "TRACE_FAILED" ; rdfs:comment "Spans ended with an error status." ],
+  [ og:value "TRACE_SLOW" ; rdfs:comment "Spans took far longer than usual." ],
+  [ og:value "EXPERIMENT" ; rdfs:comment "An A/B test or canary started or changed allocation." ],
+  [ og:value "E2E_FAILURE" ; rdfs:comment "A synthetic end-to-end check failed." ],
+  [ og:value "DISCUSSION" ; rdfs:comment "People discussed a problem in chat." ],
+  [ og:value "NEWS" ; rdfs:comment "An external news development." ],
+  [ og:value "DEPENDENCY_CHANGE" ; rdfs:comment "A library, base image or upstream API version changed." ] .
+
+evt:severity og:vocabulary
+  [ og:value "SEV1" ; rdfs:comment "Critical: customers broadly affected." ],
+  [ og:value "SEV2" ; rdfs:comment "Major: a key function degraded." ],
+  [ og:value "SEV3" ; rdfs:comment "Minor: limited impact." ],
+  [ og:value "SEV4" ; rdfs:comment "Informational." ] .
+
+inc:status og:vocabulary [ og:value "open" ], [ og:value "mitigated" ], [ og:value "resolved" ] .
+ops:tier og:vocabulary [ og:value "critical" ], [ og:value "high" ], [ og:value "medium" ], [ og:value "low" ] .
+rca:state og:vocabulary [ og:value "accepted" ], [ og:value "rejected" ] .
+harv:status og:vocabulary [ og:value "complete" ], [ og:value "degraded" ] .
+
+disc:category og:vocabulary
+  [ og:value "DEPLOYMENT" ; rdfs:comment "A code rollout or rollback of our own service caused or fixed it." ],
+  [ og:value "CONFIG" ; rdfs:comment "A setting, feature flag, limit or secret was changed or wrong." ],
+  [ og:value "CAPACITY" ; rdfs:comment "Our own resources ran out under load: CPU, memory, disk, our connection or thread pools, quotas, autoscaling. Use this even when the exhausted pool connects to a dependency." ],
+  [ og:value "DEPENDENCY" ; rdfs:comment "Another service or vendor we call was down, slow or returned errors while our own resources were fine." ],
+  [ og:value "NETWORK" ; rdfs:comment "DNS, load balancers, TLS certificates, packet loss or connectivity between hosts." ],
+  [ og:value "DATA" ; rdfs:comment "Bad, missing or corrupt data, a migration or a schema mismatch." ],
+  [ og:value "SECURITY" ; rdfs:comment "An attack, a leaked credential or an access-control problem." ],
+  [ og:value "UNKNOWN" ; rdfs:comment "The thread does not say what caused it." ] .
+
+disc:sentiment og:vocabulary [ og:value "calm" ], [ og:value "concerned" ], [ og:value "urgent" ] .
