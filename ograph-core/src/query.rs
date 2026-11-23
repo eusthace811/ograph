@@ -137,14 +137,15 @@ pub struct Similar {
     pub title: Option<String>,
 }
 
-/// An incident's signature: (application, signal) pairs seen before it, weighted by strength.
+/// An incident's signature: (application, signal) pairs seen before it, summed over their events'
+/// strengths. Strength saturates at 1, so a max made every strongly anomalous application look
+/// alike; the sum keeps how much of the onset each application carries.
 pub fn signature(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<FxHashMap<(String, String), f64>> {
     let st = Settings { window_s: st.signature_window_s, ..st.clone() };
     let (_, _, cands) = correlate::candidates(s, ids, i, &st)?;
     let mut sig: FxHashMap<(String, String), f64> = FxHashMap::default();
     for c in cands {
-        let e = sig.entry((c.app_name.clone(), c.kind.clone())).or_default();
-        *e = e.max(0.3 + 0.7 * c.severity);
+        *sig.entry((c.app_name, c.kind)).or_default() += 0.3 + 0.7 * c.severity;
     }
     Ok(sig)
 }

@@ -42,7 +42,7 @@ ograph lab                         # one HTML page over the whole graph
 | Check | Result |
 |---|---|
 | Root cause on RCAEval RE2-OB (90 labeled failures), held-out reps | AC@1 0.87, AC@3 0.95, Avg@5 0.94. The published numbers are TORAI 0.83/0.95/0.93, CIRCA 0.67/0.89/0.85 and BARO 0.67/0.82/0.80 |
-| Similar past incident shares the root cause | 0.74 top-1, 0.90 top-3, against about 0.20 by chance |
+| Similar past incident shares the root cause | 0.92 top-1 (59 of 60 held out), 0.94 top-3, against about 0.20 by chance |
 | SPARQL correctness against Oxigraph in memory | 0 mismatches over 41 queries on 3.5 M quads |
 | W2, the 10 minutes before an incident | 0.003 ms native, 0.17 ms SPARQL, 0.10 ms Oxigraph |
 | W3, blast radius of the hub application | 15 ms native, 18 ms SPARQL, 137 ms Oxigraph |

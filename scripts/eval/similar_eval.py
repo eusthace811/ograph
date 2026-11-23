@@ -32,7 +32,7 @@ def main():
         if rows:
             og("verdict", rows[0][0], "accept", "--evidence", "RCAEval label", "--by", "eval"); accepted += 1
     print(f"accepted a true chain for {accepted}/{len(labels)} incidents (the others had no chain rooted at the true service)")
-    hit1 = hit3 = n = 0; per = collections.Counter()
+    hit1 = hit3 = n = 0; per = collections.Counter(); split = collections.defaultdict(lambda: [0, 0, 0])
     for cid, l in labels.items():
         r = og("similar", l["incident"], "--top", "3")
         sims = json.loads(r.stdout) if r.stdout.strip() else []
@@ -42,8 +42,11 @@ def main():
         n += 1
         top = sims[0]["cause_apps"]; top3 = {x for s in sims[:3] for x in s["cause_apps"]}
         hit1 += l["root"] in top; hit3 += l["root"] in top3; per[l["fault"]] += l["root"] in top
+        sp = split["tune (rep 1)" if l["rep"] == 1 else "held out (reps 2-3)"]; sp[0] += l["root"] in top; sp[1] += l["root"] in top3; sp[2] += 1
     print(f"incidents with an earlier accepted incident to compare: {n}")
     print(f"top-1 similar past incident shares the root cause: {hit1}/{n} = {hit1 / max(n, 1):.2f}; any of top 3: {hit3 / max(n, 1):.2f}; chance about 0.20")
     print("per fault (top-1 hits):", dict(per))
+    for k, (h1, h3, m) in sorted(split.items(), reverse=True):
+        print(f"{k}: top-1 {h1}/{m} = {h1 / m:.2f}; top 3 {h3 / m:.2f}")
 
 main()

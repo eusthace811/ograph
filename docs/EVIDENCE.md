@@ -122,8 +122,9 @@ The published baselines come from the TORAI paper's Table 2, averaged over all 9
 
 **Investigation memory (`similar-eval.txt`).** All 90 cases went into one store, with each incident's true chain accepted as a verdict. Then `similar` was run for each incident over the incidents before it:
 
-- **Top-1.** The most similar past incident's accepted cause is the true root cause for 0.74 (66 of 89), against about 0.20 by chance.
-- **Top-3.** It is among the top three for 0.90.
+- **Top-1.** The most similar past incident's accepted cause is the true root cause for 0.92 (82 of 89), against about 0.20 by chance. On the held-out reps 2-3 it is 59 of 60; on the tuning rep 1 it is 23 of 29.
+- **Top-3.** It is among the top three for 0.94.
+- **The signature sums strengths.** It used to keep the maximum strength per application. Strength saturates at 1, so the root application and its callers looked alike, and 0.74 (66 of 89) was the result. Summing over a 900 s window fixed 16 of 23 misses. The window was picked on rep 1, averaged over simulated gaps of 120 to 900 s between fault and incident, so it does not fit the benchmark's fixed 300 s gap. Four of the 7 remaining misses have no earlier incident with the same root cause, so 85 of 89 is the ceiling. Delay faults went from 15 to 13 hits.
 
 ## Phase 6: model enrichers (`llm-gate.txt`)
 
@@ -244,4 +245,4 @@ These are the reasons, each measured above:
 - **SPARQL cannot express the detector.** SPARQL 1.1 has no median, MAD, window functions or online baseline. The best ranking it can express scores 0.63 AC@1, against ograph's 0.87.
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
-The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.74 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.
+The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.

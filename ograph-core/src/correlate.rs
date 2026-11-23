@@ -67,7 +67,7 @@ impl Default for Settings {
             prop_weights: [0.4, 0.5, 0.1, 0.0],
             ignore_dependencies: false,
             only_signals: vec![],
-            signature_window_s: 600,
+            signature_window_s: 900,
         }
     }
 }

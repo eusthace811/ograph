@@ -57,7 +57,7 @@ w_severity = 0.4
 known_pair_prior = 0.9      # Netflix: known causal pairs carry a 0.9 prior
 rank = "chain"              # or "propagation"
 prop_weights = [0.4, 0.5, 0.1, 0.0]  # propagation: strength, chain, spread, onset
-signature_window_s = 600    # the window `similar` compares
+signature_window_s = 900    # the window `similar` compares
 depth = 4                   # dependency hops in scope
 
 [llm.extract]               # optional; without it, discussions get regex facts only

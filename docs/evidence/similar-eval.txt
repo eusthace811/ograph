@@ -1,5 +1,7 @@
-merged harvest: 14.6 s, rc 0; harvested 362 batches in 14.6 s; 1106 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+merged harvest: 16.0 s, rc 0; harvested 362 batches in 15.4 s; 1106 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
 accepted a true chain for 90/90 incidents (the others had no chain rooted at the true service)
 incidents with an earlier accepted incident to compare: 89
-top-1 similar past incident shares the root cause: 66/89 = 0.74; any of top 3: 0.90; chance about 0.20
-per fault (top-1 hits): {'cpu': 10, 'delay': 15, 'disk': 11, 'loss': 8, 'mem': 11, 'socket': 11}
+top-1 similar past incident shares the root cause: 82/89 = 0.92; any of top 3: 0.94; chance about 0.20
+per fault (top-1 hits): {'cpu': 11, 'delay': 13, 'disk': 14, 'loss': 14, 'mem': 15, 'socket': 15}
+tune (rep 1): top-1 23/29 = 0.79; top 3 0.83
+held out (reps 2-3): top-1 59/60 = 0.98; top 3 1.00
