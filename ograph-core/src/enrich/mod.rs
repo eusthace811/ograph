@@ -204,6 +204,56 @@ pub fn json_records(path: &Path) -> anyhow::Result<Vec<serde_json::Value>> {
     text.lines().filter(|l| !l.trim().is_empty()).map(|l| Ok(serde_json::from_str(l)?)).collect()
 }
 
+/// The fields `keys` of each JSON line (or of each element of one JSON array), absent where a
+/// record lacks one or is not an object.
+pub fn json_records_fields<const N: usize>(path: &Path, keys: [&str; N]) -> anyhow::Result<Vec<[Option<serde_json::Value>; N]>> {
+    let text = std::fs::read_to_string(path)?;
+    let t = text.trim_start();
+    if t.starts_with('[') || t.starts_with('{') && !t.contains('\n') {
+        let all: Vec<serde_json::Value> = if t.starts_with('[') { serde_json::from_str(t)? } else { vec![serde_json::from_str(t)?] };
+        return Ok(all.iter().map(|v| keys.map(|k| v.get(k).cloned())).collect());
+    }
+    text.lines().filter(|l| !l.trim().is_empty()).map(|l| Ok(json_fields(l, keys)?)).collect()
+}
+
+/// The fields `keys` of one JSON value, as `v.get(key)` would give them, without building the
+/// value's other fields or a map. Anything the fast path rejects (not an object, escaped keys,
+/// bad JSON) is parsed whole, so results and errors match `serde_json::from_str`.
+pub fn json_fields<const N: usize>(line: &str, keys: [&str; N]) -> serde_json::Result<[Option<serde_json::Value>; N]> {
+    use serde::de::{DeserializeSeed, Deserializer, IgnoredAny, MapAccess, Visitor};
+    struct Fields<'k, const N: usize>(&'k [&'k str; N]);
+    impl<'de, const N: usize> Visitor<'de> for Fields<'_, N> {
+        type Value = [Option<serde_json::Value>; N];
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a JSON object")
+        }
+        fn visit_map<A: MapAccess<'de>>(self, mut a: A) -> Result<Self::Value, A::Error> {
+            let mut out = std::array::from_fn(|_| None);
+            while let Some(k) = a.next_key::<&'de str>()? {
+                match self.0.iter().position(|x| *x == k) {
+                    Some(i) => out[i] = Some(a.next_value()?),
+                    None => drop(a.next_value::<IgnoredAny>()?),
+                }
+            }
+            Ok(out)
+        }
+    }
+    impl<'de, const N: usize> DeserializeSeed<'de> for Fields<'_, N> {
+        type Value = [Option<serde_json::Value>; N];
+        fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+            d.deserialize_map(self)
+        }
+    }
+    let mut de = serde_json::Deserializer::from_str(line);
+    match Fields(&keys).deserialize(&mut de).and_then(|v| de.end().map(|()| v)) {
+        Ok(v) => Ok(v),
+        Err(_) => {
+            let v: serde_json::Value = serde_json::from_str(line)?;
+            Ok(keys.map(|k| v.get(k).cloned()))
+        }
+    }
+}
+
 pub fn str_field<'a>(v: &'a serde_json::Value, names: &[&str]) -> Option<&'a str> {
     names.iter().find_map(|n| v.get(*n).and_then(|x| x.as_str()))
 }

@@ -5,7 +5,7 @@
 //! Detectors are online: each point is judged against a trailing baseline, never against a
 //! label or a known incident time.
 
-use super::{Detect, dt, json_records, parse_time, str_field};
+use super::{Detect, dt, json_fields, json_records_fields, parse_time};
 use super::drain::Drain;
 use crate::model::{Batch, EntityRef, Extraction, Object, known, lit, obj, slug};
 use crate::vocab::{RDF_TYPE, evt, ops};
@@ -43,9 +43,10 @@ struct Episode {
 }
 
 fn median(v: &mut [f64]) -> f64 {
-    v.sort_by(f64::total_cmp);
     let n = v.len();
-    if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 }
+    let (below, mid, _) = v.select_nth_unstable_by(n / 2, f64::total_cmp);
+    let mid = *mid;
+    if n % 2 == 1 { mid } else { (below.iter().copied().max_by(f64::total_cmp).unwrap() + mid) / 2.0 }
 }
 
 /// Robust z-score episodes over one series of `(ms, value, row)`. One-sided (increases) unless
@@ -174,10 +175,10 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let mut per: BTreeMap<String, (Drain, Vec<(i64, usize, bool)>)> = BTreeMap::new();
     for (i, line) in text.lines().enumerate() {
         let (svc, t, msg, level) = if line.trim_start().starts_with('{') {
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
-            let Some(t) = ["ts", "timestamp", "time"].iter().find_map(|f| v.get(*f).and_then(parse_time)) else { continue };
-            let svc = str_field(&v, &["service", "container_name", "app"]).unwrap_or(&stem).to_owned();
-            (svc, t, str_field(&v, &["message", "msg", "log"]).unwrap_or("").to_owned(), str_field(&v, &["level", "severity"]).map(str::to_lowercase))
+            let Ok(f) = json_fields(line, ["ts", "timestamp", "time", "service", "container_name", "app", "message", "msg", "log", "level", "severity"]) else { continue };
+            let Some(t) = f[0..3].iter().find_map(|v| v.as_ref().and_then(parse_time)) else { continue };
+            let svc = first_str(&f[3..6]).unwrap_or(&stem).to_owned();
+            (svc, t, first_str(&f[6..9]).unwrap_or("").to_owned(), first_str(&f[9..11]).map(str::to_lowercase))
         } else {
             let (Some(t), rest) = super::drain::leading_timestamp(line) else { continue };
             (stem.clone(), t * 1000, rest.to_owned(), None)
@@ -229,19 +230,17 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     Ok(b)
 }
 
+/// The first of `fields` that is a string.
+fn first_str(fields: &[Option<serde_json::Value>]) -> Option<&str> {
+    fields.iter().find_map(|v| v.as_ref()?.as_str())
+}
+
 /// The template a just-added line joined: the new one if Drain created it, else the best match.
 fn template_of(drain: &Drain, msg: &str, before: usize) -> usize {
     if drain.templates.len() > before {
         return drain.templates.len() - 1;
     }
-    let words: Vec<&str> = msg.split_whitespace().collect();
-    drain
-        .templates
-        .iter()
-        .enumerate()
-        .filter(|(_, t)| t.tokens.len() == words.len())
-        .max_by_key(|(_, t)| t.tokens.iter().zip(&words).filter(|(a, w)| matches!(a, super::drain::Token::Word(x) if x == *w)).count())
-        .map_or(0, |(i, _)| i)
+    drain.most_words_in_common(msg)
 }
 
 struct Span {
@@ -259,19 +258,20 @@ pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let mut spans = Vec::new();
     let mut by_id: HashMap<String, usize> = HashMap::new();
     let mut parents = Vec::new();
-    for (i, v) in json_records(path)?.iter().enumerate() {
-        let (Some(svc), Some(start)) = (str_field(v, &["service", "serviceName"]), ["start_ms", "startTimeMillis"].iter().find_map(|f| v.get(*f).and_then(parse_time))) else { continue };
-        let dur = ["duration_us", "duration"].iter().find_map(|f| v.get(*f).and_then(|x| x.as_f64().or_else(|| x.as_str()?.parse().ok()))).unwrap_or(0.0);
-        let status = v.get("status").or_else(|| v.get("statusCode"));
+    let keys = ["service", "serviceName", "start_ms", "startTimeMillis", "duration_us", "duration", "status", "statusCode", "span_id", "spanID", "parent_span_id", "parentSpanID"];
+    for (i, f) in json_records_fields(path, keys)?.iter().enumerate() {
+        let (Some(svc), Some(start)) = (first_str(&f[0..2]), f[2..4].iter().find_map(|v| v.as_ref().and_then(parse_time))) else { continue };
+        let dur = f[4..6].iter().find_map(|v| v.as_ref().and_then(|x| x.as_f64().or_else(|| x.as_str()?.parse().ok()))).unwrap_or(0.0);
+        let status = f[6].as_ref().or(f[7].as_ref());
         let error = match status {
             Some(serde_json::Value::Number(n)) => n.as_i64().unwrap_or(0) == 2 || n.as_i64().unwrap_or(0) >= 400,
             Some(serde_json::Value::String(s)) => matches!(s.to_lowercase().as_str(), "error" | "2" | "status_code_error"),
             _ => false,
         };
-        if let Some(id) = str_field(v, &["span_id", "spanID"]) {
+        if let Some(id) = first_str(&f[8..10]) {
             by_id.insert(id.to_owned(), spans.len());
         }
-        parents.push(str_field(v, &["parent_span_id", "parentSpanID"]).map(str::to_owned));
+        parents.push(first_str(&f[10..12]).map(str::to_owned));
         spans.push(Span { service: svc.to_owned(), start, dur_us: dur, error, row: i + 1 });
     }
     let rule = Extraction::Rule { extractor: "span-stats".into() };

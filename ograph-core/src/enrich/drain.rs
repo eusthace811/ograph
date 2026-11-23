@@ -147,7 +147,18 @@ pub struct Drain {
     /// Templates by length, then by first token as shown.
     groups: HashMap<usize, HashMap<String, Vec<usize>>>,
     pub templates: Vec<Template>,
+    /// Each template's tokens as ids from `vocab`, `MASKED` or `GENERALISED`, so matching
+    /// compares integers instead of strings.
+    ids: Vec<Vec<u32>>,
+    /// Template indexes by length, ascending.
+    by_len: HashMap<usize, Vec<usize>>,
+    vocab: HashMap<String, u32>,
 }
+
+const MASKED: u32 = u32::MAX;
+const GENERALISED: u32 = u32::MAX - 1;
+/// A word no template has, so it matches nothing.
+const UNKNOWN: u32 = u32::MAX - 2;
 
 /// A line's token, borrowed from the line until it starts a template.
 #[derive(Clone, Copy)]
@@ -161,16 +172,6 @@ impl LineToken<'_> {
         match self {
             LineToken::Word(w) => w,
             LineToken::Masked => WILDCARD,
-        }
-    }
-
-    /// Whether a template's token matches it: a generalised position
-    /// matches nothing, as a line never has one.
-    fn matches(self, t: &Token) -> bool {
-        match (t, self) {
-            (Token::Word(a), LineToken::Word(b)) => a == b,
-            (Token::Masked, LineToken::Masked) => true,
-            _ => false,
         }
     }
 
@@ -199,6 +200,13 @@ impl Drain {
         let Some(first) = tokens.first().map(LineToken::as_str) else {
             return;
         };
+        let line: Vec<u32> = tokens
+            .iter()
+            .map(|t| match t {
+                LineToken::Masked => MASKED,
+                LineToken::Word(w) => self.word_id(w),
+            })
+            .collect();
         let by_first = self.groups.entry(tokens.len()).or_default();
         if !by_first.contains_key(first) {
             by_first.insert(first.to_string(), Vec::new());
@@ -210,28 +218,20 @@ impl Drain {
         let best = slots
             .iter()
             .filter_map(|&i| {
-                let t = &self.templates[i];
-                let same = t
-                    .tokens
-                    .iter()
-                    .zip(&tokens)
-                    .filter(|(a, b)| b.matches(a))
-                    .count();
+                let t = &self.ids[i];
+                let same = t.iter().zip(&line).filter(|(a, b)| a == b).count();
                 (same as f64 / tokens.len() as f64 >= SIMILARITY).then(|| {
-                    let wild = t
-                        .tokens
-                        .iter()
-                        .filter(|a| **a == Token::Generalised)
-                        .count();
+                    let wild = t.iter().filter(|a| **a == GENERALISED).count();
                     (same, wild, i)
                 })
             })
             .max_by_key(|&(same, wild, i)| (same, wild, std::cmp::Reverse(i)));
         if let Some((_, _, i)) = best {
             let t = &mut self.templates[i];
-            for (a, b) in t.tokens.iter_mut().zip(&tokens) {
-                if !b.matches(a) {
+            for ((a, id), b) in t.tokens.iter_mut().zip(&mut self.ids[i]).zip(&line) {
+                if id != b {
                     *a = Token::Generalised;
+                    *id = GENERALISED;
                 }
             }
             t.count += 1;
@@ -242,6 +242,18 @@ impl Drain {
             return;
         }
         slots.push(self.templates.len());
+        self.by_len.entry(tokens.len()).or_default().push(self.templates.len());
+        let ids = tokens
+            .iter()
+            .map(|t| match t {
+                LineToken::Masked => MASKED,
+                LineToken::Word(w) => {
+                    let next = self.vocab.len() as u32;
+                    *self.vocab.entry((*w).to_owned()).or_insert(next)
+                }
+            })
+            .collect();
+        self.ids.push(ids);
         self.templates.push(Template {
             tokens: tokens.into_iter().map(LineToken::to_owned).collect(),
             count: 1,
@@ -249,6 +261,29 @@ impl Drain {
             last_seen: time,
             example: (file.to_string(), line_number),
         });
+    }
+
+    fn word_id(&self, w: &str) -> u32 {
+        self.vocab.get(w).copied().unwrap_or(UNKNOWN)
+    }
+
+    /// The template of `line`'s length whose words agree with the line's at the most
+    /// positions; ties go to the later template, and 0 when none has that length.
+    pub fn most_words_in_common(&self, line: &str) -> usize {
+        let words: Vec<u32> = line.split_whitespace().map(|w| self.word_id(w)).collect();
+        let Some(same_len) = self.by_len.get(&words.len()) else {
+            return 0;
+        };
+        same_len
+            .iter()
+            .max_by_key(|&&i| {
+                self.ids[i]
+                    .iter()
+                    .zip(&words)
+                    .filter(|(a, b)| a == b && **b != UNKNOWN)
+                    .count()
+            })
+            .map_or(0, |&i| i)
     }
 
     /// Templates, most frequent first; ties by first sighting, then text.

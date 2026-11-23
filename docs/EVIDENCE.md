@@ -50,6 +50,13 @@ The store changed in these ways from the spike:
 
 Non-durable commits were tried and rejected. They did not speed up the 1x load (20.3 s), and they doubled the loose file, because redb cannot reuse pages freed by non-durable commits until a durable one.
 
+**Harvest speed.** Three changes in `enrich/` made harvest about 25% faster with identical sorted quads on every RCAEval case and the demo:
+- Drain compares word ids instead of strings, and indexes templates by length.
+- Log and trace lines are read into a fixed list of fields through a serde visitor, with the full parse as a fallback.
+- Baseline medians use selection instead of a full sort.
+
+Interleaved, sequential runs on 12 cases (3 each) give a median of 0.228 s before and 0.180 s after; the merged 90-case harvest goes from 14.8 s to 10.1 s (6 runs each). Root-cause and similar-incident scores are unchanged. The rest of single-case time is trace parsing and 7 to 8 durable redb commits. In logs, product ids such as `L9ECAV7KIM` escape the masking rule, so one service builds about 250 templates; masking them would cut most of the remaining log cost, but it changes the output, so it waits for its own eval.
+
 ## Phase 3: ontology, SHACL and gateway
 
 | Check | Result |
