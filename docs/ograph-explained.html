@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ograph, explained</title>
+<meta name="description" content="A plain-language tour of ograph: how it turns operational exports into one checked knowledge graph and uses it to explain incidents.">
+<style>
+/* Layout: one left-aligned reading column (680px) inside a 920px page; figures are
+   glass sheets that run the full 920px over a fixed field of soft colour. */
+:root {
+  --bg: #eef1f6;
+  --fg: #1d1d1f;
+  --fg-2: #515154;
+  --fg-3: #86868b;
+  --accent: #0071e3;
+  --accent-soft: rgba(0, 113, 227, .14);
+  --hot: #d70015;
+  --hot-soft: rgba(215, 0, 21, .10);
+  --ok: #1d7a36;
+  --ok-soft: rgba(29, 122, 54, .12);
+  --warn: #b25000;
+  --warn-soft: rgba(178, 80, 0, .12);
+  --hair: rgba(0, 0, 0, .10);
+  --track: rgba(0, 0, 0, .06);
+  --glass: rgba(255, 255, 255, .58);
+  --glass-strong: rgba(255, 255, 255, .78);
+  --glass-edge: rgba(255, 255, 255, .85);
+  --glass-shine: rgba(255, 255, 255, .9);
+  --shadow-a: rgba(15, 25, 50, .05);
+  --shadow-b: rgba(15, 25, 50, .09);
+  --code-bg: rgba(255, 255, 255, .5);
+  --orb-1: rgba(110, 168, 255, .50);
+  --orb-2: rgba(110, 222, 208, .38);
+  --orb-3: rgba(255, 190, 150, .40);
+
+  --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Inter, system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", "Segoe UI", Inter, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 22px;
+  --radius-s: 12px;
+  --col: 680px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0b0f;
+    --fg: #f5f5f7;
+    --fg-2: #b6b6bd;
+    --fg-3: #85858c;
+    --accent: #2997ff;
+    --accent-soft: rgba(41, 151, 255, .20);
+    --hot: #ff453a;
+    --hot-soft: rgba(255, 69, 58, .18);
+    --ok: #30d158;
+    --ok-soft: rgba(48, 209, 88, .16);
+    --warn: #ff9f0a;
+    --warn-soft: rgba(255, 159, 10, .16);
+    --hair: rgba(255, 255, 255, .13);
+    --track: rgba(255, 255, 255, .08);
+    --glass: rgba(34, 38, 50, .52);
+    --glass-strong: rgba(34, 38, 50, .78);
+    --glass-edge: rgba(255, 255, 255, .13);
+    --glass-shine: rgba(255, 255, 255, .10);
+    --shadow-a: rgba(0, 0, 0, .25);
+    --shadow-b: rgba(0, 0, 0, .35);
+    --code-bg: rgba(0, 0, 0, .28);
+    --orb-1: rgba(36, 92, 214, .42);
+    --orb-2: rgba(16, 128, 124, .28);
+    --orb-3: rgba(168, 76, 60, .26);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a0b0f;
+  --fg: #f5f5f7;
+  --fg-2: #b6b6bd;
+  --fg-3: #85858c;
+  --accent: #2997ff;
+  --accent-soft: rgba(41, 151, 255, .20);
+  --hot: #ff453a;
+  --hot-soft: rgba(255, 69, 58, .18);
+  --ok: #30d158;
+  --ok-soft: rgba(48, 209, 88, .16);
+  --warn: #ff9f0a;
+  --warn-soft: rgba(255, 159, 10, .16);
+  --hair: rgba(255, 255, 255, .13);
+  --track: rgba(255, 255, 255, .08);
+  --glass: rgba(34, 38, 50, .52);
+  --glass-strong: rgba(34, 38, 50, .78);
+  --glass-edge: rgba(255, 255, 255, .13);
+  --glass-shine: rgba(255, 255, 255, .10);
+  --shadow-a: rgba(0, 0, 0, .25);
+  --shadow-b: rgba(0, 0, 0, .35);
+  --code-bg: rgba(0, 0, 0, .28);
+  --orb-1: rgba(36, 92, 214, .42);
+  --orb-2: rgba(16, 128, 124, .28);
+  --orb-3: rgba(168, 76, 60, .26);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 84px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 17px/1.6 var(--font-text);
+  -webkit-font-smoothing: antialiased;
+}
+/* The field of colour the glass sits on. Fixed, so sheets slide over it. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(62vmax 62vmax at 8% -12%, var(--orb-1), transparent 62%),
+    radial-gradient(52vmax 52vmax at 104% 22%, var(--orb-2), transparent 62%),
+    radial-gradient(60vmax 60vmax at 38% 112%, var(--orb-3), transparent 62%),
+    var(--bg);
+}
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
+  padding-block: 0 96px;
+}
+.prose section > * { max-width: var(--col); }
+.prose section > .wide { max-width: none; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, .nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--glass-shine), 0 1px 2px var(--shadow-a), 0 14px 36px var(--shadow-b);
+}
+
+/* ---------- navigation ---------- */
+.nav {
+  position: sticky;
+  top: max(12px, env(safe-area-inset-top, 0px));
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 6px 8px 6px 18px;
+  border-radius: 999px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--glass-strong);
+}
+.nav::-webkit-scrollbar { display: none; }
+.nav .mark { font: 600 15px/1 var(--font-display); letter-spacing: -.01em; color: var(--fg); margin-right: auto; padding-right: 16px; }
+.nav a { flex: none; padding: 8px 12px; border-radius: 999px; font-size: 13.5px; line-height: 1; color: var(--fg-2); }
+.nav a:hover { background: var(--track); color: var(--fg); text-decoration: none; }
+
+/* ---------- title block ---------- */
+.title { padding-block: 72px 8px; }
+.kicker { font: 600 13px/1 var(--font-text); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); margin: 0 0 18px; }
+h1 {
+  font: 700 clamp(2.5rem, 7vw, 4.25rem)/1.04 var(--font-display);
+  letter-spacing: -.035em;
+  margin: 0 0 20px;
+  max-width: 14ch;
+  text-wrap: balance;
+}
+.dek { font: 400 clamp(1.15rem, 2.4vw, 1.4rem)/1.4 var(--font-display); letter-spacing: -.012em; color: var(--fg-2); max-width: 34em; margin: 0 0 22px; text-wrap: pretty; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; color: var(--fg-3); margin: 0; padding: 0; list-style: none; }
+
+.abstract { margin-top: 40px; padding: 26px 28px; }
+.abstract h2 { font: 600 13px/1 var(--font-text); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); margin: 0 0 12px; }
+.abstract p { margin: 0; max-width: 46em; }
+
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); margin: 24px 0 0; border-top: 1px solid var(--hair); }
+.stats div { padding: 18px 18px 2px 0; }
+.stats div + div { padding-left: 18px; border-left: 1px solid var(--hair); }
+.stats dt { font: 700 clamp(1.5rem, 3.4vw, 2.1rem)/1.1 var(--font-display); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.stats dd { margin: 6px 0 0; font-size: 13.5px; line-height: 1.4; color: var(--fg-2); }
+
+/* ---------- sections ---------- */
+section { padding-top: 72px; }
+h2 { font: 700 clamp(1.6rem, 3.6vw, 2.1rem)/1.14 var(--font-display); letter-spacing: -.028em; margin: 0 0 16px; text-wrap: balance; }
+h2 .n { display: block; font: 600 13px/1 var(--font-text); letter-spacing: .08em; color: var(--fg-3); margin-bottom: 12px; }
+h3 { font: 600 1.2rem/1.3 var(--font-display); letter-spacing: -.015em; margin: 36px 0 8px; }
+p { margin: 0 0 16px; text-wrap: pretty; }
+strong { font-weight: 600; }
+code { font: .86em/1.4 var(--font-mono); background: var(--track); padding: .12em .4em; border-radius: 6px; white-space: nowrap; }
+ul.plain { margin: 0 0 16px; padding-left: 1.2em; }
+ul.plain li { margin-bottom: 8px; }
+
+figure { margin: 30px 0 34px; padding: 24px; }
+figcaption { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--hair); font-size: 13.5px; line-height: 1.5; color: var(--fg-2); }
+figcaption b { color: var(--fg); font-weight: 600; }
+.scroll { overflow-x: auto; }
+.swipe { display: none; margin: 10px 0 0; font-size: 12px; color: var(--fg-3); }
+svg { display: block; width: 100%; height: auto; }
+svg text { font-family: var(--font-text); fill: var(--fg-2); }
+svg .mono { font-family: var(--font-mono); }
+
+/* ---------- Figure 1: pipeline ---------- */
+.flow { display: grid; grid-template-columns: 1.25fr auto 1fr auto 1fr auto 1.2fr; gap: 14px; align-items: stretch; }
+.flow .step { min-width: 0; padding: 16px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-edge); }
+.flow .step h4 { margin: 0 0 4px; font: 600 15px/1.25 var(--font-display); }
+.flow .step p { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--fg-2); }
+.flow .arrow { align-self: center; color: var(--fg-3); font-size: 20px; line-height: 1; }
+.flow .arrow::before { content: "\2192"; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.chips li { font: 12px/1 var(--font-mono); padding: 6px 8px; border-radius: 8px; background: var(--track); color: var(--fg-2); }
+.flow .q { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.4; }
+.flow .q li { padding: 6px 0; border-top: 1px solid var(--hair); }
+.flow .q li:first-child { border-top: 0; padding-top: 0; }
+.flow .step.key { background: var(--accent-soft); }
+
+/* ---------- Figure 2: sentences ---------- */
+.facts { display: grid; gap: 10px; }
+.fact { display: grid; grid-template-columns: 1fr 1fr 1fr 1.1fr; gap: 6px; }
+.fact span { min-width: 0; overflow-wrap: anywhere; padding: 11px 12px; border-radius: 10px; font: 13px/1.3 var(--font-mono); background: var(--track); }
+.fact .v { background: transparent; color: var(--fg-2); font-style: italic; font-family: var(--font-text); font-size: 14px; }
+.fact .src { background: var(--accent-soft); color: var(--accent); }
+.fact.head span { background: transparent; padding-block: 0 2px; font: 600 11.5px/1 var(--font-text); letter-spacing: .07em; text-transform: uppercase; color: var(--fg-3); }
+
+/* ---------- Figure 3: scale ---------- */
+.scale { display: grid; grid-template-columns: auto 1fr; gap: 28px 36px; align-items: center; }
+.sq { width: 300px; max-width: 100%; aspect-ratio: 1; border-radius: 10px; background: var(--accent-soft); border: 1px solid var(--accent); display: grid; place-content: end start; padding: 14px; }
+.sq b, .dotrow b { display: block; font: 700 1.5rem/1.1 var(--font-display); letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+.sq small, .dotrow small { font-size: 13px; color: var(--fg-2); }
+.dotrow { display: flex; align-items: center; gap: 16px; }
+.dot { flex: none; width: 3px; height: 3px; background: var(--accent); }
+.dotrow .lead { flex: none; width: 34px; height: 1px; background: var(--fg-3); }
+
+table { width: 100%; border-collapse: collapse; font-size: 14.5px; line-height: 1.45; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; vertical-align: top; padding: 11px 16px 11px 0; border-top: 1px solid var(--hair); }
+thead th { border-top: 0; padding-top: 0; font: 600 11.5px/1.3 var(--font-text); letter-spacing: .07em; text-transform: uppercase; color: var(--fg-3); }
+tbody th { font-weight: 400; color: var(--fg-2); }
+td.win { font-weight: 600; }
+.tablewrap { overflow-x: auto; margin: 26px 0; }
+.tablewrap table { min-width: 520px; }
+
+/* ---------- Figure 4: gateway ---------- */
+.gate { display: grid; grid-template-columns: 1fr auto 1.3fr auto 1.2fr; gap: 14px; align-items: center; }
+.gate .box { min-width: 0; padding: 16px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-edge); font-size: 14px; line-height: 1.45; }
+.gate .box h4 { margin: 0 0 6px; font: 600 15px/1.25 var(--font-display); }
+.gate ol { margin: 0; padding-left: 1.2em; }
+.gate ol li { margin-bottom: 4px; }
+.gate .out { display: grid; gap: 10px; }
+.gate .yes { background: var(--ok-soft); border-color: transparent; }
+.gate .no { background: var(--hot-soft); border-color: transparent; }
+.gate .yes h4 { color: var(--ok); }
+.gate .no h4 { color: var(--hot); }
+.gate .arrow { color: var(--fg-3); font-size: 20px; line-height: 1; }
+.gate .arrow::before { content: "\2192"; }
+.reason { font: 12.5px/1.45 var(--font-mono); color: var(--fg-2); }
+
+/* ---------- terminal ---------- */
+.term { margin: 22px 0 28px; padding: 0; overflow: hidden; }
+.term header { padding: 10px 18px; font: 12px/1 var(--font-mono); color: var(--fg-3); border-bottom: 1px solid var(--hair); }
+.term pre { margin: 0; padding: 16px 18px 18px; overflow-x: auto; font: 12.5px/1.6 var(--font-mono); color: var(--fg); background: var(--code-bg); }
+.term .c { color: var(--fg-3); }
+.term .p { color: var(--accent); }
+.term .h { color: var(--hot); font-weight: 600; }
+
+/* ---------- bar charts ---------- */
+.bars { display: grid; gap: 10px; }
+.bar { display: grid; grid-template-columns: 15.5rem 1fr 3.4rem; gap: 12px; align-items: center; font-size: 14px; }
+.bar .lab { color: var(--fg-2); min-width: 0; }
+.bar .lab small { display: block; font-size: 12px; color: var(--fg-3); }
+.bar .trk { height: 14px; border-radius: 4px; background: var(--track); }
+.bar .fill { display: block; height: 100%; border-radius: 4px; background: var(--fg-3); }
+.bar .val { font-variant-numeric: tabular-nums; text-align: right; }
+.bar.us .lab { color: var(--fg); font-weight: 600; }
+.bar.us .fill { background: var(--accent); }
+.bar.us .val { font-weight: 700; }
+.axis { display: grid; grid-template-columns: 15.5rem 1fr 3.4rem; gap: 12px; font-size: 12px; color: var(--fg-3); margin-top: 6px; }
+.axis div { display: flex; justify-content: space-between; grid-column: 2; }
+
+.chains .bar { grid-template-columns: 2rem 1fr 3.4rem; align-items: start; }
+.chains .rank { font: 700 1.1rem/1.2 var(--font-display); color: var(--fg-3); }
+.chains .us .rank { color: var(--accent); }
+.chains .who { font-weight: 600; margin-bottom: 6px; }
+.chains .path { font: 12.5px/1.5 var(--font-mono); color: var(--fg-2); margin-top: 8px; overflow-wrap: anywhere; }
+.chains .val { font-weight: 600; }
+
+/* ---------- callouts, loop, glossary ---------- */
+.note { margin: 24px 0; padding: 18px 20px; border-radius: 16px; background: var(--warn-soft); font-size: 15.5px; }
+.note b { color: var(--warn); }
+.note.rule { background: var(--track); }
+.note.rule b { color: var(--fg); }
+.formula { display: block; margin: 10px 0 0; padding: 0; background: none; font: 14px/1.6 var(--font-mono); white-space: normal; overflow-wrap: anywhere; }
+
+.loop { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.loop li { counter-increment: s; min-width: 0; padding: 16px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-edge); font-size: 13.5px; line-height: 1.45; color: var(--fg-2); }
+.loop li::before { content: counter(s); display: block; font: 700 1.1rem/1 var(--font-display); color: var(--fg-3); margin-bottom: 10px; }
+.loop li b { display: block; color: var(--fg); font: 600 15px/1.25 var(--font-display); margin-bottom: 4px; }
+.loop li.human { background: var(--ok-soft); border-color: transparent; }
+.loop li.human::before { color: var(--ok); }
+
+.four { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; margin: 24px 0 8px; padding: 0; list-style: none; }
+.four li { padding: 14px 0; border-top: 1px solid var(--hair); }
+.four b { display: block; font: 600 1.05rem/1.3 var(--font-display); letter-spacing: -.01em; }
+.four code { display: inline-block; margin-top: 6px; }
+
+dl.gloss { display: grid; grid-template-columns: 11rem 1fr; gap: 0 20px; margin: 0; font-size: 15px; }
+dl.gloss dt, dl.gloss dd { margin: 0; padding: 12px 0; border-top: 1px solid var(--hair); }
+dl.gloss dt { font-weight: 600; }
+dl.gloss dd { color: var(--fg-2); }
+
+.refs { padding-left: 1.4em; font-size: 15px; color: var(--fg-2); }
+.refs li { margin-bottom: 8px; }
+footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair); font-size: 13.5px; color: var(--fg-3); }
+
+/* ---------- SVG parts ---------- */
+.lane { stroke: var(--hair); stroke-width: 1; }
+.tick { font-size: 11.5px; fill: var(--fg-3); }
+.lanelab { font-size: 12px; fill: var(--fg); font-weight: 600; }
+.ev { fill: var(--bg); stroke: var(--fg-3); stroke-width: 1.5; }
+.ev-chain { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+.chainline { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.evlab { font-size: 11.5px; }
+.evlab.on { fill: var(--fg); font-weight: 600; }
+.incline { stroke: var(--hot); stroke-width: 2; }
+.inclab { font-size: 12px; fill: var(--hot); font-weight: 600; }
+.node { fill: var(--glass-strong); stroke: var(--hair); stroke-width: 1; }
+.node.hit { fill: var(--hot-soft); stroke: var(--hot); }
+.node.src { fill: var(--hot); stroke: var(--hot); }
+.nodelab { font-size: 12px; fill: var(--fg); text-anchor: middle; }
+.nodelab.src { fill: #fff; font-weight: 600; }
+.edge { fill: none; stroke: var(--fg-3); stroke-width: 1; opacity: .55; }
+.edge.hit { stroke: var(--hot); stroke-width: 1.75; opacity: 1; }
+.head { fill: var(--fg-3); }
+.head.hit { fill: var(--hot); }
+.colhead { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; fill: var(--fg-3); text-anchor: middle; font-weight: 600; }
+
+/* ---------- narrow screens ---------- */
+@media (max-width: 760px) {
+  body { font-size: 16px; }
+  .title { padding-top: 48px; }
+  figure { padding: 18px; }
+  .abstract { padding: 20px; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stats div:nth-child(3) { padding-left: 0; border-left: 0; }
+  .stats div:nth-child(n+3) { border-top: 1px solid var(--hair); }
+  .swipe { display: block; }
+  .flow, .gate { grid-template-columns: 1fr; }
+  .flow .arrow, .gate .arrow { justify-self: center; }
+  .flow .arrow::before, .gate .arrow::before { content: "\2193"; }
+  .scale { grid-template-columns: 1fr; }
+  .bar, .axis { grid-template-columns: 1fr 3.2rem; gap: 4px 10px; }
+  .bar .lab { grid-column: 1 / -1; }
+  .axis div { grid-column: 1; }
+  .chains .bar { grid-template-columns: 1.6rem 1fr 3.2rem; }
+  .chains .bar .lab { grid-column: auto; }
+  .loop { grid-template-columns: 1fr 1fr; }
+  .four { grid-template-columns: 1fr; }
+  dl.gloss { grid-template-columns: 1fr; }
+  dl.gloss dd { border-top: 0; padding-top: 0; }
+  .fact { grid-template-columns: 1fr 1fr; }
+  .fact.head { display: none; }
+  .fact + .fact { padding-top: 10px; border-top: 1px solid var(--hair); }
+}
+@media (max-width: 420px) { .loop { grid-template-columns: 1fr; } }
+
+@media print {
+  body::before, .nav { display: none; }
+  body { background: #fff; }
+  .glass { background: none; box-shadow: none; border-color: #ccc; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  figure, .term, .note { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<nav class="nav glass" aria-label="Sections">
+  <span class="mark">ograph</span>
+  <a href="#problem">Problem</a>
+  <a href="#graph">The graph</a>
+  <a href="#episodes">Episodes</a>
+  <a href="#gateway">Gateway</a>
+  <a href="#example">Example</a>
+  <a href="#results">Results</a>
+  <a href="#limits">Limits</a>
+  <a href="#try">Try it</a>
+</nav>
+
+<header class="title">
+  <p class="kicker">Technical explainer</p>
+  <h1>One graph that explains an incident</h1>
+  <p class="dek">ograph reads what your operations tools already export, keeps the facts that matter, and answers the questions an outage raises. This page explains how, without assuming you know what a knowledge graph is.</p>
+  <ul class="meta">
+    <li>ograph 0.1.0</li>
+    <li>November 2026</li>
+    <li>8 minute read</li>
+    <li>Rust, MIT licensed</li>
+  </ul>
+
+  <div class="abstract glass">
+    <h2>In short</h2>
+    <p>When a service breaks, the clues sit in a dozen places: the deploy log, the pager, dashboards, chat. ograph reads exports from all of them, boils them down to a few hundred checked facts, and stores those as one connected graph. It then answers four questions: what changed before this, what does it affect, has it happened before, and does any vendor news touch us. It follows the design Netflix described in &ldquo;Ontology-Driven Observability&rdquo; and runs as a single command-line program on a laptop or on a corporate network.</p>
+    <dl class="stats">
+      <div><dt>0.93</dt><dd>of 90 labeled failures where the true root cause is ranked first</dd></div>
+      <div><dt>10,000&times;</dt><dd>fewer facts than putting raw telemetry in the graph</dd></div>
+      <div><dt>0.003 ms</dt><dd>to list what happened in the 10 minutes before an incident</dd></div>
+      <div><dt>0</dt><dd>invalid facts stored across 18 kinds of bad write</dd></div>
+    </dl>
+  </div>
+</header>
+
+<main class="prose">
+
+<!-- ================= 1 ================= -->
+<section id="problem">
+  <h2><span class="n">1</span>The problem: the answer exists, in pieces</h2>
+  <p>It is late, checkout is slow, and someone has been paged. Almost everything needed to explain the outage is already written down somewhere. A setting was changed eight minutes ago. A database alert fired a minute later. The same thing happened three weeks ago and was fixed by raising a limit.</p>
+  <p>The trouble is that each clue lives in a different tool, under a slightly different service name, with nothing joining them. A person joins them by hand, under pressure. ograph does the joining ahead of time.</p>
+
+  <figure class="glass wide">
+    <div class="flow">
+      <div class="step">
+        <h4>Your exports</h4>
+        <p>Plain files from tools you already run.</p>
+        <ul class="chips">
+          <li>catalog</li><li>ownership</li><li>deployments</li><li>config_changes</li><li>alerts</li><li>incidents</li><li>logs</li><li>metrics</li><li>traces</li><li>discussions</li><li>docs</li><li>news</li>
+        </ul>
+      </div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="step">
+        <h4>Harvest</h4>
+        <p>Readers turn each file into proposed facts. Noisy signals are reduced to episodes.</p>
+      </div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="step key">
+        <h4>Gateway</h4>
+        <p>Every proposed fact is checked against the ontology. Bad ones go to quarantine with a reason.</p>
+      </div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="step">
+        <h4>One graph, four questions</h4>
+        <ul class="q">
+          <li>What changed before this?</li>
+          <li>What does it affect?</li>
+          <li>Has it happened before?</li>
+          <li>Does vendor news touch us?</li>
+        </ul>
+      </div>
+    </div>
+    <figcaption><b>Figure 1.</b> The whole system. The twelve labels on the left are the source kinds ograph accepts. Only the catalog is required, because it is the list of services every other source refers to.</figcaption>
+  </figure>
+
+  <ul class="four wide">
+    <li><b>What changed before this incident?</b>A timeline of recent events, then a ranked list of likely root causes.<br><code>ograph before</code> <code>ograph chains</code></li>
+    <li><b>What does this failure affect?</b>Every service that depends on it, and the business processes behind them.<br><code>ograph blast</code></li>
+    <li><b>Has this happened before?</b>Past incidents that looked the same, what caused them and what fixed them.<br><code>ograph similar</code></li>
+    <li><b>Does vendor news touch us?</b>News items traced from a vendor to the services that use it.<br><code>ograph news</code></li>
+  </ul>
+</section>
+
+<!-- ================= 2 ================= -->
+<section id="graph">
+  <h2><span class="n">2</span>A knowledge graph is a pile of short sentences</h2>
+  <p>Forget the jargon for a moment. A knowledge graph stores facts as three-part sentences: a thing, a relationship, and another thing or a value. Because sentences share things, they link up. That linked shape is the graph.</p>
+  <p>ograph adds a fourth part to every sentence: the file it came from. So any fact can answer the question &ldquo;says who?&rdquo;</p>
+
+  <figure class="glass wide">
+    <div class="facts">
+      <div class="fact head"><span>Thing</span><span>Relationship</span><span>Thing or value</span><span>Says who</span></div>
+      <div class="fact"><span>payments-api</span><span class="v">depends on</span><span>ledger-db</span><span class="src">the catalog</span></div>
+      <div class="fact"><span>LedgerPoolSaturated alert</span><span class="v">happened on</span><span>ledger-db</span><span class="src">alerts.json, record 1</span></div>
+      <div class="fact"><span>LedgerPoolSaturated alert</span><span class="v">happened at</span><span>22:19:40</span><span class="src">alerts.json, record 1</span></div>
+      <div class="fact"><span>ledger-db</span><span class="v">supports</span><span>card payments</span><span class="src">the catalog</span></div>
+    </div>
+    <figcaption><b>Figure 2.</b> Four real facts from the demo. Read the first three together and you already know that an alert on ledger-db, at 22:19:40, puts payments-api at risk. Nobody wrote that down. It falls out of the links.</figcaption>
+  </figure>
+
+  <h3>The ontology is the dictionary</h3>
+  <p>If anyone could write any sentence, the graph would fill with nonsense: a service called <code>pay-gw</code> here and <code>payments-api</code> there, a severity of &ldquo;bad&rdquo; in one file and <code>SEV2</code> in another. An <strong>ontology</strong> prevents that. It is a short document that lists the kinds of things that may exist, the relationships allowed between them, and the exact words permitted for fields such as severity.</p>
+  <p>ograph&rsquo;s ontology is small on purpose. It names applications, teams, regions, business processes and vendors. It names ten kinds of event, such as a deployment, an alert or a burst of error logs. It names incidents, chat threads, candidate causes and human verdicts. It models only what the four questions need.</p>
+</section>
+
+<!-- ================= 3 ================= -->
+<section id="episodes">
+  <h2><span class="n">3</span>Keep the episode, leave the raw data where it is</h2>
+  <p>The obvious way to build this graph is to pour everything in: every log line, every metric point, every trace span. ograph does not. Raw telemetry stays in the systems that already hold it.</p>
+  <p>What goes in the graph is an <strong>episode</strong>: one fact that says &ldquo;this error message came in a burst&rdquo; or &ldquo;this metric left its normal range, from here to here&rdquo;. Each episode keeps a pointer to the first raw record, so you can still drill down.</p>
+
+  <figure class="glass wide">
+    <div class="scale">
+      <div class="sq"><b>3,924,039 facts</b><small>every log line, metric point and span</small></div>
+      <div class="dotrow"><span class="dot"></span><span class="lead"></span><div><b>370 facts</b><small>the same 24 minutes as episodes with pointers</small></div></div>
+    </div>
+    <figcaption><b>Figure 3.</b> One benchmark case loaded both ways, drawn to scale by area. The blue speck beside the square is ograph&rsquo;s version: 24 minutes of an 11-service system, from 96 MiB of raw exports.</figcaption>
+  </figure>
+
+  <p>Smaller is the lesser benefit. The episode graph also gives better answers, because spotting &ldquo;abnormal&rdquo; needs statistics that a graph query language cannot express.</p>
+
+  <div class="tablewrap wide">
+    <table>
+      <thead><tr><th></th><th>Everything in the graph</th><th>ograph: episodes plus pointers</th></tr></thead>
+      <tbody>
+        <tr><th>Size on disk</th><td>1,088 MiB</td><td class="win">0.52 MiB</td></tr>
+        <tr><th>&ldquo;What happened in the 10 minutes before?&rdquo;</th><td>279,168 raw records, 5.5 MiB of text, 387 ms</td><td class="win">12 episodes, 2.6 KiB, 0.07 ms</td></tr>
+        <tr><th>Right root cause ranked first, 90 cases</th><td>0.63, with a ranking written in SPARQL</td><td class="win">0.93</td></tr>
+        <tr><th>One day of this small system</th><td>235 million facts, 64 GiB</td><td class="win">about 20,000 facts</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The second row matters most for AI agents. Twelve episodes fit in a model&rsquo;s context with room to spare. 5.5 MiB of raw records does not fit at all.</p>
+</section>
+
+<!-- ================= 4 ================= -->
+<section id="gateway">
+  <h2><span class="n">4</span>Nothing enters the graph without a check</h2>
+  <p>Readers never write to the graph. They <em>propose</em> facts to a single checkpoint called the <strong>gateway</strong>, and the gateway decides. A refused fact is not thrown away. It goes to a quarantine area with the reason attached, so you can see what your data is getting wrong.</p>
+
+  <figure class="glass wide">
+    <div class="gate">
+      <div class="box">
+        <h4>A proposed fact</h4>
+        <span class="reason">thread ops-&hellip;0100<br>is about application<br>&ldquo;CardRail&rdquo;</span>
+      </div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="box">
+        <h4>The gateway asks</h4>
+        <ol>
+          <li>Is this name in the catalog? Typos resolve; look-alikes do not.</li>
+          <li>Is every value one of the allowed words?</li>
+          <li>Does the result still fit the rules for its kind of thing?</li>
+          <li>If a model proposed it, is there evidence?</li>
+        </ol>
+      </div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="out">
+        <div class="box yes"><h4>Stored</h4>With its source file, reader and time.</div>
+        <div class="box no"><h4>Quarantined</h4><span class="reason">&ldquo;CardRail&rdquo; is not in the ops:Application catalog; not created</span></div>
+      </div>
+    </div>
+    <figcaption><b>Figure 4.</b> A real refusal from the demo. A language model read a chat thread and called the vendor CardRail an application. The catalog disagrees, so the fact never reached the graph. The quarantine reason is quoted as stored.</figcaption>
+  </figure>
+
+  <h3>A model may propose. Only data can confirm.</h3>
+  <p>ograph uses a language model for two narrow jobs: labelling what a chat thread says caused a problem, and spotting dependencies people mention. Both are fenced in.</p>
+  <ul class="plain">
+    <li>A label must come with a quote from the thread that states the cause. No quote, and the label becomes <code>UNKNOWN</code>.</li>
+    <li>A dependency the model proposes is stored only if the catalog or real traces already show the same link.</li>
+    <li>A name such as <code>inventory-service-uk</code> is not quietly matched to <code>inventory-service-eu</code>, even though the two are 98% alike. A plain misspelling still resolves.</li>
+  </ul>
+  <p>In testing, a deliberately broken model produced invented services, invented quotes and words outside the vocabulary. None of it was stored. ograph also holds no model credentials of its own, and it caches every model answer, so reading the same files twice makes no model calls.</p>
+</section>
+
+<!-- ================= 5 ================= -->
+<section id="example">
+  <h2><span class="n">5</span>A worked example: incident INC-5377</h2>
+  <p>The repository ships a small demo company with ten services. Its open incident, INC-5377, is &ldquo;Checkout latency and payment errors&rdquo;. Here is the investigation, using real output.</p>
+
+  <h3>First: what happened just before?</h3>
+  <p><code>ograph before INC-5377</code> looks at checkout and everything checkout depends on, and lists the events in the minutes before the incident opened. There are nine.</p>
+
+  <figure class="glass wide">
+    <div class="scroll">
+      <svg viewBox="0 0 720 350" style="min-width:680px" role="img" aria-label="Timeline of nine events on three services in the nine minutes before incident INC-5377. A highlighted chain runs from an alert on ledger-db, through an error-log burst and an alert on payments-api, to an alert on checkout, to the incident.">
+        <line class="lane" x1="130" y1="80" x2="670" y2="80"/>
+        <line class="lane" x1="130" y1="170" x2="670" y2="170"/>
+        <line class="lane" x1="130" y1="260" x2="670" y2="260"/>
+        <text class="lanelab mono" x="8" y="84">ledger-db</text>
+        <text class="lanelab mono" x="8" y="174">payments-api</text>
+        <text class="lanelab mono" x="8" y="264">checkout</text>
+
+        <line class="incline" x1="670" y1="34" x2="670" y2="302"/>
+        <text class="inclab" x="664" y="24" text-anchor="end">INC-5377 opens, 22:26:40</text>
+
+        <polyline class="chainline" points="250,80 268,170 490,170 610,260 670,260"/>
+
+        <circle class="ev" cx="190" cy="70" r="6"/>
+        <circle class="ev" cx="190" cy="92" r="6"/>
+        <circle class="ev" cx="370" cy="170" r="6"/>
+        <circle class="ev" cx="430" cy="170" r="6"/>
+        <circle class="ev" cx="520" cy="260" r="6"/>
+        <circle class="ev-chain" cx="250" cy="80" r="8"/>
+        <circle class="ev-chain" cx="268" cy="170" r="8"/>
+        <circle class="ev-chain" cx="490" cy="170" r="8"/>
+        <circle class="ev-chain" cx="610" cy="260" r="8"/>
+
+        <text class="evlab" x="204" y="52" text-anchor="end">config change: max_connections</text>
+        <text class="evlab" x="204" y="116" text-anchor="end">metric anomaly: connections</text>
+        <text class="evlab on" x="264" y="72">alert: pool saturated</text>
+        <text class="evlab on" x="282" y="152">error-log burst</text>
+        <text class="evlab" x="370" y="196" text-anchor="middle">metric anomaly: latency</text>
+        <text class="evlab" x="430" y="152" text-anchor="middle">deploy 2.3.1</text>
+        <text class="evlab on" x="482" y="152">alert: error rate</text>
+        <text class="evlab" x="540" y="286" text-anchor="end">metric anomaly: latency</text>
+        <text class="evlab on" x="610" y="286" text-anchor="middle">alert: latency</text>
+
+        <g class="tick" text-anchor="middle">
+          <text x="190" y="322">&minus;8</text><text x="310" y="322">&minus;6</text><text x="430" y="322">&minus;4</text><text x="550" y="322">&minus;2</text><text x="670" y="322">0</text>
+          <text x="400" y="344">minutes before the incident opened</text>
+        </g>
+      </svg>
+    </div>
+    <p class="swipe">Swipe sideways to see the whole figure.</p>
+    <figcaption><b>Figure 5.</b> The nine events, one row per service. The blue line is the chain ograph ranks first. Note the deploy of payments-api four minutes before the incident. It is the suspect most people would grab, and it is not on the chain: the trouble had started on ledger-db three minutes earlier.</figcaption>
+  </figure>
+
+  <h3>Second: which of these is the likely cause?</h3>
+  <p><code>ograph chains INC-5377</code> links events into chains that follow the dependency graph, scores each chain, and ranks them.</p>
+
+  <figure class="glass wide">
+    <div class="bars chains">
+      <div class="bar us"><span class="rank">1</span><div class="lab"><div class="who">ledger-db</div><div class="trk"><span class="fill" style="width:94.4%"></span></div><div class="path">ledger-db:ALERT &rarr; payments-api:LOG_ERROR &rarr; payments-api:ALERT &rarr; checkout:ALERT &rarr; incident</div></div><span class="val">0.944</span></div>
+      <div class="bar"><span class="rank">2</span><div class="lab"><div class="who">payments-api</div><div class="trk"><span class="fill" style="width:93%"></span></div><div class="path">payments-api:ALERT &rarr; checkout:ALERT &rarr; incident</div></div><span class="val">0.930</span></div>
+      <div class="bar"><span class="rank">3</span><div class="lab"><div class="who">checkout</div><div class="trk"><span class="fill" style="width:90%"></span></div><div class="path">checkout:ALERT &rarr; incident</div></div><span class="val">0.900</span></div>
+    </div>
+    <figcaption><b>Figure 6.</b> Ranked candidates for INC-5377, on a scale of 0 to 1. The scores are close because all three chains are plausible. The top one wins by reaching furthest back along the dependencies, to the database whose connection pool filled up.</figcaption>
+  </figure>
+
+  <div class="note rule">
+    <b>How a link is scored.</b> The rule is the one Netflix published. A pair of events known to cause one another gets a high fixed weight of 0.9. Any other pair is scored on how close in time the two events are and how severe they are:
+    <code class="formula">score = time_proximity &times; 0.6 + severity &times; 0.4</code>
+    Chains scoring under 0.6 are dropped. ograph looks back 30 minutes.
+  </div>
+
+  <h3>Third: how far does it spread?</h3>
+  <p><code>ograph blast ledger-db</code> walks the dependency links backwards from the failing service.</p>
+
+  <figure class="glass wide">
+    <div class="scroll">
+      <svg viewBox="0 0 700 370" style="min-width:660px" role="img" aria-label="Dependency graph of the demo company. ledger-db fails. payments-api, inventory and orders-api depend on it directly, checkout depends on those, and web-frontend depends on checkout. auth-service, search-api, elasticsearch and notifications are not affected.">
+        <defs>
+          <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0,0 L8,4 L0,8 z"/></marker>
+          <marker id="ah-hit" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path class="head hit" d="M0,0 L8,4 L0,8 z"/></marker>
+        </defs>
+        <text class="colhead" x="80" y="16">3 steps away</text>
+        <text class="colhead" x="250" y="16">2 steps</text>
+        <text class="colhead" x="430" y="16">1 step</text>
+        <text class="colhead" x="620" y="16">fails here</text>
+
+        <path class="edge" marker-end="url(#ah)" d="M140,212 C200,70 300,60 368,60"/>
+        <line class="edge" marker-end="url(#ah)" x1="140" y1="228" x2="188" y2="326"/>
+        <line class="edge" marker-end="url(#ah)" x1="310" y1="172" x2="368" y2="68"/>
+        <line class="edge" marker-end="url(#ah)" x1="430" y1="103" x2="430" y2="79"/>
+        <line class="edge" marker-end="url(#ah)" x1="490" y1="246" x2="558" y2="259"/>
+        <line class="edge" marker-end="url(#ah)" x1="310" y1="330" x2="368" y2="330"/>
+
+        <line class="edge hit" marker-end="url(#ah-hit)" x1="140" y1="220" x2="188" y2="184"/>
+        <line class="edge hit" marker-end="url(#ah-hit)" x1="310" y1="176" x2="368" y2="124"/>
+        <line class="edge hit" marker-end="url(#ah-hit)" x1="310" y1="180" x2="368" y2="180"/>
+        <line class="edge hit" marker-end="url(#ah-hit)" x1="310" y1="184" x2="368" y2="236"/>
+        <line class="edge hit" marker-end="url(#ah-hit)" x1="490" y1="120" x2="558" y2="172"/>
+        <line class="edge hit" marker-end="url(#ah-hit)" x1="490" y1="180" x2="558" y2="180"/>
+        <line class="edge hit" marker-end="url(#ah-hit)" x1="490" y1="236" x2="558" y2="188"/>
+
+        <rect class="node hit" x="20" y="203" width="120" height="34" rx="17"/><text class="nodelab mono" x="80" y="224">web-frontend</text>
+        <rect class="node hit" x="190" y="163" width="120" height="34" rx="17"/><text class="nodelab mono" x="250" y="184">checkout</text>
+        <rect class="node" x="190" y="313" width="120" height="34" rx="17"/><text class="nodelab mono" x="250" y="334">search-api</text>
+        <rect class="node" x="370" y="43" width="120" height="34" rx="17"/><text class="nodelab mono" x="430" y="64">auth-service</text>
+        <rect class="node hit" x="370" y="103" width="120" height="34" rx="17"/><text class="nodelab mono" x="430" y="124">payments-api</text>
+        <rect class="node hit" x="370" y="163" width="120" height="34" rx="17"/><text class="nodelab mono" x="430" y="184">inventory</text>
+        <rect class="node hit" x="370" y="223" width="120" height="34" rx="17"/><text class="nodelab mono" x="430" y="244">orders-api</text>
+        <rect class="node" x="370" y="313" width="120" height="34" rx="17"/><text class="nodelab mono" x="430" y="334">elasticsearch</text>
+        <rect class="node src" x="560" y="163" width="120" height="34" rx="17"/><text class="nodelab src mono" x="620" y="184">ledger-db</text>
+        <rect class="node" x="560" y="243" width="120" height="34" rx="17"/><text class="nodelab mono" x="620" y="264">notifications</text>
+      </svg>
+    </div>
+    <p class="swipe">Swipe sideways to see the whole figure.</p>
+    <figcaption><b>Figure 7.</b> The demo&rsquo;s full dependency graph. An arrow means &ldquo;depends on&rdquo;, so failure travels against the arrows. Five services depend on ledger-db, directly or through another service. ograph also reports the business processes behind them: card payments, online sales and order fulfilment.</figcaption>
+  </figure>
+
+  <h3>Fourth: have we seen this before?</h3>
+  <p><code>ograph similar INC-5377</code> compares the pattern of events with past incidents and finds one from three weeks earlier.</p>
+
+  <div class="term glass wide">
+    <header>examples/demo</header>
+<pre><span class="p">$</span> ograph similar INC-5377
+  0.599  id:inc/inc-4120 on payments-api at 2026-11-01T22:26:40Z
+         causes: []  mitigations: [<span class="h">raised ledger-db connection pool to 200</span>]</pre>
+  </div>
+
+  <p>The fix that worked last time is right there. The cause list is empty, though, and that is deliberate.</p>
+
+  <h3>A chain is a guess until a person says otherwise</h3>
+  <p>ograph never promotes its own ranking to a fact. A cause is recorded only when a person confirms it with a <strong>verdict</strong>, citing their evidence. From then on, the graph remembers.</p>
+
+  <figure class="glass wide">
+    <ol class="loop">
+      <li><b>ograph proposes</b>Ranked chains, each one labelled a hypothesis.</li>
+      <li class="human"><b>A person decides</b>Accept or reject a chain, naming who they are and what they based it on.</li>
+      <li><b>The cause becomes a fact</b>Stored with the verdict, so it survives even after the raw alerts have expired.</li>
+      <li><b>The next incident benefits</b><code>similar</code> now shows the confirmed cause beside the fix.</li>
+    </ol>
+    <figcaption><b>Figure 8.</b> The verdict loop. Step 2 is the only step a person takes, and the only way a cause can enter the graph. In the demo, accepting INC-4120&rsquo;s top chain makes <code>similar</code> report ledger-db as its cause.</figcaption>
+  </figure>
+
+  <div class="term glass wide">
+    <header>recording a verdict</header>
+<pre><span class="p">$</span> ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept \
+    --evidence PM-5377 --by "jane (oncall)"</pre>
+  </div>
+</section>
+
+<!-- ================= 6 ================= -->
+<section id="results">
+  <h2><span class="n">6</span>Does it work?</h2>
+  <p>The main test uses RCAEval RE2-OB, a public benchmark of 90 failures injected into an 11-service online shop. Each failure has a known answer. ograph was never told when a fault was injected, and the answer was hidden from it. The score is how often the true root-cause service came first in the ranking.</p>
+
+  <figure class="glass wide">
+    <div class="bars">
+      <div class="bar us"><span class="lab">ograph</span><div class="trk"><span class="fill" style="width:93%"></span></div><span class="val">0.93</span></div>
+      <div class="bar"><span class="lab">Strongest-anomaly ranking<small>told the injection time</small></span><div class="trk"><span class="fill" style="width:84%"></span></div><span class="val">0.84</span></div>
+      <div class="bar"><span class="lab">TORAI<small>published</small></span><div class="trk"><span class="fill" style="width:83%"></span></div><span class="val">0.83</span></div>
+      <div class="bar"><span class="lab">CIRCA<small>published</small></span><div class="trk"><span class="fill" style="width:67%"></span></div><span class="val">0.67</span></div>
+      <div class="bar"><span class="lab">BARO<small>published</small></span><div class="trk"><span class="fill" style="width:67%"></span></div><span class="val">0.67</span></div>
+      <div class="bar"><span class="lab">Raw-data graph<small>ranking written in SPARQL</small></span><div class="trk"><span class="fill" style="width:63%"></span></div><span class="val">0.63</span></div>
+      <div class="bar"><span class="lab">Random guess</span><div class="trk"><span class="fill" style="width:9%"></span></div><span class="val">0.09</span></div>
+    </div>
+    <div class="axis"><div><span>0</span><span>0.5</span><span>1.0</span></div></div>
+    <figcaption><b>Figure 9.</b> Share of the 90 cases where the true root cause was ranked first. On the 60 cases held back from tuning, ograph also scores 0.93. Published figures come from the TORAI paper; the benchmark&rsquo;s own notes flag the BARO figure as possibly copied from another table.</figcaption>
+  </figure>
+
+  <h3>It is fast because the common questions skip the query language</h3>
+  <p>Any question can be asked in SPARQL, the standard query language for graphs like this. The two questions asked during every incident also have their own purpose-built indexes.</p>
+
+  <figure class="glass wide">
+    <div class="bars">
+      <div class="bar us"><span class="lab">ograph, built-in index</span><div class="trk"><span class="fill" style="width:11.1%"></span></div><span class="val">15 ms</span></div>
+      <div class="bar"><span class="lab">ograph, through SPARQL</span><div class="trk"><span class="fill" style="width:13%"></span></div><span class="val">18 ms</span></div>
+      <div class="bar"><span class="lab">Oxigraph<small>in memory</small></span><div class="trk"><span class="fill" style="width:100%"></span></div><span class="val">137 ms</span></div>
+    </div>
+    <figcaption><b>Figure 10.</b> Time to find all 19,999 services that depend on the busiest one, in a test graph of 3.5 million facts. Shorter is better. Oxigraph is the established engine ograph borrows its SPARQL from; both returned identical rows.</figcaption>
+  </figure>
+
+  <p>The &ldquo;what happened before&rdquo; question takes 0.003 ms, and it took the same 0.003 ms when the graph was made ten times larger. Its index is organised by service and time, so years of history do not slow it down.</p>
+
+  <div class="tablewrap wide">
+    <table>
+      <thead><tr><th>Other checks</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><th>Memory: the most similar past incident shares the true root cause</th><td>0.92, that is 82 of 89. Chance is about 0.20</td></tr>
+        <tr><th>Gateway: 18 kinds of bad write, plus a deliberately broken model</th><td>0 invalid facts stored. Every refusal quarantined with a reason</td></tr>
+        <tr><th>Query answers match Oxigraph</th><td>0 mismatches over 41 queries on 3.5 million facts</td></tr>
+        <tr><th>W3C test suite for shape rules (SHACL Core)</th><td>98 of 98</td></tr>
+        <tr><th>An AI agent writing its own queries about the demo</th><td>64 of 66 correct</td></tr>
+        <tr><th>Build</th><td>Pure Rust, no C compiler. 8 seconds from clean, 10 MB program</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Every number on this page comes from a script or benchmark in the repository, with its raw output saved in <a href="evidence/">docs/evidence/</a>. <a href="EVIDENCE.md">EVIDENCE.md</a> explains each one, including the experiments that failed.</p>
+</section>
+
+<!-- ================= 7 ================= -->
+<section id="limits">
+  <h2><span class="n">7</span>What it does not do</h2>
+  <ul class="plain">
+    <li><strong>It does not decide the cause.</strong> It ranks candidates and shows its evidence. A person makes the call.</li>
+    <li><strong>It needs a service catalog.</strong> Without one, every fact about a service is quarantined as unknown and the questions have nothing to answer.</li>
+    <li><strong>The headline score comes from one benchmark</strong> of an 11-service demo system. Six of the 90 cases are still missed, and network faults are harder: 0.80 for packet loss and 0.87 for delay.</li>
+    <li><strong>One ranking rule was written after studying all 90 cases,</strong> so the held-back cases are a weaker check for that rule than for the rest.</li>
+    <li><strong>The language-model checks are small.</strong> Sixteen chat threads and 21 questions, labelled by the author. They are smoke tests.</li>
+    <li><strong>More signals did not always help.</strong> On this benchmark, adding log and trace episodes to metrics brought a little noise.</li>
+  </ul>
+</section>
+
+<!-- ================= 8 ================= -->
+<section id="try">
+  <h2><span class="n">8</span>Try it in five minutes</h2>
+  <p>Install a prebuilt release on Linux, macOS or Windows (Git Bash), then run the demo.</p>
+
+  <div class="term glass wide">
+    <header>install, then investigate</header>
+<pre><span class="p">$</span> curl -fsSL https://raw.githubusercontent.com/eusthace811/ograph/main/install.sh | sh
+
+<span class="p">$</span> cd examples/demo
+<span class="p">$</span> ograph harvest              <span class="c"># read every source, then link events into chains</span>
+<span class="p">$</span> ograph before INC-5377      <span class="c"># what happened just before</span>
+<span class="p">$</span> ograph chains INC-5377      <span class="c"># likely root causes, with evidence</span>
+<span class="p">$</span> ograph similar INC-5377     <span class="c"># past incidents like it, and what fixed them</span>
+<span class="p">$</span> ograph blast ledger-db      <span class="c"># what a ledger-db failure affects</span>
+<span class="p">$</span> ograph why id:inc/inc-5377  <span class="c"># where every fact about a thing came from</span></pre>
+  </div>
+
+  <p>Where downloaded programs are not allowed, <code>./x install</code> builds from source with Rust 1.85 or newer, including behind a private crate registry on a corporate network.</p>
+  <p>AI agents can use it three ways: a skill for any agent with a shell (<code>./x install-skill</code>), an MCP server with eight tools (<code>ograph serve --mcp</code>), and an extension for pi. The <a href="GUIDE.md">guide</a> covers setting up your own workspace.</p>
+</section>
+
+<!-- ================= glossary ================= -->
+<section id="glossary">
+  <h2>Words used on this page</h2>
+  <dl class="gloss wide">
+    <dt>Knowledge graph</dt><dd>Facts stored as linked three-part sentences, so questions can follow the links.</dd>
+    <dt>Ontology</dt><dd>The dictionary for the graph: which kinds of things exist, how they may relate, and which words are allowed.</dd>
+    <dt>Observability</dt><dd>What your systems tell you about themselves: logs, metrics, traces, alerts.</dd>
+    <dt>Episode</dt><dd>One fact that summarises many raw records, such as a burst of one error message.</dd>
+    <dt>Gateway</dt><dd>The single checkpoint every proposed fact must pass before it is stored.</dd>
+    <dt>Quarantine</dt><dd>Where refused facts are kept, each with the reason it was refused.</dd>
+    <dt>Chain</dt><dd>A candidate explanation: a sequence of events leading to an incident. Always a hypothesis.</dd>
+    <dt>Verdict</dt><dd>A person&rsquo;s recorded decision to accept or reject a chain, with their evidence.</dd>
+    <dt>Blast radius</dt><dd>Everything that depends on a failing service, directly or indirectly.</dd>
+    <dt>SPARQL</dt><dd>The standard query language for knowledge graphs. Roughly, SQL for linked facts.</dd>
+    <dt>SHACL</dt><dd>A standard way to write rules such as &ldquo;every event has exactly one time&rdquo;.</dd>
+  </dl>
+</section>
+
+<section id="references">
+  <h2>References</h2>
+  <ol class="refs">
+    <li>Netflix Technology Blog. &ldquo;Ontology-Driven Observability: Building an End-to-End Knowledge Graph at Netflix Scale.&rdquo; October 2026. The design ograph follows.</li>
+    <li>RCAEval, dataset RE2-OB. 90 labeled failures with metrics, logs and traces. MIT licensed.</li>
+    <li><a href="EVIDENCE.md">docs/EVIDENCE.md</a>. Every measurement behind this page, with its command.</li>
+    <li><a href="PLAN.md">docs/PLAN.md</a>. The design decisions and the alternatives that were measured and rejected.</li>
+    <li><a href="GUIDE.md">docs/GUIDE.md</a> and <a href="REFERENCE.md">docs/REFERENCE.md</a>. How to install, configure and use ograph.</li>
+  </ol>
+</section>
+
+</main>
+
+<footer>ograph is MIT licensed. Figures 2 and 4 to 8 use the demo company in <code>examples/demo</code>; its services and incidents are invented.</footer>
+
+</div>
+</body>
+</html>
