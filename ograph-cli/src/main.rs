@@ -149,7 +149,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
     if let Cmd::Init = cli.cmd {
         let root = cli.root.unwrap_or(cwd);
         let dir = Workspace::init(&root)?;
-        println!("initialized {}", dir.display());
+        print(cli.json, &dir, |d| println!("initialized {}", d.display()));
         return Ok(true);
     }
     let root = match cli.root {
@@ -295,7 +295,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             Ok(o.quarantined.is_empty())
         }
         Cmd::Sparql { query, limit } => {
-            sparql::check_names(&query, &ws.ontology)?;
+            let query = sparql::check(&query, &ws.ontology)?;
             let snap = ws.store.snapshot()?;
             let a = sparql::run(&snap, &query, limit)?;
             let found = match &a {
@@ -335,7 +335,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             let snap = ws.store.snapshot()?;
             let path = out.unwrap_or_else(|| ws.dir.join("export.trig"));
             let n = ograph_core::export::trig(&snap, &path)?;
-            println!("wrote {n} quads to {}", path.display());
+            print(json, &serde_json::json!({"quads": n, "path": path}), |_| println!("wrote {n} quads to {}", path.display()));
             Ok(n > 0)
         }
         Cmd::Ontology { action, other, out } => {
@@ -365,18 +365,22 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             }
             if action == "check" {
                 let p = ws.ontology.check();
-                for x in &p {
-                    println!("{x}");
-                }
-                println!("ontology v{}: {} classes, {} properties, {} closed vocabularies, {} shapes; {} problems", ws.ontology.version, ws.ontology.classes.len(), ws.ontology.properties.len(), ws.ontology.vocabularies.len(), ws.ontology.shapes.shapes.len(), p.len());
+                print(json, &p, |p| {
+                    for x in p {
+                        println!("{x}");
+                    }
+                    println!("ontology v{}: {} classes, {} properties, {} closed vocabularies, {} shapes; {} problems", ws.ontology.version, ws.ontology.classes.len(), ws.ontology.properties.len(), ws.ontology.vocabularies.len(), ws.ontology.shapes.shapes.len(), p.len());
+                });
                 Ok(p.is_empty())
             } else {
                 let other = other.ok_or_else(|| anyhow::anyhow!("ontology diff needs the other ontology.ttl"))?;
                 let newer = ograph_core::ontology::Ontology::load(&std::fs::read_to_string(other)?, ograph_core::ontology::DEFAULT_SHAPES)?;
                 let d = ws.ontology.diff(&newer);
-                for x in &d {
-                    println!("{x}");
-                }
+                print(json, &d, |d| {
+                    for x in d {
+                        println!("{x}");
+                    }
+                });
                 Ok(!d.iter().any(|x| x.starts_with("BREAKING")))
             }
         }
@@ -384,7 +388,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             let snap = ws.store.snapshot()?;
             let path = out.unwrap_or_else(|| ws.dir.join("lab.html"));
             std::fs::write(&path, ograph_core::lab::page(&snap, &ws.config.correlation)?)?;
-            println!("wrote {}", path.display());
+            print(json, &path, |p| println!("wrote {}", p.display()));
             Ok(true)
         }
         Cmd::Stats => {
@@ -405,7 +409,8 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             let path = ws.store.path().to_owned();
             let mut store = ws.store;
             store.compact()?;
-            println!("{:.1} MiB -> {:.1} MiB", before as f64 / 1048576.0, std::fs::metadata(path)?.len() as f64 / 1048576.0);
+            let after = std::fs::metadata(path)?.len();
+            print(json, &serde_json::json!({"bytes_before": before, "bytes_after": after}), |_| println!("{:.1} MiB -> {:.1} MiB", before as f64 / 1048576.0, after as f64 / 1048576.0));
             Ok(true)
         }
         Cmd::Serve { addr, mcp } => {

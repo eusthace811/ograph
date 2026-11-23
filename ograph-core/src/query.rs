@@ -9,7 +9,7 @@ use oxrdf::Term;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 
-/// Finds a node from an IRI, a prefixed name, an incident id (`INC-5377`) or an app name.
+/// Finds a node from an IRI, a prefixed name, an incident id (`INC-5377`), or an app's name or alias.
 pub fn lookup(s: &Snapshot, name: &str) -> anyhow::Result<Id> {
     let iri = crate::workspace::resolve_iri(name);
     if let Some(id) = s.iri(&iri)? {
@@ -20,7 +20,7 @@ pub fn lookup(s: &Snapshot, name: &str) -> anyhow::Result<Id> {
             return Ok(id);
         }
     }
-    for p in [inc::ID, ops::NAME] {
+    for p in [inc::ID, ops::NAME, ops::ALIAS] {
         if let (Some(p), Some(v)) = (s.iri(p)?, s.id(&oxrdf::Literal::new_simple_literal(name).into())?)
             && let Some(&i) = s.subjects(p, v)?.first()
         {
@@ -171,11 +171,14 @@ pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> any
         if at >= t {
             continue;
         }
-        let sim = cosine(&mine, &signature(s, &ids, other, st)?);
+        let similarity = (cosine(&mine, &signature(s, &ids, other, st)?).max(0.0) * 1000.0).round() / 1000.0;
+        if similarity == 0.0 {
+            continue;
+        }
         let causes: Vec<Id> = cause_p.map(|p| s.objects(other, p)).transpose()?.unwrap_or_default();
         out.push(Similar {
             incident: vocab::compact(&literal(s, other).unwrap_or_default()),
-            similarity: (sim.max(0.0) * 1000.0).round() / 1000.0,
+            similarity,
             app: app_name(s, &ids, app),
             at: term::format_millis(at),
             cause_apps: causes.iter().filter_map(|&e| s.object(e, ids.on).ok().flatten()).map(|a| app_name(s, &ids, a)).collect(),

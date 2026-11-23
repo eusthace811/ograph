@@ -8,14 +8,15 @@ use crate::sparql;
 use crate::workspace::Workspace;
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
 pub fn tools() -> Value {
     let s = |props: Value, req: &[&str]| json!({"type": "object", "properties": props, "required": req});
     json!([
         {"name": "before", "description": "Events in the window before an incident on its application and the applications it depends on, newest first, with their signal type and strength. Start every investigation here.",
-         "inputSchema": s(json!({"incident": {"type": "string", "description": "incident id like INC-5377 or an IRI"}, "window": {"type": "string", "description": "like 10m or 2h"}}), &["incident"])},
+         "inputSchema": s(json!({"incident": {"type": "string", "description": "incident id like INC-5377 or an IRI"}, "window": {"type": "string", "description": "like 10m (the default) or 2h"}}), &["incident"])},
         {"name": "chains", "description": "Correlation chains and ranked root-cause applications for an incident. Each chain is a hypothesis with its evidence, not a conclusion.",
          "inputSchema": s(json!({"incident": {"type": "string"}, "rank": {"type": "string", "enum": ["chain", "propagation"]}}), &["incident"])},
         {"name": "blast", "description": "Applications that depend on an application, by distance, and the business processes they support.",
@@ -40,7 +41,7 @@ fn arg<'a>(p: &'a Value, k: &str) -> anyhow::Result<&'a str> {
 pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
     let snap = ws.store.snapshot()?;
     Ok(match method {
-        "before" => serde_json::to_value(query::before(&snap, arg(p, "incident")?, p.get("window").and_then(Value::as_str).map_or(Ok(ws.config.correlation.window_s), query::duration_s)?, 4)?)?,
+        "before" => serde_json::to_value(query::before(&snap, arg(p, "incident")?, p.get("window").and_then(Value::as_str).map_or(Ok(600), query::duration_s)?, 4)?)?,
         "chains" => {
             let ids = correlate::Ids::new(&snap)?;
             let mut st = ws.config.correlation.clone();
@@ -56,9 +57,8 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
         "why" => serde_json::to_value(query::why(&snap, arg(p, "node")?)?)?,
         "news" => serde_json::to_value(query::news(&snap, None)?)?,
         "sparql" => {
-            let q = arg(p, "query")?;
-            sparql::check_names(q, &ws.ontology)?;
-            serde_json::to_value(sparql::run(&snap, q, Some(p.get("limit").and_then(Value::as_u64).unwrap_or(200) as usize))?)?
+            let q = sparql::check(arg(p, "query")?, &ws.ontology)?;
+            serde_json::to_value(sparql::run(&snap, &q, Some(p.get("limit").and_then(Value::as_u64).unwrap_or(200) as usize))?)?
         }
         "verdict" => {
             drop(snap);
@@ -80,18 +80,23 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
     })
 }
 
-fn newest_mtime(ws: &Workspace) -> SystemTime {
-    ws.config
-        .sources
-        .iter()
-        .flat_map(|s| crate::enrich::files(&ws.root, s.path()))
-        .filter_map(|f| std::fs::metadata(f).and_then(|m| m.modified()).ok())
-        .max()
-        .unwrap_or(SystemTime::UNIX_EPOCH)
+/// Every input file and `.ograph/` setting with its modification time and size, so an
+/// addition, edit or deletion anywhere changes the inventory.
+fn inventory(ws: &Workspace) -> Vec<(PathBuf, Option<SystemTime>, u64)> {
+    let settings = ["config.toml", "ontology.ttl", "shapes.ttl"].map(|n| ws.dir.join(n));
+    let mut files: Vec<PathBuf> = ws.config.sources.iter().flat_map(|s| crate::enrich::files(&ws.root, s.path())).chain(settings).collect();
+    files.sort();
+    files.dedup();
+    files
+        .into_iter()
+        .map(|f| {
+            let m = std::fs::metadata(&f).ok();
+            (f, m.as_ref().and_then(|m| m.modified().ok()), m.map_or(0, |m| m.len()))
+        })
+        .collect()
 }
 
 pub fn run(ws: Workspace, addr: &str, mcp: bool) -> anyhow::Result<()> {
-    let ws = Arc::new(ws);
     if mcp {
         return mcp_stdio(&ws);
     }
@@ -99,24 +104,42 @@ pub fn run(ws: Workspace, addr: &str, mcp: bool) -> anyhow::Result<()> {
     let local = listener.local_addr()?;
     std::fs::write(ws.dir.join("serve.json"), json!({"addr": local.to_string(), "pid": std::process::id()}).to_string())?;
     eprintln!("ograph serve on {local}");
-    let watcher = ws.clone();
+    let root = ws.root.clone();
+    let mut seen = inventory(&ws);
+    let current = Arc::new(RwLock::new(Arc::new(ws)));
+    let watched = current.clone();
     std::thread::spawn(move || {
-        let mut seen = newest_mtime(&watcher);
+        let mut last_error = String::new();
         loop {
             std::thread::sleep(Duration::from_secs(5));
-            let now = newest_mtime(&watcher);
-            if now > seen {
-                seen = now;
-                match watcher.harvest(None, |_, _| {}) {
-                    Ok(o) => eprintln!("re-harvested {} batches", o.len()),
-                    Err(e) => eprintln!("re-harvest failed: {e:#}"),
+            if inventory(&watched.read().unwrap_or_else(|e| e.into_inner())) == seen {
+                continue;
+            }
+            // Reopened so an edited config.toml or ontology takes effect; the inventory advances
+            // only after a harvest succeeds, so a failed one is retried at the next poll.
+            let harvested = Workspace::open(&root).and_then(|ws| {
+                let now = inventory(&ws);
+                let batches = ws.harvest(None, |_, _| {})?.len();
+                *watched.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(ws);
+                Ok((now, batches))
+            });
+            match harvested {
+                Ok((now, batches)) => {
+                    seen = now;
+                    last_error.clear();
+                    eprintln!("re-harvested {batches} batches");
                 }
+                Err(e) if format!("{e:#}") != last_error => {
+                    last_error = format!("{e:#}");
+                    eprintln!("re-harvest failed: {last_error}");
+                }
+                Err(_) => {}
             }
         }
     });
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
-        let ws = ws.clone();
+        let current = current.clone();
         std::thread::spawn(move || {
             let mut out = stream.try_clone().expect("clone socket");
             for line in BufReader::new(stream).lines() {
@@ -124,6 +147,7 @@ pub fn run(ws: Workspace, addr: &str, mcp: bool) -> anyhow::Result<()> {
                 let reply = match serde_json::from_str::<Value>(&line) {
                     Ok(req) => {
                         let id = req.get("id").cloned().unwrap_or(Value::Null);
+                        let ws = current.read().unwrap_or_else(|e| e.into_inner()).clone();
                         match call(&ws, req.get("method").and_then(Value::as_str).unwrap_or(""), req.get("params").unwrap_or(&Value::Null)) {
                             Ok(r) => json!({"jsonrpc": "2.0", "id": id, "result": r}),
                             Err(e) => json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32000, "message": format!("{e:#}")}}),

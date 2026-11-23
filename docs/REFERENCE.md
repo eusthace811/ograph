@@ -2,7 +2,7 @@
 
 ## Commands
 
-Every command takes `--root DIR` (the directory holding `.ograph/`, found by searching upward when omitted) and `--json`. Exit codes follow ogrep: 0 when something was found, 1 when nothing was, 2 on error.
+Every command takes `--root DIR` (the directory holding `.ograph/`, found by searching upward when omitted) and `--json`, which `serve` ignores because its output is the protocol. Exit codes follow ogrep: 0 when something was found, 1 when nothing was, 2 on error. Commands can run side by side on one store: `serve`, read commands and a harvest share `.ograph/store.redb`, and harvests and verdicts take turns through `.ograph/store.lock`.
 
 | Command | What it does |
 |---|---|
@@ -15,21 +15,21 @@ Every command takes `--root DIR` (the directory holding `.ograph/`, found by sea
 | `ograph news [--since DURATION]` | News that mentions a vendor our applications use (all of it by default, or only the last DURATION, such as `7d`), with the affected applications and processes (question 4) |
 | `ograph why NODE` | Provenance of every fact about a node: the harvest graph, source, extractor and time, model provenance, and quarantined proposals |
 | `ograph verdict CHAIN accept\|reject --evidence REF --by WHO` | Records a human verdict on a chain id, or on `id:chain/<incident>-<rank>` for the chain at that rank now. The verdict keeps the chain's incident and root event, with the root's class, application, time and signal, so it means the same after re-correlation or after the root's telemetry leaves the sources. An accepted chain also writes `inc:cause` |
-| `ograph sparql 'QUERY' [--limit N]` | Runs SPARQL 1.1. The prefixes are predeclared, and the default graph is the deduplicated union of all harvests. A class or property in an ograph namespace that the ontology does not declare is an error that names the nearest declared one |
+| `ograph sparql 'QUERY' [--limit N]` | Runs SPARQL 1.1. The prefixes are predeclared, and the default graph is the deduplicated union of all harvests. A class or property in an ograph namespace that the ontology does not declare is an error that names the nearest declared one. Each node stores only its most specific type, so a class with subclasses, such as `evt:Event`, is an error that lists them |
 | `ograph validate` | Runs a full SHACL audit of the store |
 | `ograph export [--out FILE]` | Writes every named graph as TriG |
 | `ograph ontology check` / `ograph ontology diff OTHER.ttl` | Checks drift between the code and the ontology, or lists the changes that would break stored data |
 | `ograph ontology coverage QUESTIONS [--out FILE]` | Needs a model. For each question in the file (one per line), it reports the declared names that represent it and the concepts nothing declared represents. Gaps go to `.ograph/proposed.ttl` as Turtle for a person to review, merge into `ontology.ttl`, then check with `ontology diff`. Exits 1 when any question has a gap |
 | `ograph lab [--out FILE]` | Writes a self-contained HTML page of incidents, causes, timelines and similar incidents |
 | `ograph stats`, `ograph compact` | Shows size per table, or rewrites the store file without free pages |
-| `ograph serve [--addr A]` / `ograph serve --mcp` | Serves line-delimited JSON-RPC over TCP, with the address in `.ograph/serve.json` and sources polled and re-harvested on change. With `--mcp`, serves MCP over stdio |
+| `ograph serve [--addr A]` / `ograph serve --mcp` | Serves line-delimited JSON-RPC over TCP, with the address in `.ograph/serve.json`. Every 5 s it compares each source file's path, modification time and size, plus `config.toml`, `ontology.ttl` and `shapes.ttl`, and re-harvests on any addition, edit or deletion, retrying a failed harvest at the next poll. With `--mcp`, serves MCP over stdio without polling |
 
 A node name may be any of these:
 
 - an IRI
 - a prefixed name such as `id:inc/inc-5377`
 - an incident id such as `INC-5377`
-- an application name
+- an application name or alias
 
 ## Configuration (`.ograph/config.toml`)
 

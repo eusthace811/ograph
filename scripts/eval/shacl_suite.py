@@ -1,6 +1,8 @@
 import sys, subprocess, re, pathlib
 binp, root = sys.argv[1], pathlib.Path(sys.argv[2])
 files = sorted(p for p in root.rglob("*.ttl") if "sht:Validate" in p.read_text())
+if not files:
+    sys.exit(f"no SHACL test cases under {root}")
 ok = bad = err = 0
 for f in files:
     t = f.read_text()
@@ -19,3 +21,4 @@ for f in files:
     elif r.group(1) == exp and int(r.group(2)) == nexp: ok += 1
     else: bad += 1; print("FAIL", rel, f"exp={exp}/{nexp} got={r.group(1)}/{r.group(2)}")
 print(f"total={len(files)} pass={ok} fail={bad} err={err}")
+sys.exit(0 if ok == len(files) else 1)
