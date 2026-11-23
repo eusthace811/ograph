@@ -80,11 +80,13 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
     })
 }
 
-/// Every input file and `.ograph/` setting with its modification time and size, so an
-/// addition, edit or deletion anywhere changes the inventory.
-fn inventory(ws: &Workspace) -> Vec<(PathBuf, Option<SystemTime>, u64)> {
+/// Every file an enricher would read and every `.ograph/` setting, with its modification time
+/// and size, so an addition, edit or deletion of an input changes the inventory. Nothing else
+/// under `.ograph/` counts, so the server's own writes never trigger a harvest.
+pub fn inventory(ws: &Workspace) -> Vec<(PathBuf, Option<SystemTime>, u64)> {
     let settings = ["config.toml", "ontology.ttl", "shapes.ttl"].map(|n| ws.dir.join(n));
-    let mut files: Vec<PathBuf> = ws.config.sources.iter().flat_map(|s| crate::enrich::files(&ws.root, s.path())).chain(settings).collect();
+    let inputs = ws.config.sources.iter().flat_map(|s| crate::enrich::files(&ws.root, s)).filter(|f| !f.starts_with(&ws.dir));
+    let mut files: Vec<PathBuf> = inputs.chain(settings).collect();
     files.sort();
     files.dedup();
     files

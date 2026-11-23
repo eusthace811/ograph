@@ -5,17 +5,27 @@
 use crate::model::{Batch, Extraction, known, lit, obj};
 use crate::vocab::{RDF_TYPE, ops};
 use oxrdf::NamedNode;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+fn ogrep(dir: &Path, args: &[&str]) -> std::io::Result<std::process::Output> {
+    Command::new(std::env::var("OGRAPH_OGREP").unwrap_or_else(|_| "ogrep".into())).args(args).current_dir(dir).output()
+}
+
+/// The files `ogrep --entities` reads in a repository: the YAML and `.env` files among those
+/// ogrep searches, which honours the repository's ignore rules.
+pub fn files(root: &Path, path: &Path) -> Vec<PathBuf> {
+    let dir = if path.is_absolute() { path.to_owned() } else { root.join(path) };
+    let Ok(out) = ogrep(&dir, &["--files", "."]) else { return vec![] };
+    let ops = |name: &str| name.ends_with(".yaml") || name.ends_with(".yml") || name.ends_with(".env");
+    String::from_utf8_lossy(&out.stdout).lines().map(|l| dir.join(l.strip_prefix("./").unwrap_or(l))).filter(|p| p.file_name().is_some_and(|n| ops(&n.to_string_lossy()))).collect()
+}
 
 pub fn harvest(root: &Path, path: &Path) -> Batch {
     let dir = if path.is_absolute() { path.to_owned() } else { root.join(path) };
     let key = super::rel(root, &dir);
     let mut b = Batch::new("catalog", &key, "ogrep-entities");
-    let out = Command::new(std::env::var("OGRAPH_OGREP").unwrap_or_else(|_| "ogrep".into()))
-        .args(["--entities", ".", "--json"])
-        .current_dir(&dir)
-        .output();
+    let out = ogrep(&dir, &["--entities", ".", "--json"]);
     let out = match out {
         Ok(o) if o.status.success() => o,
         Ok(o) => {

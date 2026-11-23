@@ -17,44 +17,49 @@ fn rule(name: &str) -> Extraction {
     Extraction::Rule { extractor: name.into() }
 }
 
-/// Incident exports. An incident may appear in several records and files, each stating some of
-/// its fields: a field comes from the last record that states it, in file path order and then
-/// record order, so a later export of an incident updates it rather than conflicting with it.
-pub fn incidents(files: &[(PathBuf, String)]) -> Vec<anyhow::Result<Batch>> {
-    let parsed: Vec<anyhow::Result<Vec<serde_json::Value>>> = files.iter().map(|(p, _)| json_records(p)).collect();
-    let fields: Vec<Vec<IncidentRecord>> = parsed.iter().map(|r| r.iter().flatten().map(incident_fields).collect()).collect();
-    let mut last: HashMap<(&str, &str), (usize, usize)> = HashMap::new();
-    for (f, records) in fields.iter().enumerate() {
-        for (r, (id, values)) in records.iter().enumerate() {
-            for (p, _) in values {
-                last.insert((id.as_str(), *p), (f, r));
-            }
+/// Every incident file of every incident source, as one batch keyed `all`. An incident may
+/// appear in several records and files, each stating some of its fields: a field comes from the
+/// last record that states it, in file path order and then record order, so a later export of
+/// an incident updates it rather than conflicting with it. The fields are merged before the
+/// gateway checks the incident, so one harvest sees all of them. A file that cannot be read
+/// fails the whole batch, which keeps its last good facts.
+pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>) -> Batch {
+    let mut b = Batch::new("incidents", "all", "incidents-v1");
+    let mut parsed = Vec::with_capacity(files.len());
+    for (path, key) in files {
+        match json_records(path) {
+            Ok(records) => parsed.push((key, records)),
+            Err(e) => degraded.push(format!("{key}: {e:#}")),
+        }
+    }
+    if !degraded.is_empty() {
+        b.degraded = degraded;
+        return b;
+    }
+    let records: Vec<(String, IncidentRecord)> = parsed.iter().flat_map(|(key, rs)| rs.iter().enumerate().map(move |(i, r)| (format!("{key}#{}", i + 1), incident_fields(r)))).collect();
+    let mut last: HashMap<(&str, &str), usize> = HashMap::new();
+    for (n, (_, (id, values))) in records.iter().enumerate() {
+        for (p, _) in values {
+            last.insert((id.as_str(), *p), n);
         }
     }
     let m = rule("incident-export");
-    let mut out = Vec::with_capacity(files.len());
-    for (f, ((_, key), parsed)) in files.iter().zip(parsed).enumerate() {
-        out.push(parsed.map(|_| {
-            let mut b = Batch::new("incidents", key, "incidents-v1");
-            for (r, (id, values)) in fields[f].iter().enumerate() {
-                if id.is_empty() {
-                    continue;
-                }
-                let ev = b.record(format!("{key}#{}", r + 1));
-                let s = known("inc", id);
-                b.add(s.clone(), RDF_TYPE, class(inc::INCIDENT), &ev, &m);
-                b.add(s.clone(), inc::ID, lit(id.as_str()), &ev, &m);
-                for (p, o) in values {
-                    if last[&(id.as_str(), *p)] == (f, r) {
-                        b.add(s.clone(), p, o.clone(), &ev, &m);
-                    }
-                }
-                b.add(s, evt::SIGNAL, lit("INCIDENT"), &ev, &m);
+    for (n, (record, (id, values))) in records.iter().enumerate() {
+        if id.is_empty() {
+            continue;
+        }
+        let ev = b.record(record.as_str());
+        let s = known("inc", id);
+        b.add(s.clone(), RDF_TYPE, class(inc::INCIDENT), &ev, &m);
+        b.add(s.clone(), inc::ID, lit(id.as_str()), &ev, &m);
+        for (p, o) in values {
+            if last[&(id.as_str(), *p)] == n {
+                b.add(s.clone(), p, o.clone(), &ev, &m);
             }
-            b
-        }));
+        }
+        b.add(s, evt::SIGNAL, lit("INCIDENT"), &ev, &m);
     }
-    out
+    b
 }
 
 /// The id of an incident record (empty when it has none) and the fields it states.

@@ -24,14 +24,14 @@ ograph lab                         # one HTML page over the whole graph
 
 ## How it works
 
-- **Raw telemetry stays in its own systems.** ograph keeps only episodes, such as "a burst of this log template" or "this metric left its band", with a pointer back to the first raw record. It does not keep every line, point or span. On one RCAEval case that is 394 quads instead of 3.9 million, and it ranks root causes better (0.93 top-1, against 0.63 for a fixed-window mean-shift ranking written in SPARQL; see `docs/EVIDENCE.md`).
+- **Raw telemetry stays in its own systems.** ograph keeps only episodes, such as "a burst of this log template" or "this metric left its band", with a pointer back to the first raw record. It does not keep every line, point or span. On one RCAEval case that is 369 quads instead of 3.9 million, and it ranks root causes better (0.93 top-1, against 0.63 for a fixed-window mean-shift ranking written in SPARQL; see `docs/EVIDENCE.md`).
 - **The gateway owns every write.** Enrichers propose facts. The gateway checks:
   - IRIs, and catalog membership with fuzzy matching that refuses near-twins such as `-uk` against `-eu` and variants such as `-canary`;
   - closed vocabularies, model confidence and evidence;
   - incremental SHACL on the nodes the batch touches.
 
   Rejected facts are kept in a quarantine graph with their reason.
-- **Each source file is one named graph.** Re-harvesting writes only the difference.
+- **Each source file is one named graph.** Incidents share one, so an incident's fields merge across files. Re-harvesting writes only the difference.
 - **The questions run on native indexes.** A per-application time index answers "what happened before", and the dependency index answers "what does this affect". SPARQL, through Oxigraph's `spareval`, covers everything else.
 - **Correlation follows Netflix's published rule.** Known causal pairs carry a 0.9 prior. Other pairs score `time_proximity * 0.6 + severity * 0.4`, and chains under 0.6 are discarded. The window is 30 minutes. A chain is a hypothesis until someone records a verdict.
 - **A model proposes, and data confirms.** A model-proposed dependency needs a catalog or trace edge behind it. A thread label needs a quote from the thread, or it becomes UNKNOWN. Aliases come only from phrases that state them outright.

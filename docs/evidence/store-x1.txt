@@ -1,9 +1,9 @@
-generated 3520099 quads in 635.642 ms (scale 1, 30 days of history)
-compaction: 1088.0 MiB -> 658.4 MiB in 876.627 ms
+generated 3520099 quads in 641.311 ms (scale 1, 30 days of history)
+compaction: 1088.0 MiB -> 658.4 MiB in 877.734 ms
 
 | load (s) | quads/s | on disk (MiB) | bytes/quad | open (ms) | union triples |
 |---|---|---|---|---|---|
-| 12.9 | 272701 | 658.4 | 196 | 2.679 | 3520099 |
+| 13.1 | 269506 | 658.4 | 196 | 3.016 | 3520099 |
 
 | table | entries | stored MiB | overhead MiB |
 |---|---|---|---|
@@ -18,18 +18,18 @@ compaction: 1088.0 MiB -> 658.4 MiB in 876.627 ms
 | gspo | 3520099 | 107.4 | 3.9 |
 | spog | 3520099 | 107.4 | 3.9 |
 
-oxigraph in-memory load: 2030.866 ms
+oxigraph in-memory load: 2164.387 ms
 
 correctness: 0 mismatches over 41 queries (against Oxigraph and native)
 
 | workload | rows | SPARQL p50 (ms) | SPARQL max (ms) | native p50 (ms) | native max (ms) | Oxigraph p50 (ms) |
 |---|---|---|---|---|---|---|
-| W1 Bedrock incidents in us-east-1 | 1938 | 10.469 | 10.469 | 8.238 | 8.238 | 5.994 |
-| W2 10 min before incident (20) | 76 | 0.167 | 0.456 | 0.003 | 0.004 | 0.102 |
-| W3 blast radius, hub app | 19999 | 17.935 | 17.935 | 15.181 | 15.181 | 139.789 |
-| W3 blast radius (20 apps) | 42185 | 0.015 | 18.348 | 0.005 | 15.254 | 0.015 |
+| W1 Bedrock incidents in us-east-1 | 1938 | 10.002 | 10.002 | 7.693 | 7.693 | 6.454 |
+| W2 10 min before incident (20) | 76 | 0.162 | 0.449 | 0.003 | 0.004 | 0.104 |
+| W3 blast radius, hub app | 19999 | 18.170 | 18.170 | 15.231 | 15.231 | 137.030 |
+| W3 blast radius (20 apps) | 42185 | 0.015 | 17.956 | 0.005 | 15.201 | 0.015 |
 
-re-harvest of one day graph (98268 quads), unchanged: removed 0, added 0 in 62.163 ms
-re-harvest with changed timestamps: removed 3276, added 3276 in 162.038 ms
-re-harvest back to the original: removed 3276, added 3276 in 348.329 ms
+re-harvest of one day graph (98268 quads), unchanged: removed 0, added 0 in 62.660 ms
+re-harvest with changed timestamps: removed 3276, added 3276 in 160.576 ms
+re-harvest back to the original: removed 3276, added 3276 in 447.622 ms
 after the replaces: W2 native rows 76, SPARQL rows 76 (must equal the W2 rows above)

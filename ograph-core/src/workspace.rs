@@ -133,7 +133,16 @@ impl Workspace {
         // point), reports one failed batch and keeps every graph under its path.
         let graphs = self.graph_names()?;
         let mut batches = Vec::new();
+        // Every incident source is one batch, so an incident's fields merge across all of them.
+        let incidents: Vec<&Path> = ran.iter().filter(|s| matches!(s, Source::Incidents { .. })).map(|s| s.path()).collect();
+        let mut incidents_done = false;
         for src in &ran {
+            if let Source::Incidents { .. } = src {
+                if !std::mem::replace(&mut incidents_done, true) {
+                    batches.push(enrich::incidents(&incidents, &ctx));
+                }
+                continue;
+            }
             let p = self.root.join(src.path());
             let failed = |why: String| {
                 let mut b = Batch::new(src.name(), &enrich::rel(&self.root, &p), "failed");
