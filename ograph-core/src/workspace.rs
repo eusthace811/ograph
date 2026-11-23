@@ -103,6 +103,7 @@ impl Workspace {
         let dir = root.join(".ograph");
         anyhow::ensure!(dir.is_dir(), "no .ograph/ in {}; run `ograph init`", root.display());
         let config: Config = toml::from_str(&std::fs::read_to_string(dir.join("config.toml"))?)?;
+        config.correlation.check()?;
         let read = |n: &str, d: &str| std::fs::read_to_string(dir.join(n)).unwrap_or_else(|_| d.to_owned());
         let ontology = Ontology::load(&read("ontology.ttl", crate::ontology::DEFAULT_TTL), &read("shapes.ttl", crate::ontology::DEFAULT_SHAPES))?;
         let store = Store::open(&dir.join("store.redb"))?;
@@ -270,10 +271,11 @@ impl Workspace {
     /// Records a human verdict on a chain. The verdict keeps what it judged (the chain's
     /// incident and root event, and on the verdict node the root's class, application, time
     /// and signal), so it means the same after the telemetry behind the root is retired or the
-    /// chain's rank changes. The root event itself gets only `a evt:Event`: its time and
-    /// application stay with its telemetry, so a retired root is no candidate for correlation.
+    /// chain's rank changes. The root event itself gets nothing: its type, time and application
+    /// stay with its telemetry, so a retired root is no candidate for correlation.
     /// An accepted chain also writes `inc:cause`.
     pub fn verdict(&self, chain: &str, accept: bool, by: &str, evidence: &[String]) -> anyhow::Result<Outcome> {
+        anyhow::ensure!(!by.trim().is_empty(), "a verdict needs --by: who judged it");
         let _write = self.store.write_lock()?;
         let snap = self.store.snapshot()?;
         let cid = find_chain(&snap, chain)?;
@@ -325,7 +327,8 @@ impl Workspace {
         b.add(v.clone(), rca::STATE, lit(if accept { "accepted" } else { "rejected" }), &ev, &m);
         b.add(v.clone(), rca::BY, lit(by), &ev, &m);
         b.add(v.clone(), rca::AT, crate::enrich::dt(now_ms()), &ev, &m);
-        for e in if evidence.is_empty() { vec!["(none given)".to_owned()] } else { evidence.to_vec() } {
+        let evidence: Vec<String> = evidence.iter().filter(|e| !e.trim().is_empty()).cloned().collect();
+        for e in if evidence.is_empty() { vec!["(none given)".to_owned()] } else { evidence } {
             b.add(v.clone(), rca::EVIDENCE, lit(e.as_str()), &ev, &m);
         }
         let c = EntityRef::Known(chain_iri);

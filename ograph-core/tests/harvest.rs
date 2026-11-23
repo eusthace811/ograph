@@ -207,3 +207,15 @@ fn the_server_watches_only_the_files_a_harvest_reads() {
     std::fs::write(root.join("deploy/compose.yaml"), "services: {pay: {}}\n").unwrap();
     assert_ne!(inventory(), before);
 }
+
+#[test]
+fn ids_that_differ_only_in_case_are_one_incident() {
+    let lines = [
+        r#"{"id": "INC-1", "title": "pay down", "service": "pay", "opened": "2026-11-22T10:00:00Z", "status": "open"}"#,
+        r#"{"id": "inc-1", "status": "resolved"}"#,
+    ];
+    let root = workspace("incident-case", INCIDENTS, &[("incidents/all.json", &lines.join("\n"))]);
+    let out = harvest(&root, None);
+    assert!(out.iter().all(|o| o.quarantined.is_empty()), "{out:?}");
+    assert_eq!(values(&root, STATUS), ["resolved"]);
+}

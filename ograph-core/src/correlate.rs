@@ -39,6 +39,22 @@ pub struct Settings {
     pub signature_window_s: i64,
 }
 
+impl Settings {
+    /// Scores are probabilities and windows are spans, so out-of-range settings are refused
+    /// rather than written as confidences the shapes then quarantine.
+    pub fn check(&self) -> anyhow::Result<()> {
+        for (name, v) in [("min_confidence", self.min_confidence), ("w_time", self.w_time), ("w_severity", self.w_severity), ("known_pair_prior", self.known_pair_prior)] {
+            anyhow::ensure!((0.0..=1.0).contains(&v), "correlation setting {name} = {v} must be between 0 and 1");
+        }
+        anyhow::ensure!(self.prop_weights.iter().all(|w| w.is_finite() && *w >= 0.0), "correlation setting prop_weights must be finite and not negative");
+        for (name, v) in [("window_s", self.window_s), ("signature_window_s", self.signature_window_s)] {
+            anyhow::ensure!(v > 0, "correlation setting {name} = {v} must be positive");
+        }
+        anyhow::ensure!(self.after_s >= 0, "correlation setting after_s = {} must not be negative", self.after_s);
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RankMode {

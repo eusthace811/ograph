@@ -236,7 +236,12 @@ impl Ontology {
             out.push(format!("added property: {}", vocab::compact(iri)));
         }
         for (p, vals) in &self.vocabularies {
-            let new: BTreeSet<&str> = newer.vocabularies.get(p).map(|v| v.iter().map(|t| t.value.as_str()).collect()).unwrap_or_default();
+            let Some(new) = newer.vocabularies.get(p) else {
+                // Without a vocabulary the property takes any value, so nothing stored breaks.
+                out.push(format!("vocabulary opened: {}", vocab::compact(p)));
+                continue;
+            };
+            let new: BTreeSet<&str> = new.iter().map(|t| t.value.as_str()).collect();
             for v in vals.iter().filter(|v| !new.contains(v.value.as_str())) {
                 out.push(format!("BREAKING vocabulary value removed: {} \"{}\"", vocab::compact(p), v.value));
             }
@@ -265,5 +270,6 @@ mod tests {
         let ttl = format!("{DEFAULT_TTL}\ninc:faultType og:vocabulary [ og:value \"cpu\" ] .\n");
         let new = Ontology::load(&ttl, DEFAULT_SHAPES).unwrap();
         assert!(old.diff(&new).iter().any(|d| d == "BREAKING vocabulary closed: inc:faultType"));
+        assert_eq!(new.diff(&old), ["vocabulary opened: inc:faultType"]);
     }
 }

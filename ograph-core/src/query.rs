@@ -99,6 +99,7 @@ pub fn blast(s: &Snapshot, app: &str, depth: usize) -> anyhow::Result<Blast> {
     let mut open = Vec::new();
     let supports = s.iri(ops::SUPPORTS)?;
     let status = s.iri(inc::STATUS)?;
+    let resolved_at = s.iri(inc::RESOLVED_AT)?;
     for &(x, _) in ups.iter().chain([(a, 0)].iter()) {
         if let Some(p) = supports {
             for proc_ in s.objects(x, p)? {
@@ -112,7 +113,11 @@ pub fn blast(s: &Snapshot, app: &str, depth: usize) -> anyhow::Result<Blast> {
                         Some(st) => s.object(i, st)?.and_then(|v| literal(s, v)),
                         None => None,
                     };
-                    if state.as_deref() != Some("resolved") {
+                    let closed = match resolved_at {
+                        Some(r) => s.object(i, r)?.is_some(),
+                        None => false,
+                    };
+                    if state.as_deref() != Some("resolved") && !closed {
                         open.push(vocab::compact(&literal(s, i).unwrap_or_default()));
                     }
                 }

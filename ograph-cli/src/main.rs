@@ -231,6 +231,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                     v[k] = serde_json::from_str(val).unwrap_or_else(|_| serde_json::Value::String(val.to_owned()));
                 }
                 st = serde_json::from_value(v)?;
+                st.check()?;
             }
             let i = query::lookup(&snap, &incident)?;
             let mut a = correlate::analyze(&snap, &ids, i, &st)?;

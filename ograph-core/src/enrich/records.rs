@@ -37,10 +37,13 @@ pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>) -> Batc
         return b;
     }
     let records: Vec<(String, IncidentRecord)> = parsed.iter().flat_map(|(key, rs)| rs.iter().enumerate().map(move |(i, r)| (format!("{key}#{}", i + 1), incident_fields(r)))).collect();
+    // Keyed by the node's name, so ids that differ only in case or punctuation are one incident.
+    let keys: Vec<String> = records.iter().map(|(_, (id, _))| crate::model::slug(id)).collect();
     let mut last: HashMap<(&str, &str), usize> = HashMap::new();
-    for (n, (_, (id, values))) in records.iter().enumerate() {
+    for (n, (_, (_, values))) in records.iter().enumerate() {
+        last.insert((keys[n].as_str(), "id"), n);
         for (p, _) in values {
-            last.insert((id.as_str(), *p), n);
+            last.insert((keys[n].as_str(), *p), n);
         }
     }
     let m = rule("incident-export");
@@ -51,9 +54,11 @@ pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>) -> Batc
         let ev = b.record(record.as_str());
         let s = known("inc", id);
         b.add(s.clone(), RDF_TYPE, class(inc::INCIDENT), &ev, &m);
-        b.add(s.clone(), inc::ID, lit(id.as_str()), &ev, &m);
+        if last[&(keys[n].as_str(), "id")] == n {
+            b.add(s.clone(), inc::ID, lit(id.as_str()), &ev, &m);
+        }
         for (p, o) in values {
-            if last[&(id.as_str(), *p)] == n {
+            if last[&(keys[n].as_str(), *p)] == n {
                 b.add(s.clone(), p, o.clone(), &ev, &m);
             }
         }
