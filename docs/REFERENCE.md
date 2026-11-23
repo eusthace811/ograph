@@ -12,7 +12,7 @@ Every command takes `--root DIR` (the directory holding `.ograph/`, found by sea
 | `ograph chains INC [--rank chain\|propagation] [--window 30m] [--top 5] [--set k=v]` | Correlation chains and ranked root-cause candidates |
 | `ograph blast APP [--depth 8]` | Dependents by distance, the business processes they support, and open incidents (question 2) |
 | `ograph similar INC [--top 5]` | Past incidents with the same signature, with their accepted causes and mitigations (question 3) |
-| `ograph news [--since 7d]` | News that mentions a vendor our applications use, with the affected applications and processes (question 4) |
+| `ograph news [--since DURATION]` | News that mentions a vendor our applications use (all of it by default, or only the last DURATION, such as `7d`), with the affected applications and processes (question 4) |
 | `ograph why NODE` | Provenance of every fact about a node: the harvest graph, source, extractor and time, model provenance, and quarantined proposals |
 | `ograph verdict CHAIN accept\|reject --evidence REF --by WHO` | Records a human verdict. An accepted chain also writes `inc:cause` |
 | `ograph sparql 'QUERY' [--limit N]` | Runs SPARQL 1.1. The prefixes are predeclared, and the default graph is the deduplicated union of all harvests. A class or property in an ograph namespace that the ontology does not declare is an error that names the nearest declared one |

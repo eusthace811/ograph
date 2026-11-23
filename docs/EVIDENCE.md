@@ -1,6 +1,6 @@
 # ograph: evidence per phase
 
-Every number here comes from a script or binary in this repository, and its raw output is in `docs/evidence/`. `scripts/eval/run_all.sh` reruns every gate.
+Every number here comes from a script or binary in this repository, and its raw output is in `docs/evidence/`. `scripts/eval/run_all.sh` reruns every gate. It does not regenerate the one-off studies (`rcaeval-lag.txt`, `rcaeval-grid.txt`, `agent-run.txt`), the 10x store run, or the repeated uncached model runs of `scripts/eval/repeat_gates.py`; each section names its command.
 
 Machine: Apple silicon with 12 cores and 32 GiB of RAM. The store is on an external disk. Measured on 2026-11-22 and 23.
 
@@ -10,7 +10,7 @@ Machine: Apple silicon with 12 cores and 32 GiB of RAM. The store is on an exter
 |---|---|
 | C toolchain in `cargo tree -e normal,build --target all` | No `cc`, `cmake` or `bindgen`. The only `-sys` crate is `windows-sys` (pure Rust declarations, no C build) |
 | Clean release build of the CLI | 8 s wall. The binary is 10 MB |
-| Oxigraph crates | `oxrdf` 0.3.5, `oxttl` 0.2.5, `spargebra` 0.4.8, `spareval` 0.2.9 and `sparesults` 0.3.5, pinned exactly. `spareval` is touched only in `ograph-core/src/sparql.rs` |
+| Oxigraph crates | `oxrdf` 0.3.5, `oxttl` 0.2.5, `spargebra` 0.4.8, and `spareval` 0.2.9, pinned exactly. `spareval` is touched only in `ograph-core/src/sparql.rs` and the inline-term conversion in `ograph-core/src/term.rs` |
 
 A Windows MSVC build was not run, because this machine has no Windows toolchain and I did not change the installed Rust toolchains.
 
@@ -28,12 +28,12 @@ The store changed in these ways from the spike:
 | | 1x (3.52 M quads) | 10x (35.2 M quads) |
 |---|---|---|
 | Correctness | 0 mismatches over 41 queries against Oxigraph in memory and the native paths | 0 mismatches, SPARQL against native |
-| Load | 14.4 s, 244 K quads/s (4 M-quad transactions) | 401 s, 88 K quads/s |
+| Load | 12.7 s, 278 K quads/s (4 M-quad transactions) | 401 s, 88 K quads/s |
 | On disk after compaction | 658 MiB, 196 bytes/quad | 8.6 GiB, 256 bytes/quad |
 | Open | 3 ms | 7 ms |
-| W1 (incidents on one team's apps in one region), SPARQL / native / Oxigraph | 10.4 / 7.6 / 6.4 ms | 185 / 159 ms for 10.7x the rows |
+| W1 (incidents on one team's apps in one region), SPARQL / native / Oxigraph | 10.2 / 7.7 / 5.7 ms | 185 / 159 ms for 10.7x the rows |
 | W2 (events in the 10 minutes before an incident), SPARQL / native / Oxigraph | 0.16 / 0.003 / 0.10 ms | 0.21 / 0.003 ms |
-| W3 (blast radius of the hub), SPARQL / native / Oxigraph | 17.7 / 15.3 / 136.5 ms | 213 / 189 ms for 10x the rows |
+| W3 (blast radius of the hub), SPARQL / native / Oxigraph | 17.8 / 15.1 / 136.6 ms | 213 / 189 ms for 10x the rows |
 | Re-harvest of one day's graph, unchanged | 60 ms, 0 writes | 9.6 s, 0 writes |
 
 **W2 does not grow with history.** At 10x, W2 runs in the same time as at 1x, because the per-application time index answers it. W1 and W3 grow with the number of rows they return.
@@ -55,7 +55,7 @@ Non-durable commits were tried and rejected. They did not speed up the 1x load (
 - Log and trace lines are read into a fixed list of fields through a serde visitor, with the full parse as a fallback.
 - Baseline medians use selection instead of a full sort.
 
-Interleaved, sequential runs on 12 cases (3 each) give a median of 0.228 s before and 0.180 s after; the merged 90-case harvest goes from 14.8 s to 10.1 s (6 runs each). Root-cause and similar-incident scores are unchanged. The rest of single-case time is trace parsing and 7 to 8 durable redb commits. Product ids such as `L9ECAV7KIM` escaped the masking rule, and so did ids after a `key=`. Masking upper-case ids with a digit, and judging the value after `=`, takes recommendationservice in one case from 9,113 distinct masked lines to 6, and cartservice from 57 to 4. Stored quads on the checked cases, RCAEval scores and similar-incident scores are unchanged; timing differences were inside the noise of a loaded machine.
+Interleaved, sequential runs on 12 cases (3 each) give a median of 0.228 s before and 0.180 s after; the merged 90-case harvest goes from 14.8 s to 10.1 s (6 runs each). A later change parses traces with borrowed fields: the traces step on the largest case went from 160 ms to 119 ms and its peak memory from 320 MB to 133 MB (best of 5, sequential), with identical exports. Root-cause and similar-incident scores are unchanged. The rest of single-case time is trace parsing and 7 to 8 durable redb commits. Product ids such as `L9ECAV7KIM` escaped the masking rule, and so did ids after a `key=`. Masking upper-case ids with a digit, and judging the value after `=`, takes recommendationservice in one case from 9,113 distinct masked lines to 6, and cartservice from 57 to 4. Stored quads on the checked cases, RCAEval scores and similar-incident scores are unchanged; timing differences were inside the noise of a loaded machine.
 
 ## Phase 3: ontology, SHACL and gateway
 
@@ -82,7 +82,7 @@ The gate found two real gaps, and both are fixed:
 
 | Question | Command | Result on the demo |
 |---|---|---|
-| 1. Which recent events could explain this incident? | `ograph before INC-5377`, `ograph chains INC-5377` | 9 events across the scope. Top cause ledger-db, with the chain `ledger-db:ALERT -> payments-api:LOG_ERROR -> payments-api:ALERT -> incident` (the designed cause) |
+| 1. Which recent events could explain this incident? | `ograph before INC-5377`, `ograph chains INC-5377` | 9 events across the scope. Top cause ledger-db, with the chain `ledger-db:ALERT -> payments-api:LOG_ERROR -> payments-api:ALERT -> checkout:ALERT -> incident` (the designed cause) |
 | 2. Which services and business processes are affected? | `ograph blast ledger-db` | 5 dependents by distance. Processes affected: card payments, online sales and order fulfilment |
 | 3. Which past incidents resemble this one, and which mitigations worked? | `ograph similar INC-5377` | INC-4120: cause ledger-db, mitigation "raised ledger-db connection pool to 200" |
 | 4. Which news relates to our vendors? | `ograph news` | CardRail latency, reaching payments-api and card payments. MailRelay deprecation, reaching notifications. An unrelated item was dropped |
@@ -253,8 +253,8 @@ A pure knowledge graph puts every metric point, log line and span in the graph a
 |---|---|---|
 | Quads | 3,924,039 | 368 (10,000x fewer) |
 | Store | 1,088 MiB | 0.30 MiB |
-| Ingest | 15.8 s | 0.4 s for the whole harvest, including detection |
-| "What happened in the 10 minutes before?" | 279,168 raw records, 5.5 MiB of text, in 398 ms | 11 episodes, 2.2 KiB, in 0.05 ms |
+| Ingest | 15.9 s (0.8 s parse, 15.1 s load) | 0.19 s median per case for the whole harvest, including detection |
+| "What happened in the 10 minutes before?" | 279,168 raw records, 5.5 MiB of text, in 386 ms | 11 episodes, 2.2 KiB, in 0.05 ms |
 | Root cause on 90 cases | 0.63 AC@1 with the best statistic SPARQL 1.1 can express: a mean shift in units of standard deviation | 0.93 AC@1 |
 | A day of this small system | 235 M quads, 64 GiB | 0.02 M quads |
 

@@ -141,7 +141,7 @@ fn main() -> anyhow::Result<()> {
     println!("| | pure knowledge graph (every record a node) | ograph hybrid (episodes + pointers) |\n|---|---|---|");
     println!("| quads | {} | {} |", triples.len(), hybrid_quads);
     println!("| store size | {:.1} MiB | {:.2} MiB |", raw_size as f64 / 1048576.0, hybrid_size as f64 / 1048576.0);
-    println!("| ingest | parse {:.1} s + load {:.1} s ({:.0} quads/s) | full harvest, see rcaeval-final.txt (median 0.29 s per case) |", parse.as_secs_f64(), load.as_secs_f64(), triples.len() as f64 / load.as_secs_f64());
+    println!("| ingest | parse {:.1} s + load {:.1} s ({:.0} quads/s) | full harvest per case, see the median in rcaeval-final.txt |", parse.as_secs_f64(), load.as_secs_f64(), triples.len() as f64 / load.as_secs_f64());
     println!("| Q1 'what happened in the 10 min before', rows | {} raw records ({:.1} MiB of text for an agent) in {q1_ms:.0} ms | {} episodes ({:.1} KiB) in {before_ms:.2} ms |", count(&q1), bytes_q1 as f64 / 1048576.0, before.events.len(), before_bytes as f64 / 1024.0);
     println!("| anomaly per series in SPARQL (mean before vs after; SPARQL 1.1 has no median, MAD or window functions) | {} series in {q2_ms:.0} ms | robust z detector in Rust during harvest |", count(&q2));
     let secs = 1441.0;
