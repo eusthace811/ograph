@@ -13,6 +13,10 @@ every event points back to its first raw record (`source_record`).
 
 ## Quick start
 
+ograph needs `ogrep` on `PATH` (`ogrep --version`) to read the service catalog. Without it the
+catalog harvest line says `DEGRADED: ogrep not runnable` and every fact about a service is
+quarantined, so every answer comes back empty. Fix that first.
+
 ```bash
 # find the workspace (commands search upward for .ograph/), refresh it
 # the last line counts quarantined facts: check them if an expected event is missing

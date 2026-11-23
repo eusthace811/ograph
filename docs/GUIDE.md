@@ -12,7 +12,14 @@ cargo install --path ograph-cli      # puts `ograph` in ~/.cargo/bin
 ograph --version
 ```
 
-The `catalog` source also needs `ogrep` 0.2 or newer on `PATH` (or `OGRAPH_OGREP=/path/to/ogrep`).
+ograph also needs `ogrep` 0.2 or newer on `PATH`. It reads the service catalog (Backstage,
+Compose, Kubernetes and Prometheus files), and only the catalog can create applications. Without
+it the harvest still runs, but every fact about a service is quarantined as "not in the catalog",
+so the questions have nothing to answer. `OGRAPH_OGREP=/path/to/ogrep` points at another binary.
+
+```bash
+ogrep --version
+```
 
 ## 2. Try it on the demo
 
@@ -35,8 +42,9 @@ mkdir ops-graph && cd ops-graph
 ograph init                 # creates .ograph/config.toml, ontology.ttl, shapes.ttl
 ```
 
-Add one `[[source]]` per input to `.ograph/config.toml`. Start with the catalog and incidents,
-then add the rest:
+Add one `[[source]]` per input to `.ograph/config.toml`. The catalog is required: every other
+source names services, and only names the catalog knows are kept. Start with the catalog and
+incidents, then add the rest:
 
 ```toml
 [[source]]
@@ -162,4 +170,4 @@ ograph ontology diff new.ttl    # before changing the ontology; BREAKING lines n
 | `unknown field ...` on any command | A typo in `.ograph/config.toml`. The message names the expected keys |
 | `the ontology declares no X (did you mean Y?)` | A misspelled name in a SPARQL query |
 | `verdict not recorded: the ontology refuses ...` | `.ograph/ontology.ttl` is older than the binary. Run `ograph ontology check` and update it |
-| Catalog harvest fails | `ogrep` is not on `PATH`; install it or set `OGRAPH_OGREP` |
+| `DEGRADED: ogrep not runnable` on the catalog line, and almost everything quarantined | `ogrep` is not on `PATH`; install it or set `OGRAPH_OGREP`, then harvest again |

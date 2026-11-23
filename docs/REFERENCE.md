@@ -85,7 +85,7 @@ JSON inputs may be a JSON array, one object, or JSON lines.
 
 | `kind` | Format | Facts it proposes |
 |---|---|---|
-| `catalog` | A git repository. ograph runs `ogrep --entities . --json` in it, which reads Backstage, Compose, Kubernetes and Prometheus rules. Set `OGRAPH_OGREP` to point at another binary | `ops:Application`, `ops:name`, `ops:dependsOn` (declared or inferred) |
+| `catalog` | Required. A git repository. ograph runs `ogrep --entities . --json` in it, which reads Backstage, Compose, Kubernetes and Prometheus rules, so `ogrep` must be on `PATH`; set `OGRAPH_OGREP` to point at another binary. Only the catalog creates applications, so without it every fact about a service is quarantined | `ops:Application`, `ops:name`, `ops:dependsOn` (declared or inferred) |
 | `ownership` | `{"app", "process"}`, `{"app", "vendor"}`, `{"app", "alias"}` | `ops:supports`, `ops:usesVendor`, `ops:alias` |
 | `docs` | Runbooks and other prose, Markdown or text | `ops:alias`, only from a phrase that states one: `A, also known as B`, `A aka B`, `A (aka B)`, `A, formerly B`, `A is also called B`, or `A (b-c)` where the parenthesis holds a kebab or snake identifier that does not end in a number and shares a part other than `api`, `svc` or a similar word with `A` |
 | `deployments` | `{"service", "version", "at"}` | `evt:Deployment` |
