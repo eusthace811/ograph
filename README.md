@@ -17,14 +17,14 @@ ograph blast ledger-db             # 2. which services and business processes th
 ograph similar INC-5377            # 3. past incidents like this one, their causes and mitigations
 ograph news                        # 4. news touching the vendors our applications use
 ograph why id:inc/inc-4120         # provenance of every fact about a node
-ograph verdict id:chain/inc-4120-1 accept --evidence PM-4120 --by oncall
+ograph verdict id:chain/inc-4120-1 accept --evidence PM-4120 --by oncall   # the chain ranked 1 now
 ograph sparql 'SELECT ?app WHERE { ?app ops:dependsOn+ id:app\/ledger-db }'
 ograph lab                         # one HTML page over the whole graph
 ```
 
 ## How it works
 
-- **Raw telemetry stays in its own systems.** ograph keeps only episodes, such as "a burst of this log template" or "this metric left its band", with a pointer back to the first raw record. It does not keep every line, point or span. On one RCAEval case that is 368 quads instead of 3.9 million, and it ranks root causes better (0.93 against 0.63 top-1 for what SPARQL alone can express; see `docs/EVIDENCE.md`).
+- **Raw telemetry stays in its own systems.** ograph keeps only episodes, such as "a burst of this log template" or "this metric left its band", with a pointer back to the first raw record. It does not keep every line, point or span. On one RCAEval case that is 394 quads instead of 3.9 million, and it ranks root causes better (0.93 against 0.63 top-1 for what SPARQL alone can express; see `docs/EVIDENCE.md`).
 - **The gateway owns every write.** Enrichers propose facts. The gateway checks:
   - IRIs, and catalog membership with fuzzy matching that refuses near-twins such as `-uk` against `-eu` and variants such as `-canary`;
   - closed vocabularies, model confidence and evidence;

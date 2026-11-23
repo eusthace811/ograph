@@ -230,7 +230,7 @@ A new `docs` source reads runbooks. It takes an alias only from a phrase that st
 |---|---|
 | Aliases committed from the demo runbooks | 3 of 3 expected, 0 unexpected |
 | Decoys | 0 of 6 committed. "ledger-db (postgres)", "checkout (INC-4388)" and a version string matched no phrase. "the primary database (ledger-db)" and "orders-api is also called checkout" were quarantined |
-| Alerts that use an alias name | 12 facts quarantined without runbooks. With them, both alerts resolve to payments-api and search-api |
+| Alerts that use an alias name | 14 facts quarantined without runbooks. With them, both alerts resolve to payments-api and search-api |
 | Root-cause chains for INC-5377 | Unchanged |
 
 We first also let the model find aliases, with the same quote check. It found no alias that the phrases missed, and it added a false one, `ledger-db -> postgres`, whose quote passed. That path was removed, so no model reads runbooks.
@@ -251,17 +251,17 @@ A pure knowledge graph puts every metric point, log line and span in the graph a
 
 | | Pure knowledge graph | ograph (episodes plus pointers) |
 |---|---|---|
-| Quads | 3,924,039 | 368 (10,000x fewer) |
-| Store | 1,088 MiB | 0.30 MiB |
+| Quads | 3,924,039 | 394 (10,000x fewer) |
+| Store | 1,088 MiB | 0.54 MiB |
 | Ingest | 15.9 s (0.8 s parse, 15.1 s load) | 0.19 s median per case for the whole harvest, including detection |
-| "What happened in the 10 minutes before?" | 279,168 raw records, 5.5 MiB of text, in 386 ms | 11 episodes, 2.2 KiB, in 0.05 ms |
+| "What happened in the 10 minutes before?" | 279,168 raw records, 5.5 MiB of text, in 386 ms | 12 episodes, 2.6 KiB, in 0.07 ms |
 | Root cause on 90 cases | 0.63 AC@1 with the best statistic SPARQL 1.1 can express: a mean shift in units of standard deviation | 0.93 AC@1 |
 | A day of this small system | 235 M quads, 64 GiB | 0.02 M quads |
 
 These are the reasons, each measured above:
 
 - **Size.** Raw telemetry is about 10,000 times larger as triples. At 196 to 256 bytes per quad, one day of an 11-service demo is 64 GiB. A real estate would multiply that by its service count.
-- **Agents.** The answer an agent needs is the 11 episodes, not the 279,168 records. 5.5 MiB of text does not fit a model's context, and the episodes fit in 2.2 KiB.
+- **Agents.** The answer an agent needs is the 12 episodes, not the 279,168 records. 5.5 MiB of text does not fit a model's context, and the episodes fit in 2.6 KiB.
 - **SPARQL cannot express the detector.** SPARQL 1.1 has no median, MAD, window functions or online baseline. The best ranking it can express scores 0.63 AC@1, against ograph's 0.93.
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 

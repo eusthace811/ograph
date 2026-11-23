@@ -47,12 +47,15 @@ fn iri_scheme() -> &'static regex::Regex {
 }
 
 /// Names and aliases of catalog entities, normalized, per class.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Catalog {
     names: HashMap<(&'static str, String), (NamedNode, Vec<String>)>,
     known: FxHashSet<String>,
+    /// Names that missed an exact match, so a name repeated across a harvest is scored once.
+    misses: RefCell<HashMap<(&'static str, String), Resolution>>,
 }
 
+#[derive(Clone)]
 pub enum Resolution {
     Exact(NamedNode),
     Fuzzy(NamedNode, f64),
@@ -89,17 +92,29 @@ pub(crate) const FILLER: [&str; 6] = ["svc", "service", "srv", "server", "app", 
 
 const CATALOG_CLASSES: [&str; 2] = [ops::APPLICATION, ops::TEAM];
 
+/// The sources whose batches write catalog entities, names or aliases. Every other batch of a
+/// harvest checks against one catalog built once.
+const NAMING_SOURCES: [&str; 3] = ["catalog", "ownership", "docs"];
+
 impl Catalog {
-    pub fn from_snapshot(snap: &Snapshot) -> crate::store::Result<Self> {
+    /// The catalog in `snap`, without what only the `replaced` graph says.
+    pub fn from_snapshot(snap: &Snapshot, replaced: Option<Id>) -> crate::store::Result<Self> {
         let mut c = Catalog::default();
         let (Some(ty), name, alias) = (snap.iri(RDF_TYPE)?, snap.iri(ops::NAME)?, snap.iri(ops::ALIAS)?) else { return Ok(c) };
+        let outside = |spo: [Id; 3]| replaced.is_none_or(|g| snap.graphs_of(spo).is_ok_and(|gs| gs.iter().any(|x| *x != g)));
         for class in CATALOG_CLASSES {
             let Some(cid) = snap.iri(class)? else { continue };
             for e in snap.subjects(ty, cid)? {
                 let Term::NamedNode(n) = snap.term(e)? else { continue };
+                if !outside([e, ty, cid]) {
+                    continue;
+                }
                 c.known.insert(n.as_str().to_owned());
                 for p in [name, alias].into_iter().flatten() {
                     for v in snap.objects(e, p)? {
+                        if !outside([e, p, v]) {
+                            continue;
+                        }
                         if let Term::Literal(l) = snap.term(v)? {
                             c.names.insert((class, norm(l.value())), (n.clone(), words(l.value())));
                         }
@@ -113,6 +128,7 @@ impl Catalog {
     }
 
     pub fn add(&mut self, class: &'static str, iri: &NamedNode, names: &[&str]) {
+        self.misses.get_mut().clear();
         self.known.insert(iri.as_str().to_owned());
         for n in names {
             self.names.insert((class, norm(n)), (iri.clone(), words(n)));
@@ -131,8 +147,17 @@ impl Catalog {
         if let Some((n, _)) = self.names.get(&(class, key.clone())) {
             return Resolution::Exact(n.clone());
         }
+        if let Some(r) = self.misses.borrow().get(&(class, name.to_owned())) {
+            return r.clone();
+        }
+        let r = self.score(class, name, &key);
+        self.misses.borrow_mut().insert((class, name.to_owned()), r.clone());
+        r
+    }
+
+    fn score(&self, class: &'static str, name: &str, key: &str) -> Resolution {
         let mut scored: Vec<(f64, &NamedNode, &[String])> =
-            self.names.iter().filter(|((c, _), _)| *c == class).map(|((_, k), (n, w))| (strsim::jaro_winkler(&key, k), n, w.as_slice())).collect();
+            self.names.iter().filter(|((c, _), _)| *c == class).map(|((_, k), (n, w))| (strsim::jaro_winkler(key, k), n, w.as_slice())).collect();
         scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.as_str().cmp(b.1.as_str())));
         let Some(&(s, n, w)) = scored.first() else { return Resolution::Missing };
         let runner_up = scored.iter().find(|x| x.1 != n).map_or(0.0, |x| x.0);
@@ -267,9 +292,10 @@ fn kind_of(class: &str) -> String {
     slug(class.rsplit(['#', '/']).next().unwrap_or("thing"))
 }
 
-/// Runs the checks without writing. Returns the accepted triples and the rejections.
-pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id>) -> (Vec<(Triple, usize)>, Vec<Rejection>, usize) {
-    let mut catalog = Catalog::from_snapshot(snap).unwrap_or_default();
+/// Runs the checks against `catalog` without writing. Returns the accepted triples and the
+/// rejections.
+pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id>, catalog: &Catalog) -> (Vec<(Triple, usize)>, Vec<Rejection>, usize) {
+    let mut catalog = std::borrow::Cow::Borrowed(catalog);
     let ty = NamedNode::new_unchecked(RDF_TYPE);
     let name_p = NamedNode::new_unchecked(ops::NAME);
     let alias_p = NamedNode::new_unchecked(ops::ALIAS);
@@ -289,7 +315,7 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                         _ => None,
                     })
                     .collect();
-                catalog.add(class, s, &names.iter().map(String::as_str).collect::<Vec<_>>());
+                catalog.to_mut().add(class, s, &names.iter().map(String::as_str).collect::<Vec<_>>());
             }
     }
     let mut rejected = Vec::new();
@@ -406,6 +432,25 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
         }
         accepted.push(Resolved { triple: Triple::new(s, f.predicate.clone(), o), fact: i });
     }
+    // Two applications claiming one alias in the same batch: neither gets it, whatever the order.
+    let alias_of = |a: &Resolved| match &a.triple.object {
+        Term::Literal(l) if a.triple.predicate.as_str() == ops::ALIAS => Some(norm(l.value())),
+        _ => None,
+    };
+    let mut claims: FxHashMap<String, std::collections::BTreeSet<String>> = FxHashMap::default();
+    for a in &accepted {
+        if let Some(k) = alias_of(a) {
+            claims.entry(k).or_default().insert(vocab::compact(a.triple.subject.to_string().trim_matches(['<', '>'])));
+        }
+    }
+    accepted.retain(|a| match alias_of(a).and_then(|k| claims.get(&k)).filter(|c| c.len() > 1) {
+        Some(c) => {
+            let names: Vec<&str> = c.iter().map(String::as_str).collect();
+            rejected.push(Rejection { fact: batch.facts[a.fact].describe(), reason: format!("alias is claimed by {} in one batch", names.join(" and ")) });
+            false
+        }
+        None => true,
+    });
     for (n, class) in minted {
         accepted.push(Resolved { triple: Triple::new(n, ty.clone(), NamedNode::new_unchecked(class)), fact: usize::MAX });
     }
@@ -439,8 +484,9 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                 .filter(|(_, a)| on_focus(a) && prop.as_ref().is_none_or(|p| a.triple.predicate.as_str() == p))
                 .map(|(k, _)| k)
                 .collect();
-            // A violation no single fact caused (a required value is missing) rejects the node.
-            if hits.is_empty() {
+            // A required value missing rejects the node. A bad value the batch did not propose
+            // belongs to another graph, and this batch is not rejected for it.
+            if hits.is_empty() && r.value.is_none() {
                 hits = accepted.iter().enumerate().filter(|(_, a)| on_focus(a)).map(|(k, _)| k).collect();
             }
             for k in hits {
@@ -472,16 +518,27 @@ fn s(v: &str) -> Term {
 /// Checks a batch and commits it: accepted facts replace the batch's graph, rejections replace
 /// its quarantine graph. Re-submitting the same batch writes nothing new.
 pub fn submit(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64) -> anyhow::Result<Outcome> {
-    submit_with(store, ont, batch, now_ms, true)
+    submit_with(store, ont, batch, now_ms, true, &mut None)
 }
 
-/// [`submit`] with a choice of durability; a harvest submits non-durably and flushes once.
-pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, durable: bool) -> anyhow::Result<Outcome> {
+/// [`submit`] with a choice of durability and a catalog shared across batches. A harvest
+/// submits non-durably and flushes once, and builds the catalog again only after a batch that
+/// can change it.
+pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, durable: bool, catalog: &mut Option<Catalog>) -> anyhow::Result<Outcome> {
     let graph = batch.graph();
     let qgraph = batch.quarantine_graph();
     let snap = store.snapshot()?;
     let replaced = snap.iri(graph.as_str())?;
-    let (accepted, rejected, fuzzy) = check(&snap, ont, batch, replaced);
+    let (accepted, rejected, fuzzy) = if NAMING_SOURCES.contains(&batch.source.as_str()) {
+        *catalog = None;
+        check(&snap, ont, batch, replaced, &Catalog::from_snapshot(&snap, replaced)?)
+    } else {
+        let shared = match catalog {
+            Some(c) => c,
+            None => catalog.insert(Catalog::from_snapshot(&snap, None)?),
+        };
+        check(&snap, ont, batch, replaced, shared)
+    };
     drop(snap);
     let mut triples: Vec<Triple> = accepted.iter().map(|(t, _)| t.clone()).collect();
     let hnode = graph.clone();

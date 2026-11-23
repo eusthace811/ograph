@@ -16,7 +16,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub window_s: i64,
     /// How long after the incident opened events still count (detectors lag, symptoms spread).
@@ -89,6 +89,9 @@ pub struct Signal {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Chain {
+    /// Derived from the incident and the root event, so a verdict stays on the root it judged
+    /// whatever rank the chain has after the next correlation.
+    pub id: String,
     pub root: Signal,
     pub links: Vec<Signal>,
     pub confidence: f64,
@@ -224,7 +227,19 @@ pub fn incident_anchor(s: &Snapshot, ids: &Ids, incident: Id) -> anyhow::Result<
     Ok((app, at))
 }
 
-/// Events on the incident's application and everything it depends on, in the window.
+/// How far before the window an episode may have started and still count, if it is still under
+/// way when the window opens.
+const EPISODE_LOOKBACK_MS: i64 = 24 * 3600 * 1000;
+
+/// The IRI of the chain from `root` to `incident`.
+pub fn chain_iri(incident: &str, root: &str) -> String {
+    let local = incident.rsplit('/').next().unwrap_or("inc");
+    let h = hex::encode(crate::gateway::sha2_hash(root));
+    format!("{}chain/{}-{}", crate::vocab::DATA, crate::model::slug(local), &h[..8])
+}
+
+/// Events on the incident's application and everything it depends on, in the window, and
+/// episodes that started before it but were still under way when it opened.
 pub fn candidates(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::Result<(Id, i64, Vec<Signal>)> {
     let (app, t) = incident_anchor(s, ids, incident)?;
     let mut scope = downstream(s, ids, app, st.depth)?;
@@ -234,12 +249,15 @@ pub fn candidates(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyho
                 scope.entry(a).or_insert(1);
             }
         }
-    let (from, to) = (term::time_id(t - st.window_s * 1000), term::time_id(t + st.after_s * 1000));
+    let opens = t - st.window_s * 1000;
+    let (from, to) = (term::time_id(opens - EPISODE_LOOKBACK_MS), term::time_id(t + st.after_s * 1000));
     let mut out = Vec::new();
     let mut names = FxHashMap::default();
     for (&x, &d) in &scope {
         for (tid, e) in s.events_on(x, from, to)? {
-            if e == incident || ids.incident.is_some_and(|c| s.contains([e, ids.ty, c]).unwrap_or(false)) {
+            let at_ms = term::millis(tid).unwrap_or(0);
+            let until_ms = ids.until.and_then(|p| s.object(e, p).ok().flatten()).and_then(term::millis).unwrap_or(at_ms).max(at_ms);
+            if until_ms < opens || e == incident || ids.incident.is_some_and(|c| s.contains([e, ids.ty, c]).unwrap_or(false)) {
                 continue;
             }
             let kind = kind_of(s, ids, e);
@@ -247,8 +265,6 @@ pub fn candidates(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyho
                 continue;
             }
             let name = names.entry(x).or_insert_with(|| app_name(s, ids, x)).clone();
-            let at_ms = term::millis(tid).unwrap_or(0);
-            let until_ms = ids.until.and_then(|p| s.object(e, p).ok().flatten()).and_then(term::millis).unwrap_or(at_ms).max(at_ms);
             out.push(Signal {
                 id: e,
                 iri: literal(s, e).unwrap_or_default(),
@@ -281,14 +297,13 @@ impl Settings {
     /// one-point blip seconds before it.
     fn link(&self, a: &Signal, to_kind: &str, to_ms: i64) -> f64 {
         let w = (self.window_s * 1000) as f64;
-        let gap = (to_ms - a.at_ms) as f64;
-        if gap < -1000.0 || gap > w {
+        let gap = (to_ms - a.until_ms.min(to_ms)) as f64;
+        if ((to_ms - a.at_ms) as f64) < -1000.0 || gap > w {
             return 0.0;
         }
         if self.known(&a.kind, to_kind) {
             return self.known_pair_prior;
         }
-        let gap = (to_ms - a.until_ms.min(to_ms)) as f64;
         let prox = (1.0 - gap.max(0.0) / w).clamp(0.0, 1.0);
         self.w_time * prox + self.w_severity * a.severity.min(1.0)
     }
@@ -297,6 +312,7 @@ impl Settings {
 /// Builds chains and ranks root-cause applications.
 pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::Result<Analysis> {
     let (app, t, cands) = candidates(s, ids, incident, st)?;
+    let incident_iri = literal(s, incident).unwrap_or_default();
     // Which application calls which, inside the scope: a link may go from an event on X to an
     // event on X or on a caller of X.
     let scope: FxHashSet<Id> = cands.iter().map(|c| c.app).chain([app]).collect();
@@ -311,7 +327,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
             }
         }
     }
-    let can_follow = |a: &Signal, b: &Signal| b.at_ms >= a.at_ms && b.at_ms - a.at_ms <= st.window_s * 1000 && (b.app == a.app || callers.get(&a.app).is_some_and(|c| c.contains(&b.app)));
+    let can_follow = |a: &Signal, b: &Signal| b.at_ms >= a.at_ms && b.at_ms - a.until_ms.min(b.at_ms) <= st.window_s * 1000 && (b.app == a.app || callers.get(&a.app).is_some_and(|c| c.contains(&b.app)));
     // Depth-first from each candidate root: extend through later events on callers, close each
     // path at the incident. Confidence is the geometric mean of the links. Intermediate links
     // must clear `min_confidence`; a chain is kept as a hypothesis only if its closing link and
@@ -355,7 +371,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
             }
         }
         let chain = best.map(|(path, conf, gated)| {
-            let c = Chain { root: cands[path[0]].clone(), links: path[1..].iter().map(|&i| cands[i].clone()).collect(), confidence: conf };
+            let c = Chain { id: chain_iri(&incident_iri, &cands[path[0]].iri), root: cands[path[0]].clone(), links: path[1..].iter().map(|&i| cands[i].clone()).collect(), confidence: conf };
             if gated {
                 chains.push(c.clone());
             }
@@ -407,7 +423,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
     }
     chains.sort_by(|a, b| b.confidence.total_cmp(&a.confidence).then(a.root.at_ms.cmp(&b.root.at_ms)));
     chains.truncate(st.max_chains);
-    Ok(Analysis { incident: literal(s, incident).unwrap_or_default(), app: app_name(s, ids, app), at_ms: t, candidates: cands.len(), chains, apps })
+    Ok(Analysis { incident: incident_iri, app: app_name(s, ids, app), at_ms: t, candidates: cands.len(), chains, apps })
 }
 
 /// Confidence at the resolution ranking cares about, so float noise cannot break a tie.

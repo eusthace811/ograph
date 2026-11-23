@@ -7,14 +7,14 @@ Every command takes `--root DIR` (the directory holding `.ograph/`, found by sea
 | Command | What it does |
 |---|---|
 | `ograph init` | Creates `.ograph/` with `config.toml`, `ontology.ttl` and `shapes.ttl` |
-| `ograph harvest [--only KIND]` | Runs the enrichers in layer order. Each source file becomes one named graph, then correlation runs for every incident |
-| `ograph before INC [--window 10m] [--depth 4]` | Events before an incident on its application and the applications it depends on (question 1) |
-| `ograph chains INC [--rank chain\|propagation] [--window 30m] [--top 5] [--set k=v]` | Correlation chains and ranked root-cause candidates |
+| `ograph harvest [--only KIND]` | Runs the enrichers in layer order. Each source file becomes one named graph, then correlation runs for every incident. KIND is a kind from `config.toml` such as `config_changes`, its graph name such as `config`, or `correlation` |
+| `ograph before INC [--window 10m] [--depth 4]` | Events before an incident on its application and the applications it depends on (question 1). An episode that began up to 24 hours before the window and is still under way when it opens counts too |
+| `ograph chains INC [--rank chain\|propagation] [--window 30m] [--top 5] [--set k=v]` | Correlation chains and ranked root-cause candidates. A chain's id, such as `id:chain/inc-5377-e1fef786`, comes from its incident and root event, so it names the same hypothesis after any re-correlation; its rank is the `corr:rank` property |
 | `ograph blast APP [--depth 8]` | Dependents by distance, the business processes they support, and open incidents (question 2) |
 | `ograph similar INC [--top 5]` | Past incidents with the same signature, with their accepted causes and mitigations (question 3) |
 | `ograph news [--since DURATION]` | News that mentions a vendor our applications use (all of it by default, or only the last DURATION, such as `7d`), with the affected applications and processes (question 4) |
 | `ograph why NODE` | Provenance of every fact about a node: the harvest graph, source, extractor and time, model provenance, and quarantined proposals |
-| `ograph verdict CHAIN accept\|reject --evidence REF --by WHO` | Records a human verdict. An accepted chain also writes `inc:cause` |
+| `ograph verdict CHAIN accept\|reject --evidence REF --by WHO` | Records a human verdict on a chain id, or on `id:chain/<incident>-<rank>` for the chain at that rank now. The verdict keeps the chain's incident and root event, with the root's class, application, time and signal, so it means the same after re-correlation or after the root's telemetry leaves the sources. An accepted chain also writes `inc:cause` |
 | `ograph sparql 'QUERY' [--limit N]` | Runs SPARQL 1.1. The prefixes are predeclared, and the default graph is the deduplicated union of all harvests. A class or property in an ograph namespace that the ontology does not declare is an error that names the nearest declared one |
 | `ograph validate` | Runs a full SHACL audit of the store |
 | `ograph export [--out FILE]` | Writes every named graph as TriG |
@@ -32,6 +32,8 @@ A node name may be any of these:
 - an application name
 
 ## Configuration (`.ograph/config.toml`)
+
+A key or table that ograph does not know, such as `[corelation]` or `windw_s`, is an error.
 
 ```toml
 [[source]]
@@ -110,8 +112,8 @@ Enrichers never write to the store. A batch goes through these checks in order:
 5. **Closed vocabularies.** Values must come from the vocabularies declared in `og:vocabulary`.
 6. **Model confidence.** A model's confidence must be at least 0.5. The `Llm` variant cannot exist without one.
 7. **Model-proposed structure.** A model may propose `ops:dependsOn` only when the catalog or traces already hold the same edge. Otherwise the edge is quarantined as unconfirmed.
-8. **Aliases.** An alias that already names a different application is quarantined.
+8. **Aliases.** An alias that already names a different application is quarantined, and so is an alias that two applications claim in one batch, for both of them.
 9. **Evidence.** Each fact needs evidence that names a record this harvest read.
-10. **Incremental SHACL.** Shapes run on the nodes the batch touches, seen as the store will be after the commit. They are the derived domain, range, datatype, vocabulary and functional shapes, plus `shapes.ttl`. A violation that no single fact caused, such as a missing required value, rejects the node. The checks repeat until no violation is left.
+10. **Incremental SHACL.** Shapes run on the nodes the batch touches, seen as the store will be after the commit. They are the derived domain, range, datatype, vocabulary and functional shapes, plus `shapes.ttl`. A violation that no single fact caused, such as a missing required value, rejects the node. A bad value that another graph holds, such as a verdict's cause, is not the batch's fault and rejects nothing. The checks repeat until no violation is left.
 
-Rejected facts go to `g:quarantine/<source>/<key>` with their reason. Accepted facts replace `g:harvest/<source>/<key>`, and only the difference is written, so an unchanged re-harvest writes one quad: the harvest time. The key is the file's path relative to the workspace, percent-encoded but otherwise kept, so two files never share a graph. A file that cannot be read at all, or is empty, keeps its last good facts and is marked degraded. A full harvest clears the graphs of files that no longer exist, of sources no longer configured and of incidents that no longer have chains; verdicts are never cleared, and `--only KIND` clears only that kind's and fails on a kind that is not configured. A source whose path cannot be listed reports one degraded batch and keeps all its graphs.
+Rejected facts go to `g:quarantine/<source>/<key>` with their reason. Accepted facts replace `g:harvest/<source>/<key>`, and only the difference is written, so an unchanged re-harvest writes one quad: the harvest time. The key is the file's path relative to the workspace, percent-encoded but otherwise kept, so two files never share a graph. A file that cannot be read at all, or is empty, keeps its last good facts and is marked degraded. A full harvest clears the graphs of files that no longer exist, of sources no longer configured and of incidents that no longer have chains; verdicts are never cleared, and `--only KIND` clears only that kind's and fails on a kind that is not configured. Input graphs are cleared before any batch is checked, and chain graphs after correlation, so one harvest leaves the store as two would. A source whose path cannot be listed reports one degraded batch and keeps all its graphs.

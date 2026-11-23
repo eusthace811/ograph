@@ -27,7 +27,7 @@ def main():
     og = lambda *x: subprocess.run([binp, "--root", str(out), "--json", *x], capture_output=True, text=True)
     accepted = 0
     for cid, l in labels.items():
-        r = og("sparql", f'SELECT ?c WHERE {{ ?c corr:leadsTo ?i ; corr:candidateApp id:app\\/{l["root"]} . ?i inc:id "{l["incident"]}" }} ORDER BY ?c LIMIT 1')
+        r = og("sparql", f'SELECT ?c WHERE {{ ?c corr:leadsTo ?i ; corr:rank ?r ; corr:candidateApp id:app\\/{l["root"]} . ?i inc:id "{l["incident"]}" }} ORDER BY ?r LIMIT 1')
         rows = json.loads(r.stdout)["rows"] if r.stdout.strip() else []
         if rows:
             og("verdict", rows[0][0], "accept", "--evidence", "RCAEval label", "--by", "eval"); accepted += 1

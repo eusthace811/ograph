@@ -2,10 +2,10 @@ case data/rcaeval-cases/c-97bf1c72d2 (96 MiB of raw exports: 103748 metric point
 
 | | pure knowledge graph (every record a node) | ograph hybrid (episodes + pointers) |
 |---|---|---|
-| quads | 3924039 | 368 |
-| store size | 1088.0 MiB | 0.30 MiB |
-| ingest | parse 0.8 s + load 15.1 s (259404 quads/s) | full harvest per case, see the median in rcaeval-final.txt |
-| Q1 'what happened in the 10 min before', rows | 279168 raw records (5.5 MiB of text for an agent) in 386 ms | 11 episodes (2.2 KiB) in 0.05 ms |
-| anomaly per series in SPARQL (mean before vs after; SPARQL 1.1 has no median, MAD or window functions) | 144 series in 151 ms | robust z detector in Rust during harvest |
+| quads | 3924039 | 394 |
+| store size | 1088.0 MiB | 0.54 MiB |
+| ingest | parse 0.8 s + load 16.9 s (231827 quads/s) | full harvest per case, see the median in rcaeval-final.txt |
+| Q1 'what happened in the 10 min before', rows | 279168 raw records (5.5 MiB of text for an agent) in 377 ms | 12 episodes (2.6 KiB) in 0.07 ms |
+| anomaly per series in SPARQL (mean before vs after; SPARQL 1.1 has no median, MAD or window functions) | 144 series in 147 ms | robust z detector in Rust during harvest |
 
 extrapolated to a day of this 11-service system: pure KG 235 M quads and 64 GiB per day; ograph 0.02 M quads per day

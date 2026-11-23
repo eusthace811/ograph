@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 /// One configured input. The order of this enum is the harvest order.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Source {
     /// Runs `ogrep --entities . --json` in a repository: Backstage, Compose, Kubernetes.
     Catalog { path: PathBuf },
@@ -75,7 +75,7 @@ impl Source {
 
 /// Settings for the deterministic detectors. Defaults are documented in docs/REFERENCE.md.
 #[derive(Clone, Debug, Deserialize)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Detect {
     pub metric_z: f64,
     pub metric_baseline_s: i64,
@@ -240,6 +240,7 @@ pub fn event<const N: usize>(b: &mut Batch, s: &EntityRef, e: Event<'_>, details
     }
     b.add(s.clone(), evt::SIGNAL, lit(e.signal), ev, m);
     b.add(s.clone(), evt::SEVERITY, lit(e.severity), ev, m);
+    b.add(s.clone(), evt::SOURCE_RECORD, lit(ev.0.as_str()), ev, m);
 }
 
 pub fn dt(ms: i64) -> crate::model::Object {

@@ -242,7 +242,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                     println!("  {}. {:<22} score {:.3}", k + 1, r.app, r.score);
                     if let Some(c) = &r.chain {
                         let path: Vec<String> = std::iter::once(&c.root).chain(&c.links).map(|s| format!("{}:{}", s.app_name, s.kind)).collect();
-                        println!("     chain {:.2}: {} -> incident", c.confidence, path.join(" -> "));
+                        println!("     {} {:.2}: {} -> incident", ograph_core::vocab::compact(&c.id), c.confidence, path.join(" -> "));
                     }
                 }
             });
@@ -343,7 +343,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 let file = other.ok_or_else(|| anyhow::anyhow!("ontology coverage needs a file of questions, one per line"))?;
                 let llm = ws.llm().ok_or_else(|| anyhow::anyhow!("ontology coverage needs a model: add [llm.extract] to .ograph/config.toml"))?;
                 let questions: Vec<String> = std::fs::read_to_string(file)?.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_owned).collect();
-                let catalog = ograph_core::gateway::Catalog::from_snapshot(&ws.store.snapshot()?)?;
+                let catalog = ograph_core::gateway::Catalog::from_snapshot(&ws.store.snapshot()?, None)?;
                 let is_entity = |t: &str| matches!(catalog.resolve(ograph_core::vocab::ops::APPLICATION, t), ograph_core::gateway::Resolution::Exact(_));
                 let report = ograph_core::coverage::report(&ws.ontology, &llm, &questions, is_entity);
                 let path = out.unwrap_or_else(|| ws.dir.join("proposed.ttl"));
