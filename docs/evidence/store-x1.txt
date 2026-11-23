@@ -1,0 +1,35 @@
+generated 3520099 quads in 638.628 ms (scale 1, 30 days of history)
+compaction: 1088.0 MiB -> 857.3 MiB in 1484.367 ms
+
+| load (s) | quads/s | on disk (MiB) | bytes/quad | open (ms) | union triples |
+|---|---|---|---|---|---|
+| 16.1 | 218442 | 857.3 | 255 | 3.306 | 3520099 |
+
+| table | entries | stored MiB | overhead MiB |
+|---|---|---|---|
+| id2term | 1120065 | 42.6 | 5.1 |
+| hash2id | 1120065 | 25.6 | 11.2 |
+| time | 1100000 | 16.8 | 7.9 |
+| app_time | 1100000 | 25.2 | 11.9 |
+| graphs | 32 | 0.0 | 0.0 |
+| uspo | 3520099 | 94.0 | 2.4 |
+| upos | 3520099 | 94.0 | 55.8 |
+| uosp | 3520099 | 94.0 | 57.1 |
+| gspo | 3520099 | 107.4 | 94.9 |
+| spog | 3520099 | 107.4 | 3.9 |
+
+oxigraph in-memory load: 2072.611 ms
+
+correctness: 0 mismatches over 41 queries (against Oxigraph and native)
+
+| workload | rows | SPARQL p50 (ms) | SPARQL max (ms) | native p50 (ms) | native max (ms) | Oxigraph p50 (ms) |
+|---|---|---|---|---|---|---|
+| W1 Bedrock incidents in us-east-1 | 1938 | 10.371 | 10.371 | 7.640 | 7.640 | 6.394 |
+| W2 10 min before incident (20) | 76 | 0.164 | 0.459 | 0.003 | 0.004 | 0.100 |
+| W3 blast radius, hub app | 19999 | 17.738 | 17.738 | 15.342 | 15.342 | 136.501 |
+| W3 blast radius (20 apps) | 42185 | 0.014 | 17.952 | 0.005 | 15.469 | 0.015 |
+
+re-harvest of one day graph (98268 quads), unchanged: removed 0, added 0 in 59.751 ms
+re-harvest with changed timestamps: removed 3276, added 3276 in 200.563 ms
+re-harvest back to the original: removed 3276, added 3276 in 388.568 ms
+after the replaces: W2 native rows 76, SPARQL rows 76 (must equal the W2 rows above)
