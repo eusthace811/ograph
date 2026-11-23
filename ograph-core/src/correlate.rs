@@ -46,6 +46,7 @@ impl Settings {
         for (name, v) in [("min_confidence", self.min_confidence), ("w_time", self.w_time), ("w_severity", self.w_severity), ("known_pair_prior", self.known_pair_prior)] {
             anyhow::ensure!((0.0..=1.0).contains(&v), "correlation setting {name} = {v} must be between 0 and 1");
         }
+        anyhow::ensure!(self.w_time + self.w_severity <= 1.0, "correlation settings w_time + w_severity = {} must not exceed 1", self.w_time + self.w_severity);
         anyhow::ensure!(self.prop_weights.iter().all(|w| w.is_finite() && *w >= 0.0), "correlation setting prop_weights must be finite and not negative");
         for (name, v) in [("window_s", self.window_s), ("signature_window_s", self.signature_window_s)] {
             anyhow::ensure!(v > 0, "correlation setting {name} = {v} must be positive");

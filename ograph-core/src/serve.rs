@@ -62,7 +62,7 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
         }
         "verdict" => {
             drop(snap);
-            let ev: Vec<String> = p.get("evidence").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect()).unwrap_or_default();
+            let ev: Vec<String> = p.get("evidence").and_then(Value::as_array).map(|a| a.iter().filter_map(|x| x.as_str().filter(|s| !s.trim().is_empty()).map(str::to_owned)).collect()).unwrap_or_default();
             anyhow::ensure!(!ev.is_empty(), "a verdict needs evidence");
             let accept = match arg(p, "decision")? {
                 "accept" => true,

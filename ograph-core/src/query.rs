@@ -113,11 +113,16 @@ pub fn blast(s: &Snapshot, app: &str, depth: usize) -> anyhow::Result<Blast> {
                         Some(st) => s.object(i, st)?.and_then(|v| literal(s, v)),
                         None => None,
                     };
-                    let closed = match resolved_at {
-                        Some(r) => s.object(i, r)?.is_some(),
-                        None => false,
+                    // A stated status decides, since a reopened incident can keep an old
+                    // resolved time; without one, a resolved time means closed.
+                    let closed = match state.as_deref() {
+                        Some(st) => st.eq_ignore_ascii_case("resolved") || st.eq_ignore_ascii_case("closed"),
+                        None => match resolved_at {
+                            Some(r) => s.object(i, r)?.is_some(),
+                            None => false,
+                        },
                     };
-                    if state.as_deref() != Some("resolved") && !closed {
+                    if !closed {
                         open.push(vocab::compact(&literal(s, i).unwrap_or_default()));
                     }
                 }
