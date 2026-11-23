@@ -1,0 +1,98 @@
+[
+ {
+  "ts": "1795242400.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "payments-api latency spiked right after the 2.3.1 deploy, but traces show the ledger-db connection pool exhausted on every request since 13:50, before the deploy. Raised pool size to 200, latency recovered. INC-4120"
+ },
+ {
+  "ts": "1795246000.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "checkout 500s started 2 min after we rolled out checkout v4.1.0, NullPointerException in the new PromoService code path, rolled back, errors gone. INC-4388"
+ },
+ {
+  "ts": "1795249600.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "someone flipped feature flag fast_auth=true in the prod config of auth-service at 09:12, p99 jumped from 80ms to 2s, flipped back, fixed"
+ },
+ {
+  "ts": "1795253200.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "orders-api pods OOMKilled during the traffic peak, HPA maxed out at 40 replicas, bumped max to 80 and the memory limit, stable now"
+ },
+ {
+  "ts": "1795256800.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "does anyone know who owns the ledger-db terraform module? need to request a quota change next week"
+ },
+ {
+  "ts": "1795260400.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "search-api timeouts again; the elasticsearch cluster shows red status, 2 data nodes lost disks. Infra replacing nodes. No deploys today. INC-4501"
+ },
+ {
+  "ts": "1795264000.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "notifications are delayed because MailRelay is returning 503s for every send since 10:00; our queue and workers look healthy"
+ },
+ {
+  "ts": "1795267600.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "TLS handshake failures between web-frontend and checkout after the load balancer certificate expired at midnight, renewed it"
+ },
+ {
+  "ts": "1795271200.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "the inventory migration dropped the reserved_qty column default, so new rows have nulls and checkout shows wrong stock"
+ },
+ {
+  "ts": "1795274800.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "we saw a burst of login attempts from one ASN against auth-service using leaked credentials, blocked the range and forced resets"
+ },
+ {
+  "ts": "1795278400.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "web-frontend DNS lookups for checkout failing intermittently from one zone, resolvers there were overloaded, moved to the other resolver pool"
+ },
+ {
+  "ts": "1795282000.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "ledger-db disk filled up at 03:00 because WAL archiving stopped, cleared space and restarted archiving"
+ },
+ {
+  "ts": "1795285600.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "payments-api started returning 400s after we changed the currency rounding setting in its config from 2 to 0 decimals, reverted the setting"
+ },
+ {
+  "ts": "1795289200.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "rolled out search-api 1.9.0 and the new query parser rejects quoted phrases, rolling back to 1.8.4"
+ },
+ {
+  "ts": "1795292800.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "CardRail authorization API latency went from 200ms to 4s for all merchants, their status page confirms an incident, nothing wrong on our side"
+ },
+ {
+  "ts": "1795296400.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "a bad batch file from the partner left duplicate order rows in orders-api, wrote a dedupe script and reconciled"
+ }
+]
