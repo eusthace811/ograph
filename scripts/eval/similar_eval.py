@@ -34,9 +34,9 @@ def main():
     print(f"accepted a true chain for {accepted}/{len(labels)} incidents (the others had no chain rooted at the true service)")
     hit1 = hit3 = n = 0; per = collections.Counter(); split = collections.defaultdict(lambda: [0, 0, 0])
     for cid, l in labels.items():
-        r = og("similar", l["incident"], "--top", "3")
+        r = og("similar", l["incident"], "--top", "1000")
         sims = json.loads(r.stdout) if r.stdout.strip() else []
-        sims = [s for s in sims if s["cause_apps"]]
+        sims = [s for s in sims if s["cause_apps"]][:3]
         if not sims:
             continue
         n += 1

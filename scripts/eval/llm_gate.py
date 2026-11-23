@@ -21,6 +21,8 @@ def rows(binp, root, q):
     if rc not in (0, 1): raise SystemExit(err)
     return json.loads(out)["rows"]
 
+MIN_ACCURACY = 0.85
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--bin", required=True); ap.add_argument("--demo", required=True)
     a = ap.parse_args(); binp = str(pathlib.Path(a.bin).resolve()); demo = pathlib.Path(a.demo).resolve()
@@ -75,7 +77,7 @@ def main():
              "invented app": any("catalog" in r[0] for r in q), "low confidence": any("below" in r[0] for r in q),
              "unconfirmed call": any(r[0].startswith("unconfirmed") for r in q)}
     print(f"   failure modes exercised: {modes}")
-    ok = all(modes.values()) and replay_ok and not bad_cat and not bad_sent and not unknown_app and not lowconf and not invented_edges and rc == 0
+    ok = hits >= MIN_ACCURACY * len(labels) and all(modes.values()) and replay_ok and not bad_cat and not bad_sent and not unknown_app and not lowconf and not invented_edges and rc == 0
     print("MODEL GATE:", "PASS" if ok else "FAIL")
     shutil.rmtree(tmp)
     sys.exit(0 if ok else 1)

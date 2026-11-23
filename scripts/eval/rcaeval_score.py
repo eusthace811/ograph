@@ -100,10 +100,10 @@ def main():
     wall = time.time() - t
     methods = modes + ["zmax", "sparql_meanshift"]
     def table(filt, title):
-        cids = [c for c in sorted(labels) if filt(labels[c]) and "error" not in results[c]]
+        cids = [c for c in sorted(labels) if filt(labels[c])]
         print(f"\n{title} ({len(cids)} cases)\n\n| method | AC@1 | AC@3 | Avg@5 |\n|---|---|---|---|")
         for m in methods:
-            s = [score(results[c][m], labels[c]["root"]) for c in cids]
+            s = [score(results[c].get(m, []), labels[c]["root"]) for c in cids]
             n = max(len(s), 1)
             print(f"| {m} | {sum(x['ac1'] for x in s)/n:.2f} | {sum(x['ac3'] for x in s)/n:.2f} | {sum(x['avg5'] for x in s)/n:.2f} |")
     errors = [c for c in results if "error" in results[c]]
@@ -139,7 +139,7 @@ def grid(a, labels, root, binp):
     for (ac1, ac3, avg5), w in results[:5]:
         print(f"  strength,chain,spread,onset={w}: AC@1 {ac1:.2f} AC@3 {ac3:.2f} Avg@5 {avg5:.2f}")
     best = results[0][1]
-    default = (0.4, 0.3, 0.2, 0.1)
+    default = (0.4, 0.5, 0.1, 0.0)
     for name, w in [("chosen on rep 1", best), ("shipped default", default)]:
         h = evaluate(held, w); t = evaluate(tune, w)
         print(f"{name} {w}: tuning AC@1 {t[0]:.2f}/{t[1]:.2f}/{t[2]:.2f}; held-out AC@1 {h[0]:.2f} AC@3 {h[1]:.2f} Avg@5 {h[2]:.2f}")
