@@ -237,6 +237,7 @@ struct Span {
 
 /// JSON lines of spans: `trace_id`/`traceID`, `span_id`/`spanID`, `parent_span_id`/`parentSpanID`,
 /// `service`/`serviceName`, `start_ms`/`startTimeMillis`, `duration_us`/`duration`, `status`/`statusCode`.
+/// A parent is looked up in the span's own trace; spans without a trace id form one trace.
 pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let mut b = Batch::new("traces", key, "span-stats-v1");
     let text = super::read_text(path)?;
@@ -244,9 +245,9 @@ pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     let mut services: Vec<Cow<str>> = Vec::new();
     let mut service_ids: FxHashMap<Cow<str>, u32> = FxHashMap::default();
     let mut spans = Vec::with_capacity(records.len());
-    let mut by_id: FxHashMap<Cow<str>, usize> = FxHashMap::with_capacity_and_hasher(records.len(), Default::default());
+    let mut by_id: FxHashMap<(Option<Cow<str>>, Cow<str>), usize> = FxHashMap::with_capacity_and_hasher(records.len(), Default::default());
     let mut parents = Vec::with_capacity(records.len());
-    let keys = ["service", "serviceName", "start_ms", "startTimeMillis", "duration_us", "duration", "status", "statusCode", "span_id", "spanID", "parent_span_id", "parentSpanID"];
+    let keys = ["service", "serviceName", "start_ms", "startTimeMillis", "duration_us", "duration", "status", "statusCode", "span_id", "spanID", "parent_span_id", "parentSpanID", "trace_id", "traceID"];
     for (i, record) in records.into_iter().enumerate() {
         let f = json_fields(record, keys)?;
         let (Some(svc), Some(start)) = (first_str(&f[0..2]), f[2..4].iter().flatten().find_map(|v| raw_time(v))) else { continue };
@@ -255,10 +256,11 @@ pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
             Some(s) => matches!(s.to_lowercase().as_str(), "error" | "2" | "status_code_error"),
             None => serde_json::from_str::<i64>(v.get()).is_ok_and(|n| n == 2 || n >= 400),
         });
+        let trace = first_str(&f[12..14]);
         if let Some(id) = first_str(&f[8..10]) {
-            by_id.insert(id, spans.len());
+            by_id.insert((trace.clone(), id), spans.len());
         }
-        parents.push(first_str(&f[10..12]));
+        parents.push(first_str(&f[10..12]).map(|p| (trace, p)));
         let service = *service_ids.entry(svc).or_insert_with_key(|s| {
             services.push(s.clone());
             services.len() as u32 - 1
@@ -341,5 +343,30 @@ mod tests {
         let found = episodes(&series, &Detect::default(), false);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].start_ms, 40 * 60_000);
+    }
+
+    #[test]
+    fn a_parent_span_is_found_only_in_its_own_trace() {
+        let spans = [
+            r#"{"trace_id": "t1", "span_id": "p", "service": "checkout", "start_ms": 1795386000000}"#,
+            r#"{"trace_id": "t1", "span_id": "c", "parent_span_id": "p", "service": "ledger-db", "start_ms": 1795386000000}"#,
+            r#"{"trace_id": "t2", "span_id": "p", "service": "search-api", "start_ms": 1795386000000}"#,
+            r#"{"span_id": "q", "service": "web", "start_ms": 1795386000000}"#,
+            r#"{"span_id": "r", "parent_span_id": "q", "service": "pay", "start_ms": 1795386000000}"#,
+        ];
+        let path = std::env::temp_dir().join(format!("ograph-trace-test-{}.json", std::process::id()));
+        std::fs::write(&path, spans.join("\n")).unwrap();
+        let b = traces(&path, "t.json", &Detect::default()).unwrap();
+        let name = |e: &EntityRef| match e {
+            EntityRef::Provisional { name, .. } => name.clone(),
+            EntityRef::Known(n) => n.to_string(),
+        };
+        let edges: Vec<(String, String)> = b
+            .facts
+            .iter()
+            .filter(|f| f.predicate.as_str() == ops::DEPENDS_ON)
+            .map(|f| (name(&f.subject), match &f.object { crate::model::Object::Entity(e) => name(e), o => format!("{o:?}") }))
+            .collect();
+        assert_eq!(edges, [("checkout".to_owned(), "ledger-db".to_owned()), ("web".to_owned(), "pay".to_owned())]);
     }
 }

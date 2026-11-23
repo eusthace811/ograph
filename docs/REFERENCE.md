@@ -75,8 +75,10 @@ timeout_s = 90
 
 Times may be any of these:
 
-- Unix seconds, milliseconds, microseconds or nanoseconds, as a number or a numeric string
+- Unix seconds, milliseconds, microseconds or nanoseconds, as a number or a numeric string. The magnitude picks the unit: below 10^10 is seconds, below 10^13 milliseconds, below 10^16 microseconds, and anything larger nanoseconds
 - ISO 8601 with any fraction and offset (`Z`, `+05:30`, `+0530`, `+05` or a trailing ` UTC`); no offset means UTC
+
+A time must fall between 1971-01-01 and 2200-01-01. ograph rejects any other value, such as `nan`, `inf`, a bare year (`2026`) or a compact date (`20261122`), and treats the record as having no time.
 
 JSON inputs may be a JSON array, one object, or JSON lines.
 
@@ -88,10 +90,10 @@ JSON inputs may be a JSON array, one object, or JSON lines.
 | `deployments` | `{"service", "version", "at"}` | `evt:Deployment` |
 | `config_changes` | `{"service", "key", "at"}` | `evt:ConfigChange` |
 | `alerts` | Alertmanager webhook (`{"alerts": [{"labels": {...}, "startsAt"}]}`) or one alert per line | `evt:Alert` with mapped severity |
-| `incidents` | `{"id", "title", "service", "opened", "severity", "status", "resolved", "mitigation", "fault"}` | `inc:Incident` |
+| `incidents` | `{"id", "title", "service", "opened", "severity", "status", "resolved", "mitigation", "fault"}`. The id may be a string or an integer. An incident may appear in several records and files: each field comes from the last record that states it, in file path order and then record order, so name date-stamped exports so that they sort by date | `inc:Incident` |
 | `logs` | `{"ts", "service", "message", "level"?}`, or plain text with leading timestamps (the service is then the file name) | `evt:LogError` per error-template burst. Raw lines stay in the file |
 | `metrics` | CSV with a `time` column and `<service>_<metric>` columns | `evt:MetricAnomaly` per robust-z episode. Points stay in the file |
-| `traces` | `{"trace_id", "span_id", "parent_span_id", "service", "start_ms", "duration_us", "status"}`. The RCAEval and Jaeger field names also work | `evt:TraceFailed` and `evt:TraceSlow` per minute, plus `ops:dependsOn` inferred from parent spans |
+| `traces` | `{"trace_id", "span_id", "parent_span_id", "service", "start_ms", "duration_us", "status"}`. The RCAEval and Jaeger field names also work. A span's parent is looked up in the span's own trace. Spans without a trace id count as one trace | `evt:TraceFailed` and `evt:TraceSlow` per minute, plus `ops:dependsOn` inferred from parent spans |
 | `discussions` | A Slack export: `[{"ts", "thread_ts"?, "channel", "text"}]` | `disc:Thread`, with incident references by regex. With a model, it also proposes `disc:category`, `disc:sentiment`, `disc:about` and `ops:dependsOn`. A category needs a quote from the thread that states the cause, or it becomes UNKNOWN. A dependency needs a quote that names both applications |
 | `news` | `{"at", "title", "summary", "mentions": [names]}` | `evt:NewsItem` and `evt:mentions` |
 
@@ -116,4 +118,4 @@ Enrichers never write to the store. A batch goes through these checks in order:
 9. **Evidence.** Each fact needs evidence that names a record this harvest read.
 10. **Incremental SHACL.** Shapes run on the nodes the batch touches, seen as the store will be after the commit. They are the derived domain, range, datatype, vocabulary and functional shapes, plus `shapes.ttl`. A violation that no single fact caused, such as a missing required value, rejects the node. A bad value that another graph holds, such as a verdict's cause, is not the batch's fault and rejects nothing. The checks repeat until no violation is left.
 
-Rejected facts go to `g:quarantine/<source>/<key>` with their reason. Accepted facts replace `g:harvest/<source>/<key>`, and only the difference is written, so an unchanged re-harvest writes one quad: the harvest time. The key is the file's path relative to the workspace, percent-encoded but otherwise kept, so two files never share a graph. A file that cannot be read at all, or is empty, keeps its last good facts and is marked degraded. A full harvest clears the graphs of files that no longer exist, of sources no longer configured and of incidents that no longer have chains; verdicts are never cleared, and `--only KIND` clears only that kind's and fails on a kind that is not configured. Input graphs are cleared before any batch is checked, and chain graphs after correlation, so one harvest leaves the store as two would. A source whose path cannot be listed reports one degraded batch and keeps all its graphs.
+Rejected facts go to `g:quarantine/<source>/<key>` with their reason. Accepted facts replace `g:harvest/<source>/<key>`, and only the difference is written, so an unchanged re-harvest writes one quad: the harvest time. The key is the file's path relative to the workspace, percent-encoded but otherwise kept, so two files never share a graph. A file that cannot be read at all, or is empty, keeps its last good facts and is marked degraded. A full harvest clears the graphs of files that no longer exist, of sources no longer configured and of incidents that no longer have chains; verdicts are never cleared, and `--only KIND` clears only that kind's and fails on a kind that is not configured. Input graphs are cleared before any batch is checked, and chain graphs after correlation, so one harvest leaves the store as two would. A source path or a directory below it that cannot be listed reports one degraded batch and keeps the graphs of every file under it.

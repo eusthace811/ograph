@@ -1,7 +1,8 @@
 //! Model calls through a configured command (default: headless `pi`). ograph holds no
 //! credentials and no provider code: the prompt goes to the command's standard input and JSON
-//! comes back on standard output. Answers are cached by content hash, so a re-harvest makes no
-//! new calls and gives the same triples.
+//! comes back on standard output. Answers that hold JSON are cached by content hash, so a
+//! re-harvest makes no new calls and gives the same triples; any other answer (a rate-limit
+//! notice, a refusal) is asked again next time.
 
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -51,7 +52,9 @@ impl Llm {
         let mut cache = HashMap::new();
         if let Ok(text) = std::fs::read_to_string(&cache_path) {
             for line in text.lines() {
-                if let Ok(e) = serde_json::from_str::<Entry>(line) {
+                if let Ok(e) = serde_json::from_str::<Entry>(line)
+                    && first_json(&e.answer).is_some()
+                {
                     cache.insert(e.key, e.answer);
                 }
             }
@@ -75,6 +78,9 @@ impl Llm {
         }
         // One retry: a timeout is usually the transport, not the question.
         let answer = self.run(prompt, input).or_else(|_| self.run(prompt, input))?;
+        if first_json(&answer).is_none() {
+            return Ok(answer);
+        }
         let mut cache = self.cache.lock().unwrap();
         cache.insert(key.clone(), answer.clone());
         if let Some(dir) = self.cache_path.parent() {
@@ -216,6 +222,21 @@ mod tests {
         let t = std::time::Instant::now();
         assert_eq!(llm.run("p", "x").unwrap(), "hi");
         assert!(t.elapsed().as_secs() < 5);
+    }
+
+    #[test]
+    fn an_answer_that_is_not_json_is_asked_again() {
+        let dir = std::env::temp_dir().join(format!("ograph-llm-test-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let calls = dir.join("calls");
+        let script = format!("cat >/dev/null; echo x >> '{}'; echo 'Rate limit reached'", calls.display());
+        let config = LlmConfig { command: vec!["sh".into(), "-c".into(), script], model: "t".into(), parallel: 1, timeout_s: 5 };
+        for _ in 0..2 {
+            let llm = Llm::new(config.clone(), dir.join("llm.jsonl"));
+            assert_eq!(llm.ask("p", "x").unwrap(), "Rate limit reached");
+        }
+        assert_eq!(std::fs::read_to_string(&calls).unwrap().lines().count(), 2);
     }
 
     #[test]
