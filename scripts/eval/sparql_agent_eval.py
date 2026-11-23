@@ -9,7 +9,7 @@ columns (extra columns are allowed, extra or missing rows are not). Doubles comp
 are not.
 
 --no-skill runs the same agent without the skill, to measure what the skill adds."""
-import argparse, atexit, concurrent.futures, itertools, json, os, pathlib, re, shutil, statistics, subprocess, tempfile, time
+import argparse, atexit, concurrent.futures, decimal, itertools, json, os, pathlib, re, shutil, statistics, subprocess, tempfile, time
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--bin", required=True); ap.add_argument("--demo", required=True)
@@ -47,8 +47,7 @@ def cell(c):
     # --json prints a double or float as a typed literal and an integer or decimal bare.
     m = re.fullmatch(r'"(.*)"\^\^<http://www\.w3\.org/2001/XMLSchema#(?:double|float)>', c)
     if not m: return NAMES.get(c, c)
-    x = float(m[1])
-    return str(int(x)) if x.is_integer() else str(x)
+    return format(decimal.Decimal(m[1]).normalize(), "f")
 def named(rs): return [[cell(c) for c in r] for r in rs]
 
 def same(got, gold):

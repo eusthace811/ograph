@@ -154,7 +154,8 @@ case "$1" in
 
   vendor)  shift
            # Quiet on success: cargo's own advice to edit .cargo/config.toml does not apply to ./x.
-           if ! vendored="$(run_cargo vendor --locked --versioned-dirs --respect-source-config "$VENDOR_DIR" "$@" 2>&1)"; then
+           if ! vendored="$(run_cargo vendor --locked --versioned-dirs --respect-source-config \
+             "$VENDOR_DIR" "$@" 2>&1)"; then
              printf '%s\n' "$vendored" >&2; exit 1
            fi
            echo "vendored every locked crate into ./vendor; ./x builds from it offline until you delete it" ;;

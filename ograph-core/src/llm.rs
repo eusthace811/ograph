@@ -95,7 +95,8 @@ impl Llm {
         let (cmd, args) = self.config.command.split_first().ok_or_else(|| anyhow::anyhow!("empty llm command"))?;
         let mut command = Command::new(cmd);
         #[cfg(windows)]
-        let spawned_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+        // Less a second: Windows stamps process creation from a clock that lags by up to ~16 ms.
+        let spawned_ms = std::time::UNIX_EPOCH.elapsed().map_or(0, |d| d.as_millis()).saturating_sub(1000);
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut command, 0);
         let mut child = command
