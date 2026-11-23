@@ -3,7 +3,7 @@
 .DS_Store
 spikes/redb-quadstore/target/
 spikes/redb-quadstore/data/store.redb
-.ograph/store.redb
-.ograph/lab.html
+**/.ograph/store.redb
+**/.ograph/lab.html
 docs/*.pdf
 examples/demo/catalog/
