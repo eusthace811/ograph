@@ -163,6 +163,8 @@ a:focus-visible, .nav a:focus-visible { outline: 2px solid var(--accent); outlin
 .nav::-webkit-scrollbar { display: none; }
 .nav .mark { font: 600 15px/1 var(--font-display); letter-spacing: -.01em; color: var(--fg); margin-right: auto; padding-right: 16px; }
 .nav a { flex: none; padding: 8px 12px; border-radius: 999px; font-size: 13.5px; line-height: 1; color: var(--fg-2); }
+.nav a.other { color: var(--accent); font-weight: 600; }
+.deeper { font-size: 14px; color: var(--fg-3); }
 .nav a:hover { background: var(--track); color: var(--fg); text-decoration: none; }
 
 /* ---------- title block ---------- */
@@ -391,12 +393,13 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
   <a href="#results">Results</a>
   <a href="#limits">Limits</a>
   <a href="#try">Try it</a>
+  <a class="other" href="ograph-internals.html">Internals</a>
 </nav>
 
 <header class="title">
   <p class="kicker">Technical explainer</p>
   <h1>One graph that explains an incident</h1>
-  <p class="dek">ograph reads what your operations tools already export, keeps the facts that matter, and answers the questions an outage raises. This page explains how, without assuming you know what a knowledge graph is.</p>
+  <p class="dek">ograph reads what your operations tools already export, keeps the facts that matter, and answers the questions an outage raises. This page explains how, without assuming you know what a knowledge graph is. Engineers who want the mechanics can go to <a href="ograph-internals.html">ograph internals</a>.</p>
   <ul class="meta">
     <li>ograph 0.1.0</li>
     <li>November 2026</li>
@@ -485,6 +488,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
   <h3>The ontology is the dictionary</h3>
   <p>If anyone could write any sentence, the graph would fill with nonsense: a service called <code>pay-gw</code> here and <code>payments-api</code> there, a severity of &ldquo;bad&rdquo; in one file and <code>SEV2</code> in another. An <strong>ontology</strong> prevents that. It is a short document that lists the kinds of things that may exist, the relationships allowed between them, and the exact words permitted for fields such as severity.</p>
   <p>ograph&rsquo;s ontology is small on purpose. It names applications, teams, regions, business processes and vendors. It names ten kinds of event, such as a deployment, an alert or a burst of error logs. It names incidents, chat threads, candidate causes and human verdicts. It models only what the four questions need.</p>
+  <p class="deeper">Going deeper: <a href="ograph-internals.html#model">the schema graph, identifiers and named graphs</a></p>
 </section>
 
 <!-- ================= 3 ================= -->
@@ -515,6 +519,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
     </table>
   </div>
   <p>The second row matters most for AI agents. Twelve episodes fit in a model&rsquo;s context with room to spare. 5.5 MiB of raw records does not fit at all.</p>
+  <p class="deeper">Going deeper: <a href="ograph-internals.html#detectors">how the detectors find an episode</a></p>
 </section>
 
 <!-- ================= 4 ================= -->
@@ -555,6 +560,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
     <li>A name such as <code>inventory-service-uk</code> is not quietly matched to <code>inventory-service-eu</code>, even though the two are 98% alike. A plain misspelling still resolves.</li>
   </ul>
   <p>In testing, a deliberately broken model produced invented services, invented quotes and words outside the vocabulary. None of it was stored. ograph also holds no model credentials of its own, and it caches every model answer, so reading the same files twice makes no model calls.</p>
+  <p class="deeper">Going deeper: <a href="ograph-internals.html#gateway">the six checks, name matching and incremental SHACL</a></p>
 </section>
 
 <!-- ================= 5 ================= -->
@@ -704,6 +710,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
 <pre><span class="p">$</span> ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept \
     --evidence PM-5377 --by "jane (oncall)"</pre>
   </div>
+  <p class="deeper">Going deeper: <a href="ograph-internals.html#correlation">how chains are searched and scored, link by link</a></p>
 </section>
 
 <!-- ================= 6 ================= -->
@@ -753,6 +760,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
     </table>
   </div>
   <p>Every number on this page comes from a script or benchmark in the repository, with its raw output saved in <a href="https://github.com/eusthace811/ograph/tree/main/docs/evidence">docs/evidence/</a>. <a href="https://github.com/eusthace811/ograph/blob/main/docs/EVIDENCE.md">EVIDENCE.md</a> explains each one, including the experiments that failed.</p>
+  <p class="deeper">Going deeper: <a href="ograph-internals.html#store">the store layout and its indexes</a></p>
 </section>
 
 <!-- ================= 7 ================= -->
@@ -760,7 +768,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
   <h2><span class="n">7</span>What it does not do</h2>
   <ul class="plain">
     <li><strong>It does not decide the cause.</strong> It ranks candidates and shows its evidence. A person makes the call.</li>
-    <li><strong>It needs a service catalog.</strong> Without one, every fact about a service is quarantined as unknown and the questions have nothing to answer.</li>
+    <li><strong>It needs a service catalog, and ogrep to read it.</strong> ogrep is a companion code-search tool that already understands Backstage, Compose, Kubernetes and Prometheus files, so ograph asks it for the list of services instead of parsing those formats itself. Without a catalog, every fact about a service is quarantined as unknown and the questions have nothing to answer. <a href="ograph-internals.html#ogrep">Why ogrep</a>.</li>
     <li><strong>The headline score comes from one benchmark</strong> of an 11-service demo system. Six of the 90 cases are still missed, and network faults are harder: 0.80 for packet loss and 0.87 for delay.</li>
     <li><strong>One ranking rule was written after studying all 90 cases,</strong> so the held-back cases are a weaker check for that rule than for the rest.</li>
     <li><strong>The language-model checks are small.</strong> Sixteen chat threads and 21 questions, labelled by the author. They are smoke tests.</li>
@@ -813,6 +821,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
   <ol class="refs">
     <li>Netflix Technology Blog. &ldquo;Ontology-Driven Observability: Building an End-to-End Knowledge Graph at Netflix Scale.&rdquo; October 2026. The design ograph follows.</li>
     <li>RCAEval, dataset RE2-OB. 90 labeled failures with metrics, logs and traces. MIT licensed.</li>
+    <li><a href="ograph-internals.html">ograph internals</a>. The technical companion to this page: the store, the gateway, the detectors and the correlation engine.</li>
     <li><a href="https://github.com/eusthace811/ograph/blob/main/docs/EVIDENCE.md">docs/EVIDENCE.md</a>. Every measurement behind this page, with its command.</li>
     <li><a href="https://github.com/eusthace811/ograph/blob/main/docs/PLAN.md">docs/PLAN.md</a>. The design decisions and the alternatives that were measured and rejected.</li>
     <li><a href="https://github.com/eusthace811/ograph/blob/main/docs/GUIDE.md">docs/GUIDE.md</a> and <a href="https://github.com/eusthace811/ograph/blob/main/docs/REFERENCE.md">docs/REFERENCE.md</a>. How to install, configure and use ograph.</li>

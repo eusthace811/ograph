@@ -1,0 +1,1351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ograph internals</title>
+<meta name="description" content="How ograph works inside: the data model, the redb quad store, the validation gateway, the detectors, the correlation engine and the query paths, with the measurements behind each choice.">
+<style>
+/* Layout: one left-aligned reading column (680px) inside a 920px page; figures are
+   glass sheets that run the full 920px over a fixed field of soft colour. */
+:root {
+  --bg: #eef1f6;
+  --fg: #1d1d1f;
+  --fg-2: #515154;
+  --fg-3: #86868b;
+  --accent: #0071e3;
+  --accent-soft: rgba(0, 113, 227, .14);
+  --hot: #d70015;
+  --hot-soft: rgba(215, 0, 21, .10);
+  --ok: #1d7a36;
+  --ok-soft: rgba(29, 122, 54, .12);
+  --warn: #b25000;
+  --warn-soft: rgba(178, 80, 0, .12);
+  --hair: rgba(0, 0, 0, .10);
+  --track: rgba(0, 0, 0, .06);
+  --glass: rgba(255, 255, 255, .58);
+  --glass-strong: rgba(255, 255, 255, .78);
+  --glass-edge: rgba(255, 255, 255, .85);
+  --glass-shine: rgba(255, 255, 255, .9);
+  --shadow-a: rgba(15, 25, 50, .05);
+  --shadow-b: rgba(15, 25, 50, .09);
+  --code-bg: rgba(255, 255, 255, .5);
+  --orb-1: rgba(110, 168, 255, .50);
+  --orb-2: rgba(110, 222, 208, .38);
+  --orb-3: rgba(255, 190, 150, .40);
+
+  --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", Inter, system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", "Segoe UI", Inter, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 22px;
+  --radius-s: 12px;
+  --col: 680px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0b0f;
+    --fg: #f5f5f7;
+    --fg-2: #b6b6bd;
+    --fg-3: #85858c;
+    --accent: #2997ff;
+    --accent-soft: rgba(41, 151, 255, .20);
+    --hot: #ff453a;
+    --hot-soft: rgba(255, 69, 58, .18);
+    --ok: #30d158;
+    --ok-soft: rgba(48, 209, 88, .16);
+    --warn: #ff9f0a;
+    --warn-soft: rgba(255, 159, 10, .16);
+    --hair: rgba(255, 255, 255, .13);
+    --track: rgba(255, 255, 255, .08);
+    --glass: rgba(34, 38, 50, .52);
+    --glass-strong: rgba(34, 38, 50, .78);
+    --glass-edge: rgba(255, 255, 255, .13);
+    --glass-shine: rgba(255, 255, 255, .10);
+    --shadow-a: rgba(0, 0, 0, .25);
+    --shadow-b: rgba(0, 0, 0, .35);
+    --code-bg: rgba(0, 0, 0, .28);
+    --orb-1: rgba(36, 92, 214, .42);
+    --orb-2: rgba(16, 128, 124, .28);
+    --orb-3: rgba(168, 76, 60, .26);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a0b0f;
+  --fg: #f5f5f7;
+  --fg-2: #b6b6bd;
+  --fg-3: #85858c;
+  --accent: #2997ff;
+  --accent-soft: rgba(41, 151, 255, .20);
+  --hot: #ff453a;
+  --hot-soft: rgba(255, 69, 58, .18);
+  --ok: #30d158;
+  --ok-soft: rgba(48, 209, 88, .16);
+  --warn: #ff9f0a;
+  --warn-soft: rgba(255, 159, 10, .16);
+  --hair: rgba(255, 255, 255, .13);
+  --track: rgba(255, 255, 255, .08);
+  --glass: rgba(34, 38, 50, .52);
+  --glass-strong: rgba(34, 38, 50, .78);
+  --glass-edge: rgba(255, 255, 255, .13);
+  --glass-shine: rgba(255, 255, 255, .10);
+  --shadow-a: rgba(0, 0, 0, .25);
+  --shadow-b: rgba(0, 0, 0, .35);
+  --code-bg: rgba(0, 0, 0, .28);
+  --orb-1: rgba(36, 92, 214, .42);
+  --orb-2: rgba(16, 128, 124, .28);
+  --orb-3: rgba(168, 76, 60, .26);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 84px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 17px/1.6 var(--font-text);
+  -webkit-font-smoothing: antialiased;
+}
+/* The field of colour the glass sits on. Fixed, so sheets slide over it. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(62vmax 62vmax at 8% -12%, var(--orb-1), transparent 62%),
+    radial-gradient(52vmax 52vmax at 104% 22%, var(--orb-2), transparent 62%),
+    radial-gradient(60vmax 60vmax at 38% 112%, var(--orb-3), transparent 62%),
+    var(--bg);
+}
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
+  padding-block: 0 96px;
+}
+.prose section > * { max-width: var(--col); }
+.prose section > .wide { max-width: none; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, .nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--glass-shine), 0 1px 2px var(--shadow-a), 0 14px 36px var(--shadow-b);
+}
+
+/* ---------- navigation ---------- */
+.nav {
+  position: sticky;
+  top: max(12px, env(safe-area-inset-top, 0px));
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 6px 8px 6px 18px;
+  border-radius: 999px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--glass-strong);
+}
+.nav::-webkit-scrollbar { display: none; }
+.nav .mark { font: 600 15px/1 var(--font-display); letter-spacing: -.01em; color: var(--fg); margin-right: auto; padding-right: 16px; }
+.nav a { flex: none; padding: 8px 12px; border-radius: 999px; font-size: 13.5px; line-height: 1; color: var(--fg-2); }
+.nav a:hover { background: var(--track); color: var(--fg); text-decoration: none; }
+
+/* ---------- title block ---------- */
+.title { padding-block: 72px 8px; }
+.kicker { font: 600 13px/1 var(--font-text); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); margin: 0 0 18px; }
+h1 {
+  font: 700 clamp(2.5rem, 7vw, 4.25rem)/1.04 var(--font-display);
+  letter-spacing: -.035em;
+  margin: 0 0 20px;
+  max-width: 14ch;
+  text-wrap: balance;
+}
+.dek { font: 400 clamp(1.15rem, 2.4vw, 1.4rem)/1.4 var(--font-display); letter-spacing: -.012em; color: var(--fg-2); max-width: 34em; margin: 0 0 22px; text-wrap: pretty; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; color: var(--fg-3); margin: 0; padding: 0; list-style: none; }
+
+.abstract { margin-top: 40px; padding: 26px 28px; }
+.abstract h2 { font: 600 13px/1 var(--font-text); letter-spacing: .08em; text-transform: uppercase; color: var(--fg-3); margin: 0 0 12px; }
+.abstract p { margin: 0; max-width: 46em; }
+
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); margin: 24px 0 0; border-top: 1px solid var(--hair); }
+.stats div { padding: 18px 18px 2px 0; }
+.stats div + div { padding-left: 18px; border-left: 1px solid var(--hair); }
+.stats dt { font: 700 clamp(1.5rem, 3.4vw, 2.1rem)/1.1 var(--font-display); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.stats dd { margin: 6px 0 0; font-size: 13.5px; line-height: 1.4; color: var(--fg-2); }
+
+/* ---------- sections ---------- */
+section { padding-top: 72px; }
+h2 { font: 700 clamp(1.6rem, 3.6vw, 2.1rem)/1.14 var(--font-display); letter-spacing: -.028em; margin: 0 0 16px; text-wrap: balance; }
+h2 .n { display: block; font: 600 13px/1 var(--font-text); letter-spacing: .08em; color: var(--fg-3); margin-bottom: 12px; }
+h3 { font: 600 1.2rem/1.3 var(--font-display); letter-spacing: -.015em; margin: 36px 0 8px; }
+p { margin: 0 0 16px; text-wrap: pretty; }
+strong { font-weight: 600; }
+code { font: .86em/1.4 var(--font-mono); background: var(--track); padding: .12em .4em; border-radius: 6px; white-space: nowrap; }
+ul.plain { margin: 0 0 16px; padding-left: 1.2em; }
+ul.plain li { margin-bottom: 8px; }
+
+figure { margin: 30px 0 34px; padding: 24px; }
+figcaption { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--hair); font-size: 13.5px; line-height: 1.5; color: var(--fg-2); }
+figcaption b { color: var(--fg); font-weight: 600; }
+.scroll { overflow-x: auto; }
+.swipe { display: none; margin: 10px 0 0; font-size: 12px; color: var(--fg-3); }
+svg { display: block; width: 100%; height: auto; }
+svg text { font-family: var(--font-text); fill: var(--fg-2); }
+svg .mono { font-family: var(--font-mono); }
+
+/* ---------- Figure 1: pipeline ---------- */
+.flow { display: grid; grid-template-columns: 1.25fr auto 1fr auto 1fr auto 1.2fr; gap: 14px; align-items: stretch; }
+.flow .step { min-width: 0; padding: 16px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-edge); }
+.flow .step h4 { margin: 0 0 4px; font: 600 15px/1.25 var(--font-display); }
+.flow .step p { margin: 0 0 10px; font-size: 13px; line-height: 1.45; color: var(--fg-2); }
+.flow .arrow { align-self: center; color: var(--fg-3); font-size: 20px; line-height: 1; }
+.flow .arrow::before { content: "\2192"; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.chips li { font: 12px/1 var(--font-mono); padding: 6px 8px; border-radius: 8px; background: var(--track); color: var(--fg-2); }
+.flow .q { margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.4; }
+.flow .q li { padding: 6px 0; border-top: 1px solid var(--hair); }
+.flow .q li:first-child { border-top: 0; padding-top: 0; }
+.flow .step.key { background: var(--accent-soft); }
+
+/* ---------- Figure 2: sentences ---------- */
+.facts { display: grid; gap: 10px; }
+.fact { display: grid; grid-template-columns: 1fr 1fr 1fr 1.1fr; gap: 6px; }
+.fact span { min-width: 0; overflow-wrap: anywhere; padding: 11px 12px; border-radius: 10px; font: 13px/1.3 var(--font-mono); background: var(--track); }
+.fact .v { background: transparent; color: var(--fg-2); font-style: italic; font-family: var(--font-text); font-size: 14px; }
+.fact .src { background: var(--accent-soft); color: var(--accent); }
+.fact.head span { background: transparent; padding-block: 0 2px; font: 600 11.5px/1 var(--font-text); letter-spacing: .07em; text-transform: uppercase; color: var(--fg-3); }
+
+/* ---------- Figure 3: scale ---------- */
+.scale { display: grid; grid-template-columns: auto 1fr; gap: 28px 36px; align-items: center; }
+.sq { width: 300px; max-width: 100%; aspect-ratio: 1; border-radius: 10px; background: var(--accent-soft); border: 1px solid var(--accent); display: grid; place-content: end start; padding: 14px; }
+.sq b, .dotrow b { display: block; font: 700 1.5rem/1.1 var(--font-display); letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+.sq small, .dotrow small { font-size: 13px; color: var(--fg-2); }
+.dotrow { display: flex; align-items: center; gap: 16px; }
+.dot { flex: none; width: 3px; height: 3px; background: var(--accent); }
+.dotrow .lead { flex: none; width: 34px; height: 1px; background: var(--fg-3); }
+
+table { width: 100%; border-collapse: collapse; font-size: 14.5px; line-height: 1.45; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; vertical-align: top; padding: 11px 16px 11px 0; border-top: 1px solid var(--hair); }
+thead th { border-top: 0; padding-top: 0; font: 600 11.5px/1.3 var(--font-text); letter-spacing: .07em; text-transform: uppercase; color: var(--fg-3); }
+tbody th { font-weight: 400; color: var(--fg-2); }
+td.win { font-weight: 600; }
+.tablewrap { overflow-x: auto; margin: 26px 0; }
+.tablewrap table { min-width: 520px; }
+
+/* ---------- Figure 4: gateway ---------- */
+.gate { display: grid; grid-template-columns: 1fr auto 1.3fr auto 1.2fr; gap: 14px; align-items: center; }
+.gate .box { min-width: 0; padding: 16px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-edge); font-size: 14px; line-height: 1.45; }
+.gate .box h4 { margin: 0 0 6px; font: 600 15px/1.25 var(--font-display); }
+.gate ol { margin: 0; padding-left: 1.2em; }
+.gate ol li { margin-bottom: 4px; }
+.gate .out { display: grid; gap: 10px; }
+.gate .yes { background: var(--ok-soft); border-color: transparent; }
+.gate .no { background: var(--hot-soft); border-color: transparent; }
+.gate .yes h4 { color: var(--ok); }
+.gate .no h4 { color: var(--hot); }
+.gate .arrow { color: var(--fg-3); font-size: 20px; line-height: 1; }
+.gate .arrow::before { content: "\2192"; }
+.reason { font: 12.5px/1.45 var(--font-mono); color: var(--fg-2); }
+
+/* ---------- terminal ---------- */
+.term { margin: 22px 0 28px; padding: 0; overflow: hidden; }
+.term header { padding: 10px 18px; font: 12px/1 var(--font-mono); color: var(--fg-3); border-bottom: 1px solid var(--hair); }
+.term pre { margin: 0; padding: 16px 18px 18px; overflow-x: auto; font: 12.5px/1.6 var(--font-mono); color: var(--fg); background: var(--code-bg); }
+.term .c { color: var(--fg-3); }
+.term .p { color: var(--accent); }
+.term .h { color: var(--hot); font-weight: 600; }
+
+/* ---------- bar charts ---------- */
+.bars { display: grid; gap: 10px; }
+.bar { display: grid; grid-template-columns: 15.5rem 1fr 3.4rem; gap: 12px; align-items: center; font-size: 14px; }
+.bar .lab { color: var(--fg-2); min-width: 0; }
+.bar .lab small { display: block; font-size: 12px; color: var(--fg-3); }
+.bar .trk { height: 14px; border-radius: 4px; background: var(--track); }
+.bar .fill { display: block; height: 100%; border-radius: 4px; background: var(--fg-3); }
+.bar .val { font-variant-numeric: tabular-nums; text-align: right; }
+.bar.us .lab { color: var(--fg); font-weight: 600; }
+.bar.us .fill { background: var(--accent); }
+.bar.us .val { font-weight: 700; }
+.axis { display: grid; grid-template-columns: 15.5rem 1fr 3.4rem; gap: 12px; font-size: 12px; color: var(--fg-3); margin-top: 6px; }
+.axis div { display: flex; justify-content: space-between; grid-column: 2; }
+
+.chains .bar { grid-template-columns: 2rem 1fr 3.4rem; align-items: start; }
+.chains .rank { font: 700 1.1rem/1.2 var(--font-display); color: var(--fg-3); }
+.chains .us .rank { color: var(--accent); }
+.chains .who { font-weight: 600; margin-bottom: 6px; }
+.chains .path { font: 12.5px/1.5 var(--font-mono); color: var(--fg-2); margin-top: 8px; overflow-wrap: anywhere; }
+.chains .val { font-weight: 600; }
+
+/* ---------- callouts, loop, glossary ---------- */
+.note { margin: 24px 0; padding: 18px 20px; border-radius: 16px; background: var(--warn-soft); font-size: 15.5px; }
+.note b { color: var(--warn); }
+.note.rule { background: var(--track); }
+.note.rule b { color: var(--fg); }
+.formula { display: block; margin: 10px 0 0; padding: 0; background: none; font: 14px/1.6 var(--font-mono); white-space: normal; overflow-wrap: anywhere; }
+
+.loop { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.loop li { counter-increment: s; min-width: 0; padding: 16px; border-radius: 16px; background: var(--glass); border: 1px solid var(--glass-edge); font-size: 13.5px; line-height: 1.45; color: var(--fg-2); }
+.loop li::before { content: counter(s); display: block; font: 700 1.1rem/1 var(--font-display); color: var(--fg-3); margin-bottom: 10px; }
+.loop li b { display: block; color: var(--fg); font: 600 15px/1.25 var(--font-display); margin-bottom: 4px; }
+.loop li.human { background: var(--ok-soft); border-color: transparent; }
+.loop li.human::before { color: var(--ok); }
+
+.four { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; margin: 24px 0 8px; padding: 0; list-style: none; }
+.four li { padding: 14px 0; border-top: 1px solid var(--hair); }
+.four b { display: block; font: 600 1.05rem/1.3 var(--font-display); letter-spacing: -.01em; }
+.four code { display: inline-block; margin-top: 6px; }
+
+dl.gloss { display: grid; grid-template-columns: 11rem 1fr; gap: 0 20px; margin: 0; font-size: 15px; }
+dl.gloss dt, dl.gloss dd { margin: 0; padding: 12px 0; border-top: 1px solid var(--hair); }
+dl.gloss dt { font-weight: 600; }
+dl.gloss dd { color: var(--fg-2); }
+
+.refs { padding-left: 1.4em; font-size: 15px; color: var(--fg-2); }
+.refs li { margin-bottom: 8px; }
+footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair); font-size: 13.5px; color: var(--fg-3); }
+
+/* ---------- SVG parts ---------- */
+.lane { stroke: var(--hair); stroke-width: 1; }
+.tick { font-size: 11.5px; fill: var(--fg-3); }
+.lanelab { font-size: 12px; fill: var(--fg); font-weight: 600; }
+.ev { fill: var(--bg); stroke: var(--fg-3); stroke-width: 1.5; }
+.ev-chain { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+.chainline { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.evlab { font-size: 11.5px; }
+.evlab.on { fill: var(--fg); font-weight: 600; }
+.incline { stroke: var(--hot); stroke-width: 2; }
+.inclab { font-size: 12px; fill: var(--hot); font-weight: 600; }
+.node { fill: var(--glass-strong); stroke: var(--hair); stroke-width: 1; }
+.node.hit { fill: var(--hot-soft); stroke: var(--hot); }
+.node.src { fill: var(--hot); stroke: var(--hot); }
+.nodelab { font-size: 12px; fill: var(--fg); text-anchor: middle; }
+.nodelab.src { fill: #fff; font-weight: 600; }
+.edge { fill: none; stroke: var(--fg-3); stroke-width: 1; opacity: .55; }
+.edge.hit { stroke: var(--hot); stroke-width: 1.75; opacity: 1; }
+.head { fill: var(--fg-3); }
+.head.hit { fill: var(--hot); }
+.colhead { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; fill: var(--fg-3); text-anchor: middle; font-weight: 600; }
+
+/* ---------- narrow screens ---------- */
+@media (max-width: 760px) {
+  body { font-size: 16px; }
+  .title { padding-top: 48px; }
+  figure { padding: 18px; }
+  .abstract { padding: 20px; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .stats div:nth-child(3) { padding-left: 0; border-left: 0; }
+  .stats div:nth-child(n+3) { border-top: 1px solid var(--hair); }
+  .swipe { display: block; }
+  .flow, .gate { grid-template-columns: 1fr; }
+  .flow .arrow, .gate .arrow { justify-self: center; }
+  .flow .arrow::before, .gate .arrow::before { content: "\2193"; }
+  .scale { grid-template-columns: 1fr; }
+  .bar, .axis { grid-template-columns: 1fr 3.2rem; gap: 4px 10px; }
+  .bar .lab { grid-column: 1 / -1; }
+  .axis div { grid-column: 1; }
+  .chains .bar { grid-template-columns: 1.6rem 1fr 3.2rem; }
+  .chains .bar .lab { grid-column: auto; }
+  .loop { grid-template-columns: 1fr 1fr; }
+  .four { grid-template-columns: 1fr; }
+  dl.gloss { grid-template-columns: 1fr; }
+  dl.gloss dd { border-top: 0; padding-top: 0; }
+  .fact { grid-template-columns: 1fr 1fr; }
+  .fact.head { display: none; }
+  .fact + .fact { padding-top: 10px; border-top: 1px solid var(--hair); }
+}
+@media (max-width: 420px) { .loop { grid-template-columns: 1fr; } }
+
+@media print {
+  body::before, .nav { display: none; }
+  body { background: #fff; }
+  .glass { background: none; box-shadow: none; border-color: #ccc; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  figure, .term, .note { break-inside: avoid; }
+}
+
+/* ---------- additions for the internals page ---------- */
+.nav a.other { color: var(--accent); font-weight: 600; }
+.nav a { padding: 8px 9px; font-size: 13px; }
+.xref { font-size: 14px; color: var(--fg-3); margin: -6px 0 18px; }
+.lede { font-size: 1.08em; }
+.eli { margin: 24px 0 28px; padding: 20px 24px 22px; border-radius: 20px; background: var(--accent-soft); }
+.eli .tag { font: 600 11.5px/1 var(--font-text); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin: 0 0 10px; }
+.eli .big { font: 600 1.2rem/1.32 var(--font-display); letter-spacing: -.015em; color: var(--fg); margin: 0 0 10px; text-wrap: balance; }
+.eli p { font-size: 15.5px; line-height: 1.55; color: var(--fg-2); margin: 0 0 8px; }
+.eli p:last-child { margin-bottom: 0; }
+.eli code { background: var(--glass); }
+
+.pipe { display: flex; gap: 10px; align-items: stretch; }
+.pipe + .pipe { margin-top: 22px; }
+.pipe .lanelabel { flex: none; width: 5.2rem; align-self: center; font: 600 11.5px/1.3 var(--font-text); letter-spacing: .07em; text-transform: uppercase; color: var(--fg-3); }
+.pipe .box { flex: 1 1 0; min-width: 0; padding: 14px; border-radius: 14px; background: var(--glass); border: 1px solid var(--glass-edge); font-size: 12.5px; line-height: 1.45; color: var(--fg-2); }
+.pipe .box b { display: block; font: 600 14px/1.25 var(--font-display); color: var(--fg); margin-bottom: 4px; }
+.pipe .box.key { background: var(--accent-soft); }
+.pipe .box.bad { background: var(--hot-soft); border-color: transparent; }
+.pipe .arrow { flex: none; align-self: center; color: var(--fg-3); font-size: 18px; line-height: 1; }
+.pipe .arrow::before { content: "\2192"; }
+.pipe .box code { font-size: 11.5px; white-space: normal; overflow-wrap: anywhere; background: none; padding: 0; }
+
+.order { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; padding: 0; list-style: none; counter-reset: o; }
+.order li { counter-increment: o; font: 12.5px/1 var(--font-mono); padding: 7px 10px; border-radius: 9px; background: var(--track); color: var(--fg-2); }
+.order li::before { content: counter(o) "  "; color: var(--fg-3); }
+.order li.last { background: var(--accent-soft); color: var(--accent); }
+
+.checks { margin: 0; padding: 0; list-style: none; counter-reset: c; display: grid; gap: 0; }
+.checks li { counter-increment: c; display: grid; grid-template-columns: 2rem 13rem 1fr; gap: 6px 14px; padding: 13px 0; border-top: 1px solid var(--hair); font-size: 14px; line-height: 1.45; }
+.checks li:first-child { border-top: 0; padding-top: 0; }
+.checks li::before { content: counter(c); font: 700 1.05rem/1.3 var(--font-display); color: var(--fg-3); }
+.checks b { font-weight: 600; }
+.checks span { color: var(--fg-2); min-width: 0; }
+.checks .reason { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+
+.bits { display: flex; height: 46px; border-radius: 10px; overflow: hidden; font: 12px/1.2 var(--font-mono); }
+.bits div { display: grid; place-content: center; text-align: center; padding: 0 6px; min-width: 0; }
+.bits .b1 { flex: 0 0 9%; background: var(--warn-soft); color: var(--warn); }
+.bits .b2 { flex: 0 0 17%; background: var(--accent-soft); color: var(--accent); }
+.bits .b3 { flex: 1; background: var(--track); color: var(--fg-2); }
+.bitlab { display: flex; font-size: 12px; color: var(--fg-3); margin-top: 6px; }
+.bitlab span:nth-child(1) { flex: 0 0 9%; }
+.bitlab span:nth-child(2) { flex: 0 0 17%; }
+.bitlab span:nth-child(3) { flex: 1; }
+
+.two { display: grid; grid-template-columns: 1.15fr 1fr; gap: 0 28px; align-items: center; }
+.two > * { min-width: 0; }
+figure .tablewrap { margin: 0; }
+.two .tablewrap table { min-width: 0; }
+td.nw { white-space: nowrap; }
+td.num, th.num { text-align: right; padding-right: 0; white-space: nowrap; }
+.mini { display: inline-block; vertical-align: middle; height: 8px; border-radius: 3px; background: var(--fg-3); margin-right: 8px; }
+.mini.us { background: var(--accent); }
+.bar.q .fill { background: var(--hot); }
+.bar .lab.mono { font: 12px/1.3 var(--font-mono); overflow-wrap: anywhere; }
+.bars.tight { gap: 6px; }
+.bars.tight .bar { grid-template-columns: 21.5rem 1fr 2.6rem; font-size: 13px; }
+.bars.tight .trk { height: 10px; }
+
+.series { fill: none; stroke: var(--fg); stroke-width: 1.5; stroke-linejoin: round; }
+.series.us { stroke: var(--accent); stroke-width: 2; }
+.zone-base { fill: var(--track); }
+.zone-ep { fill: var(--accent-soft); }
+.zone-miss { fill: var(--track); }
+.zone-amb { fill: var(--warn-soft); }
+.zone-ok { fill: var(--ok-soft); }
+.dash { stroke: var(--fg-3); stroke-width: 1; stroke-dasharray: 4 4; fill: none; }
+.dash.thr { stroke: var(--warn); }
+.axisline { stroke: var(--hair); stroke-width: 1; }
+.pt { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+.pt.hot { fill: var(--bg); stroke: var(--hot); stroke-width: 2; }
+.elab { font-size: 11px; fill: var(--fg-3); }
+.elab.on { fill: var(--fg); font-weight: 600; }
+.elab.warn { fill: var(--warn); font-weight: 600; }
+.elab.hot { fill: var(--hot); font-weight: 600; }
+.elab.acc { fill: var(--accent); font-weight: 600; }
+.node.app { fill: var(--accent-soft); stroke: var(--accent); }
+.node.inc { fill: var(--hot-soft); stroke: var(--hot); }
+.edge.strong { stroke: var(--accent); stroke-width: 1.75; opacity: 1; }
+.head.strong { fill: var(--accent); }
+.edge.isa { stroke-dasharray: 4 4; }
+.sub { font-size: 10.5px; fill: var(--fg-3); text-anchor: middle; }
+
+@media (max-width: 760px) {
+  code { white-space: normal; overflow-wrap: anywhere; }
+  td code, th code { white-space: nowrap; }
+  .pipe { flex-direction: column; }
+  .pipe .lanelabel { width: auto; align-self: flex-start; }
+  .pipe .arrow::before { content: "\2193"; }
+  .checks li { grid-template-columns: 1.6rem 1fr; }
+  .checks span { grid-column: 2; }
+  .two { grid-template-columns: 1fr; }
+  .bars.tight .bar { grid-template-columns: 1fr 2.6rem; }
+  .bits .b1 { flex-basis: 22%; }
+  .bits .b2 { flex-basis: 22%; }
+  .bitlab span:nth-child(1), .bitlab span:nth-child(2) { flex-basis: 22%; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<nav class="nav glass" aria-label="Sections">
+  <span class="mark">ograph</span>
+  <a href="#architecture">Architecture</a>
+  <a href="#model">Model</a>
+  <a href="#store">Store</a>
+  <a href="#gateway">Gateway</a>
+  <a href="#detectors">Detectors</a>
+  <a href="#correlation">Correlation</a>
+  <a href="#memory">Memory</a>
+  <a href="#queries">Queries</a>
+  <a href="#decisions">Decisions</a>
+  <a class="other" href="ograph-explained.html">Explainer</a>
+</nav>
+
+<header class="title">
+  <p class="kicker">Technical deep dive</p>
+  <h1>How ograph works inside</h1>
+  <p class="dek">The data model, the quad store, the validation gateway, the detectors and the correlation engine, with the measurement behind each design choice. If you are new to ograph, read the <a href="ograph-explained.html">plain-language explainer</a> first.</p>
+  <ul class="meta">
+    <li>ograph 0.1.0</li>
+    <li>November 2026</li>
+    <li>20 minute read</li>
+    <li>For engineers who will run, extend or review it</li>
+  </ul>
+
+  <div class="abstract glass">
+    <h2>Summary</h2>
+    <p>ograph is an RDF quad store on redb with a single validated write path. Enrichers reduce operational exports to episodes and emit proposed facts. A gateway checks each batch against an OWL ontology and SHACL shapes, commits it as one named graph, and quarantines what it refuses. Correlation walks a per-application time index to build scored causal chains. Four investigation queries run on native indexes, and everything else is SPARQL 1.1 through Oxigraph&rsquo;s evaluator over the same snapshot.</p>
+    <dl class="stats">
+      <div><dt>10</dt><dd>redb tables: a two-way dictionary, three union orderings, two named orderings, two time indexes and a graph list</dd></div>
+      <div><dt>196 B</dt><dd>per quad on disk at 3.5 million quads, after compaction</dd></div>
+      <div><dt>6</dt><dd>checks every batch passes, ending in incremental SHACL</dd></div>
+      <div><dt>7,500</dt><dd>lines of Rust in the core and CLI, with no C compiler in the build</dd></div>
+    </dl>
+  </div>
+</header>
+
+<main class="prose">
+
+<!-- ================= 1 ================= -->
+<section id="architecture">
+  <h2><span class="n">1</span>Architecture: one write path, two read paths</h2>
+  <p class="xref">Plain-language version: <a href="ograph-explained.html#problem">The problem</a></p>
+  <p>Nothing writes to the store except the gateway. That single rule is what makes the rest of the system simple to reason about: every stored triple has passed the same checks and belongs to exactly one or more named graphs that say where it came from.</p>
+
+  <figure class="glass wide">
+    <div class="pipe">
+      <div class="lanelabel">Write</div>
+      <div class="box"><b>Source files</b>Twelve kinds, read in a fixed order. One file is one batch.</div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="box"><b>Enrichers</b>Rules, detectors and one model step. They return <code>Batch</code> values and never touch the store.</div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="box key"><b>Gateway</b>Six checks against the catalog, the ontology and the shapes, seen against the store as it will be.</div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="box"><b>Named graph</b>One graph per file under <code>g:harvest/</code>, replaced as a diff. Refusals go to <code>g:quarantine/</code>.</div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="box"><b>Correlation</b>After all sources: one batch of chains per incident, through the same gateway.</div>
+    </div>
+    <div class="pipe">
+      <div class="lanelabel">Read</div>
+      <div class="box"><b>Snapshot</b>A redb read transaction. Readers never block the writer.</div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="box key"><b>Native paths</b><code>before</code>, <code>blast</code>, <code>chains</code>, <code>similar</code>, <code>why</code>, <code>news</code> on the time and dependency indexes.</div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="box"><b>SPARQL 1.1</b>Oxigraph&rsquo;s <code>spareval</code> over the same snapshot, behind one adapter module.</div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="box"><b>Surfaces</b>CLI with <code>--json</code>, JSON-RPC over TCP, MCP over stdio, a pi extension.</div>
+    </div>
+    <figcaption><b>Figure 1.</b> The two halves of the system. The write path is a pipeline with one gate. The read path offers hand-written traversals for the four investigation questions and a standard query language for everything else.</figcaption>
+  </figure>
+
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">An enricher is a translator that may only suggest.</p>
+    <p>Every tool writes in its own format. Alerts are JSON, metrics are a spreadsheet, chat is a wall of text. An enricher reads one of those formats and turns it into the same kind of short sentence as every other enricher.</p>
+    <p>It never writes to the graph itself. It hands its sentences to the gateway, like a reporter filing copy with an editor. The name comes from what it does to the graph: it adds to, or enriches, what is already known.</p>
+  </aside>
+  <h3>Harvest order</h3>
+  <p>Enrichers run in layers, and each layer can rely on what earlier layers committed. The order is the declaration order of a Rust enum, so the order of <code>[[source]]</code> entries in <code>config.toml</code> does not matter.</p>
+  <ol class="order wide">
+    <li>catalog</li><li>ownership</li><li>docs</li><li>deployments</li><li>config_changes</li><li>alerts</li><li>incidents</li><li>logs</li><li>metrics</li><li>traces</li><li>discussions</li><li>news</li><li class="last">correlation</li>
+  </ol>
+  <p>The catalog goes first because only the catalog may create an application. Every later source refers to applications by name, and the gateway resolves those names against it. Discussions come late because the model step that classifies threads is the only non-deterministic enricher.</p>
+
+  <h3 id="ogrep">Why the catalog comes from ogrep</h3>
+  <p>ogrep is an indexed code-search tool by the same authors. For the catalog layer, ograph runs <code>ogrep --entities . --json</code> inside the catalog repository and turns each service and each dependency it reports into proposed facts. Each fact carries the file and line it was found on as evidence, and each dependency says whether it was declared outright or inferred.</p>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">ogrep reads the code, so ograph does not have to.</p>
+    <p>The list of services, and who calls whom, is already written down in a company&rsquo;s repositories: Backstage catalog files, Docker Compose files, Kubernetes manifests, Prometheus rules. Reading all of those formats correctly is a job of its own, and ogrep already does it. ograph asks ogrep for the answer instead of learning to read them a second time.</p>
+    <p>It is a division of labour. ogrep knows the code. ograph knows what happened in production. Netflix&rsquo;s design draws code search as its own box beside the graph, and here that box is ogrep.</p>
+  </aside>
+  <div class="tablewrap wide">
+    <table>
+      <thead><tr><th>What ograph takes from ogrep</th><th>How</th><th>What it becomes</th></tr></thead>
+      <tbody>
+        <tr><th>Services and their dependencies</th><td><code>ogrep --entities . --json</code>, at every catalog harvest</td><td><code>ops:Application</code>, <code>ops:name</code> and <code>ops:dependsOn</code>, with <code>file:line</code> evidence</td></tr>
+        <tr><th>Which files to watch</th><td><code>ogrep --files .</code>, which honours the repository&rsquo;s ignore rules</td><td>The YAML and <code>.env</code> files that <code>serve</code> polls to decide when to re-harvest the catalog</td></tr>
+        <tr><th>Log templating</th><td>The Drain implementation, copied from ogrep&rsquo;s core under the same MIT licence</td><td>The templates behind every <code>evt:LogError</code></td></tr>
+        <tr><th>Command-line conventions</th><td>Design, not code</td><td><code>--json</code> on every command, exit codes 0, 1 and 2, and a server that clients find through a file in the workspace</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>ogrep runs as a separate program, found on <code>PATH</code> or through <code>OGRAPH_OGREP</code>, so either tool can be upgraded without rebuilding the other. ograph needs version 0.2 or newer. It is a hard requirement for this one layer only. Without it the harvest still runs, but the catalog line reports <code>DEGRADED: ogrep not runnable</code>, no applications exist, and the gateway quarantines every fact that names a service.</p>
+
+  <h3>The unit of writing</h3>
+  <p>An enricher produces a batch: a source name, a stable key (the file path), and a list of proposed facts. The types make some mistakes unrepresentable. A model-proposed fact cannot exist without a confidence, and a confidence cannot be built outside 0 to 1.</p>
+
+  <div class="term glass wide">
+    <header>ograph-core/src/model.rs</header>
+<pre>pub struct ProposedFact {
+    pub subject: EntityRef,
+    pub predicate: NamedNode,
+    pub object: Object,
+    pub evidence: Vec&lt;EvidenceRef&gt;,   <span class="c">// a source record id, a file:line, or a query</span>
+    pub method: Extraction,
+}
+
+pub enum Extraction {
+    Rule { extractor: String },
+    Catalog { catalog: String },
+    Llm { model: String, prompt_hash: String, confidence: Confidence },
+    Human { who: String },
+}
+
+pub enum EntityRef {
+    Known(NamedNode),                                  <span class="c">// an IRI the code minted</span>
+    Provisional { class: &amp;'static str, name: String }, <span class="c">// a name the gateway must resolve</span>
+}</pre>
+  </div>
+</section>
+
+<!-- ================= 2 ================= -->
+<section id="model">
+  <h2><span class="n">2</span>The data model</h2>
+  <p class="xref">Plain-language version: <a href="ograph-explained.html#graph">A knowledge graph is a pile of short sentences</a></p>
+  <p>The ontology is one Turtle file, <code>ontology/ograph.ttl</code>, in seven modules that follow Netflix&rsquo;s namespaces: <code>ops</code> for the catalog, <code>evt</code> for events, <code>inc</code> for incidents, <code>disc</code> for discussion threads, <code>corr</code> for correlation, <code>rca</code> for verdicts and <code>harv</code> for provenance. It declares classes, properties with domain and range, and closed vocabularies with a definition per value.</p>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">RDF is a way to write facts so plainly that any tool can read them.</p>
+    <p>In RDF every fact is a sentence of exactly three parts: a thing, a relationship, and another thing or a value. &ldquo;payments-api, depends on, ledger-db&rdquo; is one fact. Three parts make a <strong>triple</strong>. There are no tables and no nested records, which is why facts from twelve different tools can live together.</p>
+    <p>The names in those sentences are <strong>IRIs</strong>: full names that cannot be mistaken for anything else. &ldquo;checkout&rdquo; could be a service, a team or a web page. <code>https://ograph.dev/id/app/checkout</code> is exactly one thing, and <code>id:app/checkout</code> is the short way to write it.</p>
+  </aside>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">An ontology is the rulebook for which sentences make sense.</p>
+    <p>It says what kinds of things exist and how they may connect. A deployment is a kind of event. &ldquo;Depends on&rdquo; joins two applications, never an application and a team. Severity is one of four words. <strong>OWL</strong> is the standard language such a rulebook is written in.</p>
+    <p>Without it, a graph accepts anything, and a graph that accepts anything cannot be trusted to answer a question.</p>
+  </aside>
+
+  <figure class="glass wide">
+    <div class="scroll">
+      <svg viewBox="0 0 840 440" style="min-width:760px" role="img" aria-label="Schema graph. ops:Application depends on other applications, is owned by a team, runs in a region, supports a business process and uses a vendor. An evt:Event happens on an application. inc:Incident is a kind of event and can have a cause. A corr:Chain has a root cause event, link events, leads to an incident and names a candidate application. An rca:Verdict is on a chain. A disc:Thread is about an application or incident.">
+        <defs>
+          <marker id="m" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0,0 L8,4 L0,8 z"/></marker>
+        </defs>
+        <line class="edge" marker-end="url(#m)" x1="290" y1="202" x2="152" y2="80"/>
+        <line class="edge" marker-end="url(#m)" x1="330" y1="202" x2="330" y2="80"/>
+        <line class="edge" marker-end="url(#m)" x1="290" y1="238" x2="152" y2="360"/>
+        <line class="edge" marker-end="url(#m)" x1="330" y1="238" x2="330" y2="360"/>
+        <path class="edge" marker-end="url(#m)" d="M384,238 C424,296 350,304 352,242"/>
+        <line class="edge" marker-end="url(#m)" x1="175" y1="220" x2="263" y2="220"/>
+        <line class="edge" marker-end="url(#m)" x1="475" y1="220" x2="397" y2="220"/>
+        <line class="edge" marker-end="url(#m)" x1="695" y1="220" x2="607" y2="220"/>
+        <line class="edge" marker-end="url(#m)" x1="745" y1="238" x2="607" y2="324"/>
+        <path class="edge" marker-end="url(#m)" d="M705,202 C690,100 430,100 372,200"/>
+        <line class="edge" marker-end="url(#m)" x1="760" y1="98" x2="760" y2="200"/>
+        <line class="edge" marker-end="url(#m)" x1="520" y1="312" x2="520" y2="240"/>
+        <line class="edge isa" marker-end="url(#m)" x1="560" y1="312" x2="560" y2="240"/>
+
+        <text class="elab" x="208" y="136" text-anchor="end">ownedBy</text>
+        <text class="elab" x="338" y="144">inRegion</text>
+        <text class="elab" x="208" y="312" text-anchor="end">supports</text>
+        <text class="elab" x="338" y="330">usesVendor</text>
+        <text class="elab on" x="412" y="272">dependsOn</text>
+        <text class="elab" x="219" y="212" text-anchor="middle">about</text>
+        <text class="elab on" x="436" y="212" text-anchor="middle">on</text>
+        <text class="elab" x="651" y="212" text-anchor="middle">rootCause</text>
+        <text class="elab" x="651" y="236" text-anchor="middle">link</text>
+        <text class="elab" x="690" y="294">leadsTo</text>
+        <text class="elab" x="540" y="116" text-anchor="middle">candidateApp</text>
+        <text class="elab" x="768" y="152">onChain</text>
+        <text class="elab" x="512" y="282" text-anchor="end">cause</text>
+        <text class="elab" x="568" y="282">is a</text>
+        <text class="sub" x="540" y="174">10 kinds, such as Alert,</text>
+        <text class="sub" x="540" y="188">LogError and MetricAnomaly</text>
+
+        <rect class="node" x="65" y="42" width="110" height="36" rx="18"/><text class="nodelab mono" x="120" y="64">ops:Team</text>
+        <rect class="node" x="270" y="42" width="120" height="36" rx="18"/><text class="nodelab mono" x="330" y="64">ops:Region</text>
+        <rect class="node" x="65" y="202" width="110" height="36" rx="18"/><text class="nodelab mono" x="120" y="224">disc:Thread</text>
+        <rect class="node app" x="265" y="202" width="130" height="36" rx="18"/><text class="nodelab mono" x="330" y="224">ops:Application</text>
+        <rect class="node" x="40" y="362" width="160" height="36" rx="18"/><text class="nodelab mono" x="120" y="384">ops:BusinessProcess</text>
+        <rect class="node" x="270" y="362" width="120" height="36" rx="18"/><text class="nodelab mono" x="330" y="384">ops:Vendor</text>
+        <rect class="node" x="475" y="202" width="130" height="36" rx="18"/><text class="nodelab mono" x="540" y="224">evt:Event</text>
+        <rect class="node inc" x="475" y="312" width="130" height="36" rx="18"/><text class="nodelab mono" x="540" y="334">inc:Incident</text>
+        <rect class="node" x="695" y="202" width="110" height="36" rx="18"/><text class="nodelab mono" x="750" y="224">corr:Chain</text>
+        <rect class="node" x="695" y="62" width="110" height="36" rx="18"/><text class="nodelab mono" x="750" y="84">rca:Verdict</text>
+      </svg>
+    </div>
+    <p class="swipe">Swipe sideways to see the whole figure.</p>
+    <figcaption><b>Figure 2.</b> The schema as a graph: classes are nodes and object properties are edges. Two edges carry the investigation questions. <code>evt:on</code> ties every event to an application, and <code>ops:dependsOn</code> lets a query walk from a symptom to what it relies on. <code>inc:cause</code> is the only edge that no enricher may write; a verdict writes it.</figcaption>
+  </figure>
+
+  <h3>An instance: one chain, as stored</h3>
+  <p>A chain is a node, in the way Netflix&rsquo;s post models it, and its links are ordinary edges to event nodes. This is the top chain of the demo incident, read back with SPARQL.</p>
+
+  <figure class="glass wide">
+    <div class="scroll">
+      <svg viewBox="0 0 840 350" style="min-width:780px" role="img" aria-label="Instance graph of chain inc-5377. The chain node has a rootCause edge to an alert on ledger-db, link edges to an error-log burst on payments-api, an alert on payments-api and an alert on checkout, and a leadsTo edge to incident INC-5377. Each event has an on edge to its application. checkout depends on payments-api, which depends on ledger-db.">
+        <defs>
+          <marker id="m2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="head" d="M0,0 L8,4 L0,8 z"/></marker>
+          <marker id="m2s" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path class="head strong" d="M0,0 L8,4 L0,8 z"/></marker>
+        </defs>
+        <line class="edge strong" marker-end="url(#m2s)" x1="310" y1="58" x2="112" y2="130"/>
+        <line class="edge" marker-end="url(#m2)" x1="370" y1="60" x2="268" y2="130"/>
+        <line class="edge" marker-end="url(#m2)" x1="420" y1="60" x2="420" y2="130"/>
+        <line class="edge" marker-end="url(#m2)" x1="470" y1="60" x2="572" y2="130"/>
+        <line class="edge" marker-end="url(#m2)" x1="530" y1="58" x2="728" y2="130"/>
+        <text class="elab acc" x="196" y="88" text-anchor="end">rootCause</text>
+        <text class="elab" x="306" y="110" text-anchor="end">link</text>
+        <text class="elab" x="428" y="104">link</text>
+        <text class="elab" x="536" y="110">link</text>
+        <text class="elab" x="646" y="88">leadsTo</text>
+
+        <line class="edge" marker-end="url(#m2)" x1="90" y1="172" x2="90" y2="268"/>
+        <line class="edge" marker-end="url(#m2)" x1="255" y1="172" x2="318" y2="268"/>
+        <line class="edge" marker-end="url(#m2)" x1="420" y1="172" x2="360" y2="268"/>
+        <line class="edge" marker-end="url(#m2)" x1="585" y1="172" x2="648" y2="268"/>
+        <line class="edge" marker-end="url(#m2)" x1="750" y1="172" x2="690" y2="268"/>
+        <text class="elab" x="98" y="226">on</text>
+        <text class="elab" x="340" y="226" text-anchor="middle">on</text>
+        <text class="elab" x="670" y="226" text-anchor="middle">on</text>
+
+        <line class="edge" marker-end="url(#m2)" x1="594" y1="288" x2="416" y2="288"/>
+        <line class="edge" marker-end="url(#m2)" x1="262" y1="288" x2="167" y2="288"/>
+        <text class="elab on" x="505" y="280" text-anchor="middle">dependsOn</text>
+        <text class="elab on" x="215" y="280" text-anchor="middle">dependsOn</text>
+
+        <rect class="node app" x="290" y="22" width="260" height="38" rx="19"/><text class="nodelab mono" x="420" y="38">id:chain/inc-5377-a7370ff7d4358525</text><text class="sub" x="420" y="52">confidence 0.9444, rank 1</text>
+
+        <rect class="node" x="20" y="132" width="140" height="40" rx="12"/><text class="nodelab mono" x="90" y="149">evt:Alert</text><text class="sub" x="90" y="163">22:19:40</text>
+        <rect class="node" x="185" y="132" width="140" height="40" rx="12"/><text class="nodelab mono" x="255" y="149">evt:LogError</text><text class="sub" x="255" y="163">22:20:00</text>
+        <rect class="node" x="350" y="132" width="140" height="40" rx="12"/><text class="nodelab mono" x="420" y="149">evt:Alert</text><text class="sub" x="420" y="163">22:23:40</text>
+        <rect class="node" x="515" y="132" width="140" height="40" rx="12"/><text class="nodelab mono" x="585" y="149">evt:Alert</text><text class="sub" x="585" y="163">22:25:40</text>
+        <rect class="node inc" x="680" y="132" width="140" height="40" rx="12"/><text class="nodelab mono" x="750" y="149">inc:Incident</text><text class="sub" x="750" y="163">INC-5377, 22:26:40</text>
+
+        <rect class="node" x="15" y="270" width="150" height="36" rx="18"/><text class="nodelab mono" x="90" y="292">id:app/ledger-db</text>
+        <rect class="node" x="264" y="270" width="150" height="36" rx="18"/><text class="nodelab mono" x="339" y="292">id:app/payments-api</text>
+        <rect class="node" x="596" y="270" width="150" height="36" rx="18"/><text class="nodelab mono" x="671" y="292">id:app/checkout</text>
+      </svg>
+    </div>
+    <p class="swipe">Swipe sideways to see the whole figure.</p>
+    <figcaption><b>Figure 3.</b> Nodes and edges of chain <code>inc-5377-a7370ff7d4358525</code> in the demo store. Reading the top row gives the hypothesis. Reading the bottom row shows why it is plausible: each event sits on an application that the next event&rsquo;s application depends on.</figcaption>
+  </figure>
+
+  <h3>Identifiers and closed vocabularies</h3>
+  <p>Code mints every IRI, never a model. Data nodes live under <code>https://ograph.dev/id/</code> and must match one scheme: a lower-case kind, then a slug. An event&rsquo;s IRI is derived from its content, such as <code>id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000</code>, so harvesting the same record twice yields the same node.</p>
+  <p>Eight properties take values from closed lists that the ontology declares with a definition per value: <code>evt:signal</code> (13 values), <code>evt:severity</code> (4), <code>disc:category</code> (8), <code>disc:sentiment</code> (3), <code>inc:status</code> (3), <code>ops:tier</code> (4), <code>rca:state</code> (2) and <code>harv:status</code> (2). The model prompt is generated from the same lists the gateway enforces, so the two cannot drift apart.</p>
+
+  <h3>Named graphs are the provenance</h3>
+  <p>Each batch commits to its own named graph, and the default graph is the deduplicated union of them all. Asking &ldquo;says who?&rdquo; of any triple is a lookup of which graphs hold it. Re-harvesting a file replaces its graph, which makes a harvest idempotent, and deleting a file prunes its graph on the next run.</p>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">A quad is a triple with a sticker saying which folder it came from.</p>
+    <p>Picture every source file as a folder of facts. Each fact carries a fourth part, a sticker naming its folder. Three parts plus the sticker make four, hence <strong>quad</strong>. The folder is what RDF calls a <strong>named graph</strong>.</p>
+    <p>The sticker pays off twice. You can always ask where a fact came from. And when a file changes, ograph swaps that one folder and leaves the rest alone. If two folders state the same fact, it survives until both let go of it.</p>
+  </aside>
+
+  <figure class="glass wide">
+    <div class="bars tight">
+      <div class="bar"><span class="lab mono">harvest/discussions/discussions/ops.json</span><div class="trk"><span class="fill" style="width:100%"></span></div><span class="val">472</span></div>
+      <div class="bar"><span class="lab mono">harvest/alerts/alerts.json</span><div class="trk"><span class="fill" style="width:12.9%"></span></div><span class="val">61</span></div>
+      <div class="bar"><span class="lab mono">harvest/incidents/all</span><div class="trk"><span class="fill" style="width:9.3%"></span></div><span class="val">44</span></div>
+      <div class="bar"><span class="lab mono">harvest/catalog/catalog</span><div class="trk"><span class="fill" style="width:8.1%"></span></div><span class="val">38</span></div>
+      <div class="bar"><span class="lab mono">harvest/metrics/metrics.csv</span><div class="trk"><span class="fill" style="width:6.8%"></span></div><span class="val">32</span></div>
+      <div class="bar"><span class="lab mono">harvest/ownership/ownership.jsonl</span><div class="trk"><span class="fill" style="width:6.1%"></span></div><span class="val">29</span></div>
+      <div class="bar us"><span class="lab mono">harvest/correlation/inc-5377</span><div class="trk"><span class="fill" style="width:5.7%"></span></div><span class="val">27</span></div>
+      <div class="bar"><span class="lab mono">harvest/deployments/deployments.jsonl</span><div class="trk"><span class="fill" style="width:5.5%"></span></div><span class="val">26</span></div>
+      <div class="bar"><span class="lab mono">harvest/news/news.jsonl</span><div class="trk"><span class="fill" style="width:4.2%"></span></div><span class="val">20</span></div>
+      <div class="bar"><span class="lab mono">harvest/config/config.jsonl</span><div class="trk"><span class="fill" style="width:4.0%"></span></div><span class="val">19</span></div>
+      <div class="bar us"><span class="lab mono">harvest/correlation/inc-4120</span><div class="trk"><span class="fill" style="width:3.8%"></span></div><span class="val">18</span></div>
+      <div class="bar"><span class="lab mono">harvest/logs/logs.jsonl</span><div class="trk"><span class="fill" style="width:3.0%"></span></div><span class="val">14</span></div>
+      <div class="bar us"><span class="lab mono">harvest/correlation/inc-4388</span><div class="trk"><span class="fill" style="width:2.3%"></span></div><span class="val">11</span></div>
+      <div class="bar us"><span class="lab mono">harvest/correlation/inc-4501</span><div class="trk"><span class="fill" style="width:2.3%"></span></div><span class="val">11</span></div>
+      <div class="bar"><span class="lab mono">harvest/docs/runbooks/payments.md</span><div class="trk"><span class="fill" style="width:1.5%"></span></div><span class="val">7</span></div>
+      <div class="bar"><span class="lab mono">harvest/docs/runbooks/platform.md</span><div class="trk"><span class="fill" style="width:1.3%"></span></div><span class="val">6</span></div>
+      <div class="bar q"><span class="lab mono">quarantine/discussions/discussions/ops.json</span><div class="trk"><span class="fill" style="width:1.7%"></span></div><span class="val">8</span></div>
+      <div class="bar q"><span class="lab mono">quarantine/docs/runbooks/payments.md</span><div class="trk"><span class="fill" style="width:0.8%"></span></div><span class="val">4</span></div>
+    </div>
+    <figcaption><b>Figure 4.</b> Quads per named graph in the demo store: 18 graphs, 847 distinct triples in their union. Blue rows hold correlation chains, one graph per incident. Red rows are quarantine graphs. The discussions graph is large because each thread stores per-fact model provenance. Incidents share one graph so that one incident&rsquo;s fields can merge across files.</figcaption>
+  </figure>
+</section>
+
+<!-- ================= 3 ================= -->
+<section id="store">
+  <h2><span class="n">3</span>The store: a quad store on redb</h2>
+  <p>The store is one redb file. redb is a pure-Rust, copy-on-write B-tree with ACID transactions, the same base Netflix chose for its own quad store. ograph imports Oxigraph&rsquo;s RDF and SPARQL crates but not its storage, which has no extension point and needs RocksDB and a C++ toolchain.</p>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">A quad store is a filing system built for four-part facts, and an index is the index of a book.</p>
+    <p>To find every mention of &ldquo;ledger-db&rdquo; in a book you do not read each page. You look in the index. A database index is the same idea: the facts are kept sorted, so the ones you want sit next to each other.</p>
+    <p>The catch is that a sorted list only helps if you know its first part. So ograph keeps the same facts sorted three ways, by subject, by relationship and by object. Whichever part of a sentence you know, one of the three lists starts with it.</p>
+    <p>One more trick saves space. Names are long and numbers are short, so each name is swapped for a number once, like a coat-check ticket, and the lists store tickets.</p>
+  </aside>
+
+  <h3>Terms become 64-bit ids</h3>
+  <p>Every RDF term is one <code>u64</code>. IRIs, strings and blank nodes go through a dictionary keyed by a 128-bit SipHash of the encoded term, so each term is stored once. Integers, booleans and dateTimes in canonical form skip the dictionary: the value lives inside the id.</p>
+
+  <figure class="glass wide">
+    <div class="bits"><div class="b1">flag</div><div class="b2">kind</div><div class="b3">payload: a dictionary id, or the value itself</div></div>
+    <div class="bitlab"><span>bit 63</span><span>bits 62 to 60</span><span>bits 59 to 0</span></div>
+    <div class="tablewrap" style="margin-top:18px">
+      <table>
+        <thead><tr><th>Kind</th><th>Payload</th><th>Why it matters</th></tr></thead>
+        <tbody>
+          <tr><th>0, dictionary</th><td>Row in <code>id2term</code></td><td>IRIs, strings, blank nodes and non-canonical literals</td></tr>
+          <tr><th>1, integer</th><td>Value plus a 2<sup>59</sup> bias</td><td>Ids sort in numeric order</td></tr>
+          <tr><th>2, dateTime</th><td>Milliseconds since 1970 plus a 2<sup>58</sup> bias</td><td>A time window is a key range, with nothing to decode</td></tr>
+          <tr><th>3, boolean</th><td>0 or 1</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Figure 5.</b> The layout of a term id. Bit 63 marks an ephemeral term that exists only inside one query, such as a constant the query introduces. An inline id is produced only for a literal in canonical lexical form, so integer equality on ids remains RDF term equality. In the spike that preceded this design, 49% of one query&rsquo;s time went to decoding dateTimes for a <code>FILTER</code>; inlining removed that cost.</figcaption>
+  </figure>
+
+  <h3>Ten tables</h3>
+  <div class="tablewrap wide">
+    <table>
+      <thead><tr><th>Table</th><th>Key</th><th>Value</th><th>Answers</th><th class="num">Rows, demo</th></tr></thead>
+      <tbody>
+        <tr><th><code>id2term</code></th><td>id</td><td>encoded term</td><td>Turn an id back into a term</td><td class="num">430</td></tr>
+        <tr><th><code>hash2id</code></th><td>sip128 of the term</td><td>id</td><td>Find the id of a term</td><td class="num">430</td></tr>
+        <tr><th><code>uspo</code> <code>upos</code> <code>uosp</code></th><td>3 ids</td><td>count of graphs holding it</td><td>Any pattern over the default graph</td><td class="num">847 each</td></tr>
+        <tr><th><code>gspo</code></th><td>graph + 3 ids</td><td></td><td>One graph&rsquo;s contents, for replace and export</td><td class="num">847</td></tr>
+        <tr><th><code>spog</code></th><td>3 ids + graph</td><td></td><td>Which graphs hold a triple: provenance</td><td class="num">847</td></tr>
+        <tr><th><code>time</code></th><td>[time, event]</td><td></td><td>Events in a window</td><td class="num">24</td></tr>
+        <tr><th><code>app_time</code></th><td>[app, time, event]</td><td></td><td>Events on one application in a window</td><td class="num">21</td></tr>
+        <tr><th><code>graphs</code></th><td>graph</td><td>quad count</td><td>List the named graphs</td><td class="num">18</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The three union tables are rotations of one another: subject first, predicate first, object first. Whatever positions a triple pattern binds, one rotation has them as a key prefix, so the pattern becomes a range scan.</p>
+
+  <div class="tablewrap wide">
+    <table>
+      <thead><tr><th>Bound in the pattern</th><th>Ordering used</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><th>s, or s and p, or all three</th><td><code>uspo</code></td><td>Everything about one event</td></tr>
+        <tr><th>p, or p and o</th><td><code>upos</code></td><td>All subjects that depend on <code>ledger-db</code></td></tr>
+        <tr><th>o, or o and s</th><td><code>uosp</code></td><td>Every edge that points at a node</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The default graph is a reference-counted union</h3>
+  <p>A triple asserted by three harvests is one row in each union table with a count of 3. SPARQL over the default graph therefore never sees a duplicate, and removing one graph decrements counts without scanning the others. A pattern restricted to a named graph scans the fitting union ordering and then confirms membership in <code>gspo</code> or <code>spog</code>. That is why two graph-qualified orderings suffice where Oxigraph keeps six.</p>
+
+  <div class="tablewrap wide">
+    <table>
+      <thead><tr><th>Change, measured before and after at 3.5 million quads</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>
+        <tr><th>Two graph orderings instead of six, on disk</th><td>2,176 MiB</td><td class="win">869 MiB</td></tr>
+        <tr><th>Union keys sorted per ordering and larger transactions, load time</th><td>18.7 s</td><td class="win">14.4 s</td></tr>
+        <tr><th>Same change, size after compaction</th><td>857 MiB</td><td class="win">658 MiB</td></tr>
+        <tr><th>Same change, loading 35 million quads</th><td>not finished after 43 min</td><td class="win">401 s</td></tr>
+        <tr><th>Graph replace written as a diff, for an unchanged day of data</th><td>4.6 s</td><td class="win">60 ms, 0 writes</td></tr>
+        <tr><th>Point lookup for fully bound patterns, one query</th><td>12.4 ms</td><td class="win">9.3 ms</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The time indexes are why &ldquo;before&rdquo; is constant time</h3>
+  <p>SPARQL&rsquo;s interface to a store is the triple pattern, so a query for &ldquo;events on this application between two times&rdquo; must read every event the application ever had and filter. The <code>app_time</code> table has the application and the time as a key prefix, so the same question is one short range scan.</p>
+
+  <figure class="glass wide">
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Workload</th><th>Path</th><th>3.5 M quads</th><th>35 M quads</th><th>Growth</th></tr></thead>
+        <tbody>
+          <tr><th rowspan="2">Events in the 10 minutes before an incident</th><td>native, <code>app_time</code></td><td class="win">0.003 ms</td><td class="win">0.003 ms</td><td>none</td></tr>
+          <tr><td>SPARQL</td><td>0.16 ms</td><td>0.21 ms</td><td>1.3&times;</td></tr>
+          <tr><th rowspan="2">Blast radius of the hub application, 19,999 rows</th><td>native, breadth-first on <code>upos</code></td><td class="win">15.1 ms</td><td class="win">189 ms</td><td>12.5&times; for 10&times; the rows</td></tr>
+          <tr><td>SPARQL property path</td><td>17.8 ms</td><td>213 ms</td><td>12&times;</td></tr>
+          <tr><th rowspan="2">Incidents on one team&rsquo;s applications in one region</th><td>native</td><td class="win">7.7 ms</td><td class="win">159 ms</td><td>for 10.7&times; the rows</td></tr>
+          <tr><td>SPARQL</td><td>10.2 ms</td><td>185 ms</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Figure 6.</b> Warm medians on Apple silicon with the store on an external disk. The first workload does not grow with history because its index is keyed by application and time. The other two grow with the number of rows they return. At 3.5 million quads, all 41 benchmark queries returned the same rows as Oxigraph in memory.</figcaption>
+  </figure>
+
+  <h3>Concurrency and durability</h3>
+  <ul class="plain">
+    <li><strong>Readers use snapshots.</strong> A query opens a redb read transaction and sees one consistent state while a harvest commits behind it.</li>
+    <li><strong>Writers are serialised across processes.</strong> A harvest or a verdict takes a file lock from its snapshot to its commit, so it never commits facts that were checked against a state another writer has since changed.</li>
+    <li><strong>Every commit is durable.</strong> Non-durable commits were measured and rejected: they did not speed up the load, and redb cannot reuse pages freed by them until a durable commit, which doubled the file.</li>
+    <li><strong>An unchanged batch commits nothing.</strong> The gateway compares the batch with the stored graph first, so a re-harvest of unchanged files costs reads only.</li>
+  </ul>
+</section>
+
+<!-- ================= 4 ================= -->
+<section id="gateway">
+  <h2><span class="n">4</span>The gateway: six checks, in order</h2>
+  <p class="xref">Plain-language version: <a href="ograph-explained.html#gateway">Nothing enters the graph without a check</a></p>
+  <p>The gateway takes a batch and returns two sets: accepted triples, which replace the batch&rsquo;s named graph, and rejections, which replace its quarantine graph. Each rejection is a node with the fact and the reason, and its IRI is a hash of both, so the same refusal on a later run is the same node.</p>
+
+  <figure class="glass wide">
+    <ol class="checks">
+      <li><b>IRI scheme</b><span>Every data IRI matches one pattern under <code>https://ograph.dev/id/</code>.</span></li>
+      <li><b>Catalog resolution</b><span>A provisional name resolves to a catalog entity, or the fact is refused. Applications and teams can only come from the catalog.<span class="reason">&ldquo;CardRail&rdquo; is not in the ops:Application catalog; not created</span></span></li>
+      <li><b>Ontology membership</b><span>The predicate and every class are declared, and catalog-only classes are not created by other sources.</span></li>
+      <li><b>Vocabularies and confidence</b><span>A closed-vocabulary value is on its list, and an alias does not already name another application. A model-proposed fact has a confidence of at least 0.5, and a dependency it proposes already exists in the catalog or the traces.<span class="reason">alias &ldquo;checkout&rdquo; already names id:app/checkout</span></span></li>
+      <li><b>Evidence</b><span>Each evidence reference points at a record the batch read, or at a fact that exists.</span></li>
+      <li><b>Incremental SHACL</b><span>Shapes run on the nodes the batch touches: domain, range, cardinality, value ranges. A node missing a required value is refused whole.</span></li>
+    </ol>
+    <figcaption><b>Figure 7.</b> The checks in the order the code runs them. Cheap, local checks come first; the shape check is last because it needs the full picture of each touched node. The two reasons shown are quarantine entries from the demo store.</figcaption>
+  </figure>
+
+  <h3>Name resolution</h3>
+  <p>Sources rarely spell a service the way the catalog does. The gateway normalises the name, looks for an exact match on names and declared aliases, and otherwise scores it against every catalog entity of that class with Jaro-Winkler similarity.</p>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">Jaro-Winkler is a score from 0 to 1 for how alike two spellings are.</p>
+    <p>&ldquo;inventry&rdquo; and &ldquo;inventory&rdquo; score close to 1, because they share almost every letter in the same order. It forgives typos well. It also forgives too much: &ldquo;-uk&rdquo; and &ldquo;-eu&rdquo; differ by two letters at the end of a long name, so two different services look nearly identical. That is why a high score needs the extra rules below.</p>
+  </aside>
+
+  <figure class="glass wide">
+    <div class="scroll">
+      <svg viewBox="0 0 760 170" style="min-width:640px" role="img" aria-label="Number line of Jaro-Winkler similarity from 0.6 to 1.0. Below 0.80 the name is treated as missing. From 0.80 to 0.93 it is ambiguous and quarantined. At 0.93 or above it resolves, provided it beats any other entity by 0.03 and is not a sibling name. A marker at 0.98 shows inventory-service-uk against inventory-service-eu, which the sibling rule refuses.">
+        <rect class="zone-miss" x="40" y="60" width="340" height="34"/>
+        <rect class="zone-amb" x="380" y="60" width="221" height="34"/>
+        <rect class="zone-ok" x="601" y="60" width="119" height="34"/>
+        <text class="elab on" x="210" y="81" text-anchor="middle">missing: not created</text>
+        <text class="elab warn" x="490" y="81" text-anchor="middle">ambiguous: quarantined</text>
+        <text class="elab on" x="641" y="81" text-anchor="middle">resolves*</text>
+        <g class="tick" text-anchor="middle">
+          <text x="40" y="112">0.60</text><text x="210" y="112">0.70</text><text x="380" y="112">0.80</text><text x="601" y="112">0.93</text><text x="720" y="112">1.00</text>
+        </g>
+        <line class="incline" x1="686" y1="40" x2="686" y2="94"/>
+        <text class="elab hot" x="682" y="32" text-anchor="end">0.98: inventory-service-uk against inventory-service-eu, refused by the sibling rule</text>
+        <text class="elab" x="40" y="148">* only if it also beats the best match on any other entity by 0.03, and is not a sibling name</text>
+      </svg>
+    </div>
+    <figcaption><b>Figure 8.</b> How a similarity score becomes a decision. A high score alone is not enough. Two names are siblings when they share every word but one and that word is unlike its counterpart (<code>uk</code> against <code>eu</code>, <code>v1</code> against <code>v2</code>), or when one adds a word that is not filler (<code>-canary</code>). <code>inventry-service-eu</code> still resolves; <code>inventory-service-uk</code> does not.</figcaption>
+  </figure>
+
+  <h3>Incremental SHACL against the store as it will be</h3>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">SHACL is a checklist for what a complete thing looks like.</p>
+    <p>The ontology says which words exist. <strong>SHACL</strong> says what a valid thing must have. &ldquo;Every event has a time.&rdquo; &ldquo;A chain has exactly one root cause.&rdquo; &ldquo;A confidence is between 0 and 1.&rdquo; Each rule is called a shape.</p>
+    <p><strong>Incremental</strong> means checking only what this batch touched, the way a proofreader rereads only the pages that were edited instead of the whole book.</p>
+  </aside>
+  <p>Validating a whole store on each batch would not scale, and validating the batch alone would miss violations that only appear when it meets existing data. The gateway does neither. It builds an overlay: the union graph, minus what only the graph being replaced holds, plus the accepted facts, plus the ontology for class reasoning. It then validates only the focus nodes the batch touches.</p>
+  <p>Removing a fact can break another shape, so the pass repeats until no violation remains; each pass either drops a fact or stops. A bad value that the batch did not propose belongs to another graph, and this batch is not rejected for it.</p>
+  <p>Hand-written shapes say only what must be present. Domain, range, vocabularies and functional properties are derived from the ontology in code, so they are not written twice.</p>
+
+  <div class="term glass wide">
+    <header>ontology/shapes.ttl</header>
+<pre>shape:Chain a sh:NodeShape ;
+  sh:targetClass corr:Chain ;
+  sh:property [ sh:path corr:leadsTo ;    sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path corr:rootCause ;  sh:minCount 1 ; sh:maxCount 1 ;
+                sh:message "a chain has exactly one root cause" ] ;
+  sh:property [ sh:path corr:confidence ; sh:maxCount 1 ;
+                sh:minInclusive 0 ; sh:maxInclusive 1 ] .</pre>
+  </div>
+
+  <p>That last constraint once caught a real bug. Anomaly strength was not capped, so chain confidences exceeded 1, and the gateway quarantined 75 chains from ograph&rsquo;s own correlator. The SHACL engine is ograph&rsquo;s own, about 830 lines, because no available crate could validate chosen focus nodes over a custom store. It passes all 98 tests of the W3C SHACL Core suite.</p>
+
+  <h3>What counts as support for a model&rsquo;s claim</h3>
+  <p>A model may propose <code>ops:dependsOn</code> from a chat thread. The gateway commits the edge only if the catalog or the traces already assert it. Co-occurring events were tested as a second kind of support, on all 9,900 ordered application pairs of the benchmark, and rejected.</p>
+
+  <figure class="glass wide">
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Support rule</th><th>Precision</th><th class="num">Recall</th></tr></thead>
+        <tbody>
+          <tr><th>A trace edge only <strong>(shipped)</strong></th><td class="win"><span class="mini us" style="width:160px"></span>1.000</td><td class="num">0.200</td></tr>
+          <tr><th>A trace edge, or co-occurrence in 5 or more minutes</th><td><span class="mini" style="width:142px"></span>0.885</td><td class="num">0.205</td></tr>
+          <tr><th>A trace edge, or co-occurrence in 3 or more minutes</th><td><span class="mini" style="width:72px"></span>0.453</td><td class="num">0.251</td></tr>
+          <tr><th>Co-occurrence alone, in 3 or more minutes</th><td><span class="mini" style="width:29px"></span>0.182</td><td class="num">0.067</td></tr>
+          <tr><th>Base rate: any pair picked at random</th><td><span class="mini" style="width:22px"></span>0.136</td><td class="num"></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Figure 9.</b> Precision of each rule for confirming a proposed dependency, against the 1,350 pairs the catalog declares. Co-occurrence barely beats chance, because during an incident every service misbehaves in the same minutes. At the 5-minute setting it adds 7 real edges and 36 invented ones.</figcaption>
+  </figure>
+</section>
+
+<!-- ================= 5 ================= -->
+<section id="detectors">
+  <h2><span class="n">5</span>Detectors: from raw telemetry to episodes</h2>
+  <p class="xref">Plain-language version: <a href="ograph-explained.html#episodes">Keep the episode, leave the raw data where it is</a></p>
+  <p>Logs, metrics and traces never enter the graph as records. A detector reads the file, finds episodes, and proposes one event per episode with a pointer to the first raw record. The detectors are online: each point is judged against a trailing baseline, never against a label or a known incident time.</p>
+
+  <h3>Metrics: a robust z-score with a floor</h3>
+  <p>For each series the detector keeps a baseline from the trailing 300 seconds, leaving out the most recent 10 so that the start of an anomaly does not contaminate it. It uses the median and the median absolute deviation (MAD) rather than the mean and standard deviation, because one outlier barely moves a median.</p>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">The detector asks one question: how many normal wobbles away is this point?</p>
+    <p>The <strong>median</strong> is the middle value of recent history. Call it &ldquo;normal&rdquo;. The <strong>MAD</strong> is how far points usually stray from it. Call it &ldquo;the normal wobble&rdquo;. The <strong>z-score</strong> is the distance from normal, counted in wobbles.</p>
+    <p>A connection count that sits near 60 and wobbles by 3 is at z = 1 when it reads 63. When it reads 196, it is about 50 wobbles out, and nobody needs a threshold tuned by hand to call that abnormal.</p>
+  </aside>
+
+  <div class="note rule wide">
+    <b>The score of a point.</b>
+    <code class="formula">z = (value &minus; median) / scale</code>
+    <code class="formula">scale = max( 1.4826 &times; MAD,  0.01 &times; |median|,  (max &minus; min) / 6 )</code>
+    An episode opens when z reaches 5, needs 3 anomalous points to count, and closes after more than 2 normal points in a row. Only rises count, except for metrics such as throughput where a drop is as telling. The detector waits for 12 points and 150 seconds of history before judging anything.
+  </div>
+
+  <p>The second and third terms of the scale are the floor. A sparse series that is mostly zero has a MAD of 0, and without a floor one routine spike scores like an outage. The first benchmark run scored 0.21 for exactly this reason: a disk metric with a median and MAD of zero produced a z of 10<sup>10</sup>.</p>
+
+  <figure class="glass wide">
+    <div class="scroll">
+      <svg viewBox="0 0 740 310" style="min-width:660px" role="img" aria-label="Line chart of ledger-db connections over the 15 minutes before incident INC-5377. The value sits near 60 until 8 minutes before the incident, then jumps to about 196 and stays there. A shaded band marks the trailing 300 second baseline, a dashed line the median of 59.7, and another the threshold of 74. The episode is shaded from the jump to the end of the data.">
+        <rect class="zone-base" x="136" y="30" width="183.8" height="220"/>
+        <rect class="zone-ep" x="326.1" y="30" width="373.9" height="220"/>
+        <line class="axisline" x1="60" y1="250" x2="700" y2="250"/>
+        <line class="axisline" x1="60" y1="150" x2="700" y2="150"/>
+        <line class="axisline" x1="60" y1="50" x2="700" y2="50"/>
+        <line class="dash" x1="136" y1="190.4" x2="700" y2="190.4"/>
+        <line class="dash thr" x1="136" y1="176" x2="700" y2="176"/>
+        <line class="incline" x1="630.3" y1="30" x2="630.3" y2="250"/>
+        <polyline class="series" points="60.0,181.9 66.3,197.5 72.7,186.1 79.0,190.3 85.3,192.3 91.7,189.6 98.0,188.8 104.4,198.2 110.7,188.7 117.0,191.0 123.4,187.8 129.7,189.9 136.0,191.0 142.4,186.5 148.7,193.2 155.0,185.8 161.4,189.4 167.7,190.5 174.1,191.1 180.4,184.6 186.7,191.1 193.1,190.4 199.4,193.8 205.7,194.3 212.1,189.3 218.4,187.9 224.8,193.0 231.1,192.1 237.4,194.0 243.8,191.4 250.1,191.1 256.4,188.7 262.8,191.9 269.1,188.6 275.4,189.4 281.8,187.4 288.1,188.0 294.5,192.3 300.8,187.5 307.1,186.3 313.5,188.1 319.8,194.2 326.1,62.9 332.5,54.2 338.8,53.9 345.1,50.2 351.5,52.9 357.8,51.0 364.2,50.5 370.5,49.3 376.8,58.2 383.2,57.2 389.5,54.4 395.8,53.3 402.2,52.4 408.5,51.7 414.9,47.6 421.2,48.0 427.5,54.3 433.9,57.7 440.2,51.2 446.5,59.9 452.9,55.3 459.2,51.5 465.5,52.1 471.9,56.5 478.2,50.5 484.6,51.9 490.9,53.6 497.2,55.6 503.6,59.3 509.9,52.1 516.2,47.6 522.6,55.7 528.9,51.8 535.2,55.0 541.6,56.8 547.9,49.9 554.3,51.8 560.6,52.6 566.9,57.4 573.3,60.7 579.6,53.2 585.9,55.3 592.3,58.7 598.6,60.3 605.0,60.6 611.3,46.7 617.6,50.9 624.0,55.6 630.3,57.9 636.6,56.9 643.0,54.4 649.3,52.3 655.6,49.2 662.0,49.6 668.3,44.5 674.7,55.2 681.0,54.0 687.3,56.6 693.7,63.4 700.0,57.3"/>
+        <text class="elab" x="228" y="46" text-anchor="middle">baseline: trailing 300 s</text>
+        <text class="elab acc" x="478" y="104" text-anchor="middle">episode: peak z = 51, strength 0.63, SEV2</text>
+        <text class="elab" x="142" y="206">median 59.7</text>
+        <text class="elab warn" x="142" y="170">threshold 74.0 (z = 5)</text>
+        <text class="inclab" x="624" y="24" text-anchor="end">INC-5377 opens</text>
+        <g class="tick" text-anchor="end"><text x="52" y="254">0</text><text x="52" y="154">100</text><text x="52" y="54">200</text></g>
+        <g class="tick" text-anchor="middle"><text x="60" y="272">&minus;15 min</text><text x="250.1" y="272">&minus;10</text><text x="440.2" y="272">&minus;5</text><text x="630.3" y="272">0</text><text x="380" y="298">ledger-db connections, one point every 10 seconds</text></g>
+      </svg>
+    </div>
+    <p class="swipe">Swipe sideways to see the whole figure.</p>
+    <figcaption><b>Figure 10.</b> The detector on real demo data, from <code>examples/demo/metrics.csv</code>. The baseline at the moment of the jump has a median of 59.7 and a scale of 2.86, so the threshold is 74.0. The series jumps to about 196, which is a z of 51. The graph stores this whole plateau as one <code>evt:MetricAnomaly</code> node with <code>evt:at</code> 22:18:40, <code>evt:until</code> 22:28:30, <code>evt:value</code> 50.98 and <code>evt:sourceRecord</code> <code>metrics.csv:314</code>.</figcaption>
+  </figure>
+
+  <h3>Strength: one scale for every signal</h3>
+  <p>A z-score of 51 and an alert of severity SEV1 must be comparable, so each detector&rsquo;s raw score maps to a strength between 0 and 1 on a log scale. A z of 5 is 0 and a z of 200 is 1.</p>
+
+  <figure class="glass wide">
+    <div class="two">
+      <div class="scroll">
+        <svg viewBox="0 0 500 270" style="min-width:380px" role="img" aria-label="Strength as a function of z on a logarithmic axis. Strength is 0 up to z of 5, rises in a straight line to 1 at z of 200, and stays at 1. Horizontal lines mark SEV3 at 0.25, SEV2 at 0.5 and SEV1 at 0.8. A point marks z of 51 at strength 0.63.">
+          <line class="axisline" x1="60" y1="220" x2="480" y2="220"/>
+          <line class="dash" x1="60" y1="175" x2="480" y2="175"/>
+          <line class="dash" x1="60" y1="130" x2="480" y2="130"/>
+          <line class="dash" x1="60" y1="76" x2="480" y2="76"/>
+          <polyline class="series us" points="60,220 129.7,220 410.3,40 480,40"/>
+          <circle class="pt" cx="306.4" cy="106.7" r="6"/>
+          <text class="elab acc" x="296" y="100" text-anchor="end">z = 51: 0.63</text>
+          <text class="elab" x="64" y="170">SEV3 from 0.25</text>
+          <text class="elab" x="64" y="125">SEV2 from 0.5</text>
+          <text class="elab" x="64" y="71">SEV1 from 0.8</text>
+          <g class="tick" text-anchor="end"><text x="52" y="224">0</text><text x="52" y="44">1</text></g>
+          <g class="tick" text-anchor="middle"><text x="60" y="240">2</text><text x="129.7" y="240">5</text><text x="235.2" y="240">20</text><text x="410.3" y="240">200</text><text x="480" y="240">500</text><text x="270" y="262">raw score z, log scale</text></g>
+        </svg>
+      </div>
+      <div>
+        <div class="note rule" style="margin:0 0 14px">
+          <b>Strength.</b>
+          <code class="formula">(ln z &minus; ln 5) / (ln 200 &minus; ln 5)</code>
+          clamped to the range 0 to 1.
+        </div>
+        <p style="font-size:14.5px;color:var(--fg-2)">Log and trace detectors emit a ratio to their own baseline, multiplied by 5 so that the detection threshold lands at the same point on this axis. Events with a declared severity, such as alerts, map SEV1 to 1.0, SEV2 to 0.75, SEV3 to 0.5 and anything else to 0.25.</p>
+      </div>
+    </div>
+    <figcaption><b>Figure 11.</b> The strength curve, drawn from the formula, with the ledger-db episode from Figure 10 marked. The log scale means a tenfold stronger anomaly adds a fixed amount of strength, and saturation at 1 keeps one extreme metric from drowning every other signal.</figcaption>
+  </figure>
+
+  <h3>Logs and traces</h3>
+  <div class="tablewrap wide">
+    <table>
+      <thead><tr><th>Signal</th><th>Reduction</th><th>An episode fires when</th><th>Event</th></tr></thead>
+      <tbody>
+        <tr><th>Logs</th><td>Drain templating per service: variable tokens are masked, and a line joins a template when at least half its token positions agree. Error-like lines are counted per template per minute.</td><td>A minute has at least 3 lines of one template and at least 3 times the mean of the previous five minutes, after a 2-minute warm-up. It then stays quiet for 5 minutes.</td><td><code>evt:LogError</code> with the template text and the count</td></tr>
+        <tr><th>Metrics</th><td>One series per <code>service_metric</code> column.</td><td>z reaches 5 for 3 points, as above.</td><td><code>evt:MetricAnomaly</code> with <code>evt:until</code></td></tr>
+        <tr><th>Traces, failed</th><td>Spans grouped per service per minute: count, errors, 95th-percentile duration.</td><td>A minute has at least 3 failed spans and an error rate of at least 5% and at least 3 times the mean of the previous minutes.</td><td><code>evt:TraceFailed</code></td></tr>
+        <tr><th>Traces, slow</th><td>Same grouping.</td><td>A minute with at least 5 spans has a 95th percentile of at least twice the median of the previous minutes.</td><td><code>evt:TraceSlow</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">Drain turns a million log lines into a handful of patterns you can count.</p>
+    <p>&ldquo;user 4812 failed login&rdquo; and &ldquo;user 977 failed login&rdquo; are the same message with a different number. Drain blanks out the parts that vary and keeps the template: &ldquo;user &lt;*&gt; failed login&rdquo;.</p>
+    <p>Once lines are grouped by template, &ldquo;is something wrong?&rdquo; becomes a counting question: did this pattern suddenly appear three times more often than a few minutes ago?</p>
+  </aside>
+
+  <p>Template masking matters more than it looks. Product ids such as <code>L9ECAV7KIM</code> once escaped the mask, and one service produced 9,113 distinct templates from what were really 6. Masking upper-case ids that contain a digit fixed it without changing any score.</p>
+</section>
+
+<!-- ================= 6 ================= -->
+<section id="correlation">
+  <h2><span class="n">6</span>Correlation: scored chains over the dependency graph</h2>
+  <p class="xref">Plain-language version: <a href="ograph-explained.html#example">A worked example</a></p>
+  <p>Correlation runs after every source has been harvested, once per incident. Its output is a batch of <code>corr:Chain</code> nodes that goes through the gateway like any other.</p>
+
+  <h3>Step 1: candidates</h3>
+  <p>The scope is the incident&rsquo;s application and everything it depends on, found by a breadth-first walk of <code>ops:dependsOn</code> to depth 4. For each application in scope, one range scan of <code>app_time</code> returns the events in the 30 minutes before the incident. An episode that started earlier but was still under way when the window opened also counts, with a 24-hour lookback.</p>
+
+  <h3>Step 2: score a link</h3>
+  <div class="note rule wide">
+    <b>The link from event a to a later event b.</b>
+    <code class="formula">known pair (a.kind, b.kind):   0.9</code>
+    <code class="formula">otherwise:   0.6 &times; proximity + 0.4 &times; severity(a)</code>
+    <code class="formula">proximity = 1 &minus; gap / window,   gap = b.at &minus; min(a.until, b.at)</code>
+    Known pairs are DEPLOYMENT to LOG_ERROR, CONFIG_CHANGE to METRIC_ANOMALY, ALERT to INCIDENT and TRACE_FAILED to INCIDENT. All of these are settings in <code>config.toml</code>.
+  </div>
+  <p>The gap is measured from the <em>end</em> of the earlier episode. An anomaly still under way when the next event arrives is adjacent to it, with a gap of zero. Measured from the start, a fault that began five minutes before the incident and never stopped scored below a one-point blip seconds before it. Fixing that cut the misses on the benchmark from 12 to 6.</p>
+
+  <h3>Step 3: search</h3>
+  <p>From each candidate as a root, a depth-first search extends the path through later events, subject to these rules:</p>
+  <ul class="plain">
+    <li>The next event is on the same application or on one that <strong>calls</strong> it. Failure flows from a dependency to its callers.</li>
+    <li>The next event is not the same kind on the same application.</li>
+    <li>Every intermediate link scores at least 0.6.</li>
+    <li>A path holds at most 5 events, and the search stops after 2,000 expansions per root.</li>
+  </ul>
+  <p>Each path closes with a link to the incident. A chain&rsquo;s confidence is the geometric mean of all its links, so one weak link pulls the whole chain down and a longer chain is not penalised for its length. A chain is kept only if both its closing link and its confidence reach 0.6.</p>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">A chain is only as believable as its weakest link, and the geometric mean respects that.</p>
+    <p>An ordinary average lets one strong link hide a weak one: 1.0 and 0.2 average to 0.6. The <strong>geometric mean</strong> multiplies the links and takes the root, which gives 0.45 for the same pair. A story with one shaky step scores like a shaky story.</p>
+    <p><strong>Depth-first search</strong> is how the chains are found: follow one path as far as it goes, back up one step, try the next turn. It is how you would explore a maze with one hand on the wall.</p>
+  </aside>
+
+  <figure class="glass wide">
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Link</th><th>Gap</th><th>Proximity</th><th>Severity</th><th>Rule</th><th class="num">Score</th></tr></thead>
+        <tbody>
+          <tr><th>ledger-db ALERT &rarr; payments-api LOG_ERROR</th><td class="nw">20 s</td><td>0.989</td><td>1.00</td><td>0.6 &times; 0.989 + 0.4 &times; 1.00</td><td class="num">0.993</td></tr>
+          <tr><th>payments-api LOG_ERROR &rarr; payments-api ALERT</th><td class="nw">220 s</td><td>0.878</td><td>1.00</td><td>0.6 &times; 0.878 + 0.4 &times; 1.00</td><td class="num">0.927</td></tr>
+          <tr><th>payments-api ALERT &rarr; checkout ALERT</th><td class="nw">120 s</td><td>0.933</td><td>1.00</td><td>0.6 &times; 0.933 + 0.4 &times; 1.00</td><td class="num">0.960</td></tr>
+          <tr><th>checkout ALERT &rarr; INCIDENT</th><td class="nw">60 s</td><td></td><td></td><td>known pair</td><td class="num">0.900</td></tr>
+          <tr><th><strong>Chain confidence</strong></th><td></td><td></td><td></td><td>(0.993 &times; 0.927 &times; 0.960 &times; 0.900)<sup>1/4</sup></td><td class="num win">0.944</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Figure 12.</b> The top chain of INC-5377, scored link by link. These rows are recomputed by hand from the rule and the event times; the result matches the stored <code>corr:confidence</code> of 0.9444. The chain rooted at payments-api has two links, 0.960 and 0.900, and their geometric mean is the 0.930 that <code>ograph chains</code> prints for rank 2.</figcaption>
+  </figure>
+
+  <h3>Step 4: rank applications</h3>
+  <p>Each application takes the confidence of its best chain. Sustained, saturated anomalies often tie, so ties break in a fixed order: the chain that passes through more distinct applications, then the earlier root event, then the name. Confidences are compared at nine decimal places so floating-point noise cannot decide a tie.</p>
+  <p>A chain&rsquo;s IRI is 64 bits of a hash of the incident and the root event. It does not contain the rank, so a verdict recorded against a chain stays attached to the root it judged when a later harvest reorders the ranking.</p>
+
+  <h3>Why the window is 30 minutes</h3>
+  <p>Netflix&rsquo;s post uses 10 minutes. On the benchmark that fails as soon as the incident opens late, because the root event falls outside the window.</p>
+
+  <figure class="glass wide">
+    <div class="two">
+      <div class="scroll">
+        <svg viewBox="0 0 470 290" style="min-width:380px" role="img" aria-label="Line chart of top-1 accuracy against the delay between the fault and the incident opening, for a 30-minute window: 0.87 at 120 seconds, 0.87 at 300 seconds, 0.79 at 600 seconds and 0.78 at 900 seconds. A separate point shows a 10-minute window scoring 0.11 at 600 seconds.">
+          <line class="axisline" x1="70" y1="230" x2="440" y2="230"/>
+          <line class="axisline" x1="70" y1="130" x2="440" y2="130"/>
+          <line class="axisline" x1="70" y1="30" x2="440" y2="30"/>
+          <polyline class="series us" points="108,56 180,56 300,72 420,74"/>
+          <circle class="pt" cx="108" cy="56" r="5"/><circle class="pt" cx="180" cy="56" r="5"/><circle class="pt" cx="300" cy="72" r="5"/><circle class="pt" cx="420" cy="74" r="5"/>
+          <circle class="pt hot" cx="300" cy="208" r="5"/>
+          <text class="elab acc" x="108" y="46" text-anchor="middle">0.87</text>
+          <text class="elab acc" x="180" y="46" text-anchor="middle">0.87</text>
+          <text class="elab acc" x="300" y="62" text-anchor="middle">0.79</text>
+          <text class="elab acc" x="420" y="64" text-anchor="middle">0.78</text>
+          <text class="elab acc" x="120" y="92">30-minute window</text>
+          <text class="elab hot" x="290" y="204" text-anchor="end">10-minute window: 0.11</text>
+          <g class="tick" text-anchor="end"><text x="62" y="234">0</text><text x="62" y="134">0.5</text><text x="62" y="34">1.0</text></g>
+          <g class="tick" text-anchor="middle"><text x="108" y="250">120 s</text><text x="180" y="250">300 s</text><text x="300" y="250">600 s</text><text x="420" y="250">900 s</text><text x="255" y="276">delay between the fault and the incident opening</text></g>
+        </svg>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Variant, all 90 cases</th><th class="num">Top-1</th></tr></thead>
+          <tbody>
+            <tr><th>Chain ranking (default)</th><td class="num win">0.93</td></tr>
+            <tr><th>Propagation ranking</th><td class="num">0.83</td></tr>
+            <tr><th>Propagation, with dependency edges</th><td class="num">0.84</td></tr>
+            <tr><th>Propagation, edges ignored</th><td class="num">0.79</td></tr>
+            <tr><th>Propagation, metrics only</th><td class="num">0.86</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <figcaption><b>Figure 13.</b> Left: accuracy as the incident opens later after the fault. This study predates the end-of-episode proximity rule; a replica of the current ranking scored about 0.92 at 120, 600 and 900 seconds, but the study itself was not rerun. Right: ablations. The dependency edges are worth about 5 points. On this dataset, log and trace episodes added a little noise over metrics alone. The last three rows are from the ablation study, which measured propagation ranking only.</figcaption>
+  </figure>
+
+  <p>Propagation ranking is the alternative for a team that must keep a short window. It scores each application as 0.4 &times; its strongest anomaly + 0.5 &times; its best chain + 0.1 &times; the share of its callers that show a later event. A grid of 206 weight combinations tuned on one repetition gave no gain on the held-out ones, so the shipped weights are not fitted to labels.</p>
+</section>
+
+<!-- ================= 7 ================= -->
+<section id="memory">
+  <h2><span class="n">7</span>Verdicts and investigation memory</h2>
+  <p class="xref">Plain-language version: <a href="ograph-explained.html#example">A chain is a guess until a person says otherwise</a></p>
+  <p>A verdict is the only write that does not come from a source file, and it still goes through the gateway, with <code>Extraction::Human</code> as its method and the person&rsquo;s name attached. An accepted verdict writes <code>inc:cause</code> from the incident to the chain&rsquo;s root event.</p>
+  <p>Telemetry expires, and a cause must not expire with it. The verdict node therefore copies what it judged: the root event&rsquo;s class, application, time and signal. The root event itself gets nothing extra, so once its telemetry is retired it is no longer a candidate for correlation, while the recorded cause still reads correctly.</p>
+
+  <h3>Similarity is a cosine over onset signatures</h3>
+  <p>An incident&rsquo;s signature is a sparse vector. Its dimensions are (application, signal kind) pairs, and each value is the sum of the strengths of that pair&rsquo;s events in the 15 minutes before the incident. Two incidents are compared by the cosine of their signatures, and <code>similar</code> returns past incidents by descending similarity with their accepted causes and mitigations.</p>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">Two incidents are alike when the trouble is spread across services in the same proportions.</p>
+    <p>Write each incident as a list: how much alerting on ledger-db, how much error logging on payments-api, and so on. <strong>Cosine similarity</strong> compares the shape of two such lists and ignores their size.</p>
+    <p>A small outage and a large one with the same pattern score near 1. Two outages of the same size on different services score near 0.</p>
+  </aside>
+
+  <figure class="glass wide">
+    <div class="bars">
+      <div class="bar"><span class="lab">Chance</span><div class="trk"><span class="fill" style="width:20%"></span></div><span class="val">0.20</span></div>
+      <div class="bar"><span class="lab">Signature keeps the maximum strength<small>66 of 89</small></span><div class="trk"><span class="fill" style="width:74%"></span></div><span class="val">0.74</span></div>
+      <div class="bar us"><span class="lab">Signature sums strengths<small>82 of 89, shipped</small></span><div class="trk"><span class="fill" style="width:92%"></span></div><span class="val">0.92</span></div>
+      <div class="bar"><span class="lab">Ceiling<small>85 of 89 have an earlier match at all</small></span><div class="trk"><span class="fill" style="width:95.5%"></span></div><span class="val">0.96</span></div>
+    </div>
+    <div class="axis"><div><span>0</span><span>0.5</span><span>1.0</span></div></div>
+    <figcaption><b>Figure 14.</b> How often the most similar past incident&rsquo;s accepted cause is the true root cause, over the 89 benchmark incidents that have a predecessor. Strength saturates at 1, so keeping the maximum made the root application and its callers look alike. Summing keeps how much of the onset each application carries. With every past incident of the same service and fault removed, the summed signature still gets 79 of 85, against 62, so the gain is not near-duplicate matching.</figcaption>
+  </figure>
+</section>
+
+<!-- ================= 8 ================= -->
+<section id="queries">
+  <h2><span class="n">8</span>Query paths</h2>
+
+  <h3>Native paths</h3>
+  <div class="tablewrap wide">
+    <table>
+      <thead><tr><th>Command</th><th>How it runs</th></tr></thead>
+      <tbody>
+        <tr><th><code>before</code></th><td>Breadth-first on <code>dependsOn</code> for the scope, then one <code>app_time</code> range scan per application.</td></tr>
+        <tr><th><code>blast</code></th><td>Breadth-first on the reverse of <code>dependsOn</code> through <code>upos</code>, then <code>ops:supports</code> for business processes and a check for open incidents.</td></tr>
+        <tr><th><code>chains</code></th><td>The candidate scan and depth-first search of section 6, on the live snapshot.</td></tr>
+        <tr><th><code>similar</code></th><td>One signature per incident, then cosine similarity.</td></tr>
+        <tr><th><code>why</code></th><td>For each triple of a node, <code>spog</code> lists the graphs holding it; each graph carries its source, extractor and time. Model-proposed facts add the model, prompt hash and confidence, and quarantined proposals about the node are listed too.</td></tr>
+        <tr><th><code>news</code></th><td>News items that mention a vendor, joined through <code>ops:usesVendor</code> to applications and their business processes.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>SPARQL through one adapter</h3>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">SPARQL is to a graph what SQL is to tables: you describe the pattern, and the database fills in the blanks.</p>
+    <p>A query is a sentence with holes in it. <code>?app ops:dependsOn id:app/ledger-db</code> asks &ldquo;what goes in the blank?&rdquo; and the answer is every application for which that sentence is true. Names starting with <code>?</code> are the blanks.</p>
+    <p>Add a second sentence that reuses a blank and you have a join. Add a <code>+</code> after a relationship and it means &ldquo;one or more steps&rdquo;, which is how one line finds everything that depends on a service, directly or through others.</p>
+  </aside>
+  <p>Oxigraph&rsquo;s evaluator, <code>spareval</code>, runs SPARQL over any type that implements one trait, <code>QueryableDataset</code>. Its central method takes a quad pattern with optional subject, predicate, object and graph and returns an iterator of matching quads as internal ids. ograph implements it over a snapshot in one module, the only place that touches the pinned 0.x crates. Constants that a query introduces and the store has never seen get ephemeral ids, with bit 63 set, that live for that query alone.</p>
+
+  <div class="term glass wide">
+    <header>examples/demo</header>
+<pre><span class="p">$</span> ograph sparql 'SELECT ?app (COUNT(?e) AS ?events) WHERE {
+      ?e evt:on ?a ; a evt:Alert . ?a ops:name ?app
+    } GROUP BY ?app ORDER BY DESC(?events)'
+app           events
+payments-api  3
+ledger-db     2
+search-api    2
+checkout      1
+
+<span class="p">$</span> ograph sparql 'SELECT ?app WHERE { ?a ops:dependsOn+ id:app\/ledger-db ; ops:name ?app }'
+<span class="c"># every application that depends on ledger-db, through a property path</span></pre>
+  </div>
+
+  <h3>A wrong name is an error, not an empty answer</h3>
+  <p>In SPARQL, a query that uses a predicate nobody declared returns no rows, which reads as &ldquo;there are none&rdquo;. For an agent that is a silent failure. Before running a query, ograph checks every name in its own namespaces against the ontology and refuses an undeclared one, suggesting the nearest declared name by Jaro-Winkler similarity. <code>ops:dependOn</code> yields &ldquo;did you mean <code>ops:dependsOn</code>?&rdquo;.</p>
+  <p>The same check catches a subtler trap. Each node stores only its most specific type, so matching the superclass <code>evt:Event</code> finds nothing. The error lists the subclasses to match instead. Over every predicate and class stored in the demo graph, the check produced no false rejections.</p>
+
+  <h3>Serving</h3>
+  <p><code>ograph serve</code> keeps the store open and answers line-delimited JSON-RPC over TCP. It writes its address to <code>.ograph/serve.json</code> so clients find it without configuration. It polls the source files every 5 seconds and re-harvests on change. With <code>--mcp</code> the same eight tools speak MCP over stdio: <code>before</code>, <code>chains</code>, <code>blast</code>, <code>similar</code>, <code>why</code>, <code>news</code>, <code>sparql</code> and <code>verdict</code>. Calls took 0.1 to 1.7 ms each. SPARQL through these tools is read-only.</p>
+
+  <h3>The model path</h3>
+  <p>ograph contains no provider code and holds no credentials. For extraction it runs a configured command, by default <code>pi</code>, with the prompt on standard input and reads JSON from standard output. The cache key is the content hash of the input, the model and the prompt hash, so a re-harvest of unchanged threads makes no calls and yields the same triples. A failed call marks that harvest as degraded and does not block the others.</p>
+</section>
+
+<!-- ================= 9 ================= -->
+<section id="decisions">
+  <h2><span class="n">9</span>Decisions the measurements made</h2>
+  <p>Several parts of the design are the second attempt. Each row below was built or prototyped, measured, and then kept or dropped on the number.</p>
+
+  <div class="tablewrap wide">
+    <table>
+      <thead><tr><th>Question</th><th>Decision</th><th>Deciding evidence</th></tr></thead>
+      <tbody>
+        <tr><th>Fork Oxigraph whole?</th><td>Import its RDF and SPARQL crates; write the store</td><td>Its storage is a private enum with no trait. A clean Oxigraph build takes 479 s with RocksDB and 87 s without; the ograph CLI builds in 8 s</td></tr>
+        <tr><th>Put raw telemetry in the graph?</th><td>No. Episodes with pointers</td><td>3.9 million quads against 370 for one case, and 0.63 top-1 against 0.93</td></tr>
+        <tr><th>Use an existing SHACL crate?</th><td>Write SHACL Core, about 830 lines</td><td>The candidate pulled in about 238 crates and a C build, could not read the store without a copy, and had no focus-node validation</td></tr>
+        <tr><th>Use an OWL reasoner?</th><td>Compute the subclass closure at load</td><td>The gateway needs only the class closure plus domain and range</td></tr>
+        <tr><th>A 10-minute correlation window?</th><td>30 minutes</td><td>0.11 top-1 at 10 minutes when the incident opens 600 s after the fault</td></tr>
+        <tr><th>Multiply the known-pair prior into every link?</th><td>It replaces the formula for known pairs</td><td>As a multiplier, chain ranking scored 0.09. As a replacement, 0.80, before later fixes</td></tr>
+        <tr><th>Let co-occurrence confirm a dependency?</th><td>No. Catalog and trace edges only</td><td>0.18 precision against a 0.14 base rate</td></tr>
+        <tr><th>Let a model find aliases in runbooks?</th><td>No. Exact phrases only</td><td>The model found no alias the phrases missed and added a false one whose quote passed</td></tr>
+        <tr><th>Vote across model samples?</th><td>No</td><td>Three samples scored 15 of 16 at three times the calls; the one miss was systematic</td></tr>
+        <tr><th>Non-durable commits for speed?</th><td>No</td><td>No faster at 3.5 million quads, and the file doubled</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Why Oxigraph&rsquo;s crates, and not Neo4j or another graph database</h3>
+  <aside class="eli">
+    <p class="tag">In plain words</p>
+    <p class="big">ograph is one small program and one file. A graph database is a server someone has to run.</p>
+    <p>The difference is the one between SQLite and a database server. Neo4j, Apache AGE and HugeGraph are services to install, secure, upgrade and keep alive. ograph opens a file in a few milliseconds, answers, and exits. That matters on a laptop, in a CI job, and on a corporate network where every new server needs approval.</p>
+    <p>The second reason is the data model. Those databases store <strong>property graphs</strong> and speak Cypher or Gremlin. ograph&rsquo;s design rests on RDF: an ontology, named graphs for provenance, SHACL for validation, SPARQL for questions. None of that is built into a property graph database, so it would all have to be rebuilt on top.</p>
+    <p><strong>Oxigraph</strong> is an open-source RDF database written in Rust. ograph borrows its two hardest parts to get right, the RDF parsers and the SPARQL engine, and writes its own storage underneath, because the questions ograph asks most need indexes Oxigraph does not have.</p>
+  </aside>
+
+  <figure class="glass wide">
+    <div class="bars">
+      <div class="bar us"><span class="lab">ograph store, native path</span><div class="trk"><span class="fill" style="width:9.5%"></span></div><span class="val">13 ms</span></div>
+      <div class="bar us"><span class="lab">ograph store, SPARQL</span><div class="trk"><span class="fill" style="width:11%"></span></div><span class="val">15 ms</span></div>
+      <div class="bar"><span class="lab">Apache AGE<small>Postgres, SQL recursive query</small></span><div class="trk"><span class="fill" style="width:20.7%"></span></div><span class="val">28 ms</span></div>
+      <div class="bar"><span class="lab">Apache HugeGraph<small>61 to 64 ms</small></span><div class="trk"><span class="fill" style="width:46.3%"></span></div><span class="val">63 ms</span></div>
+      <div class="bar"><span class="lab">Oxigraph<small>in memory, its own storage</small></span><div class="trk"><span class="fill" style="width:100%"></span></div><span class="val">135 ms</span></div>
+    </div>
+    <div class="tablewrap" style="margin-top:22px">
+      <table>
+        <thead><tr><th>Candidate</th><th>Verdict</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><th>Neo4j</th><td>Not prototyped</td><td>A JVM server with no built-in RDF or SHACL. Apache AGE already covered the &ldquo;server graph database&rdquo; option with a better licence fit, so no Neo4j numbers exist here</td></tr>
+          <tr><th>Apache AGE</th><td>Kept as an optional sink, not the engine</td><td>Starting takes 120 to 361 ms against 3 ms. Variable-length Cypher paths never finished on the hub application, and Cypher writes have open lost-write bugs</td></tr>
+          <tr><th>Apache HugeGraph</th><td>Rejected</td><td>Slower than AGE on every workload. Needs a 2 GB heap and 10 s to start, and has an open data-loss bug</td></tr>
+          <tr><th>HelixDB</th><td>Rejected</td><td>No RDF, SHACL or named graphs. Compiles C, and its embedded mode sends telemetry by default</td></tr>
+          <tr><th>Oxigraph, whole</th><td>Crates imported, storage replaced</td><td>Storage is closed to extension, RocksDB needs a C++ toolchain on every build machine, and it has no time or per-application index</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption><b>Figure 15.</b> Blast radius of the hub application, 19,999 rows, on the same 3.5 million quads in each engine. Every engine returned identical rows. These numbers come from the prototype that preceded ograph, so they differ slightly from Figure 6, which measures the finished store. Neo4j is absent because it was never measured.</figcaption>
+  </figure>
+
+  <p>The full record, including the candidates that were rejected before any code was written, is in <a href="https://github.com/eusthace811/ograph/blob/main/docs/PLAN.md">PLAN.md</a>. Every measurement and the command that produced it is in <a href="https://github.com/eusthace811/ograph/blob/main/docs/EVIDENCE.md">EVIDENCE.md</a>.</p>
+</section>
+
+<section id="map">
+  <h2>Where to find it in the code</h2>
+  <div class="tablewrap wide">
+    <table>
+      <thead><tr><th>Topic</th><th>File</th><th>Section here</th></tr></thead>
+      <tbody>
+        <tr><th>Proposed facts and batches</th><td><code>ograph-core/src/model.rs</code></td><td><a href="#architecture">1</a></td></tr>
+        <tr><th>Catalog through ogrep</th><td><code>ograph-core/src/enrich/catalog.rs</code></td><td><a href="#ogrep">1</a></td></tr>
+        <tr><th>Ontology loading and closure</th><td><code>ograph-core/src/ontology.rs</code>, <code>ontology/ograph.ttl</code></td><td><a href="#model">2</a></td></tr>
+        <tr><th>Term ids and the quad store</th><td><code>ograph-core/src/term.rs</code>, <code>store.rs</code></td><td><a href="#store">3</a></td></tr>
+        <tr><th>Gateway and SHACL</th><td><code>ograph-core/src/gateway.rs</code>, <code>shacl.rs</code>, <code>ontology/shapes.ttl</code></td><td><a href="#gateway">4</a></td></tr>
+        <tr><th>Detectors and Drain</th><td><code>ograph-core/src/enrich/signals.rs</code>, <code>drain.rs</code></td><td><a href="#detectors">5</a></td></tr>
+        <tr><th>Correlation</th><td><code>ograph-core/src/correlate.rs</code></td><td><a href="#correlation">6</a></td></tr>
+        <tr><th>Verdicts and harvest orchestration</th><td><code>ograph-core/src/workspace.rs</code></td><td><a href="#memory">7</a></td></tr>
+        <tr><th>Native queries, SPARQL, serve</th><td><code>ograph-core/src/query.rs</code>, <code>sparql.rs</code>, <code>serve.rs</code></td><td><a href="#queries">8</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="references">
+  <h2>References</h2>
+  <ol class="refs">
+    <li><a href="ograph-explained.html">ograph, explained</a>. The plain-language companion to this page.</li>
+    <li>Netflix Technology Blog. &ldquo;Ontology-Driven Observability: Building an End-to-End Knowledge Graph at Netflix Scale.&rdquo; October 2026.</li>
+    <li>RCAEval, dataset RE2-OB. 90 labeled failures with metrics, logs and traces. MIT licensed.</li>
+    <li>W3C. SPARQL 1.1 Query Language, and Shapes Constraint Language (SHACL).</li>
+    <li><a href="https://github.com/eusthace811/ograph/blob/main/docs/EVIDENCE.md">docs/EVIDENCE.md</a>, <a href="https://github.com/eusthace811/ograph/blob/main/docs/PLAN.md">docs/PLAN.md</a> and <a href="https://github.com/eusthace811/ograph/blob/main/docs/REFERENCE.md">docs/REFERENCE.md</a>.</li>
+  </ol>
+</section>
+
+</main>
+
+<footer>ograph is MIT licensed. Figures 3, 4, 10 and 12 use the demo company in <code>examples/demo</code>; its services and incidents are invented. Benchmark figures come from <code>docs/EVIDENCE.md</code>. Back to the <a href="ograph-explained.html">explainer</a>.</footer>
+
+</div>
+</body>
+</html>
