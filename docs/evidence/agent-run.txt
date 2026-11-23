@@ -1,0 +1,8 @@
+$ pi -p --no-session --no-extensions --extension ograph-pi.ts --tools ograph_before,ograph_chains,ograph_similar,ograph_blast,ograph_why "Investigate incident INC-5377 ..."
+(22.7 s wall, model: pi default on the Codex login)
+
+- **Most likely hypothesis—not a confirmed conclusion—is ledger-db connection-pool saturation**, potentially associated with the preceding `max_connections` configuration change. `ograph_before` shows the config/connection anomaly and saturation alert before payments and checkout degradation; `ograph_chains` ranks the ledger-db → payments-api → checkout chain highest (0.944).  
+- The evidence chain is: ledger-db `max_connections` change/connection anomaly (22:18:40) → SEV1 `LedgerPoolSaturated` alert (22:19:40) → payments-api SEV1 log error, “ledger-db connection pool exhausted” (22:20:00) → payments error-rate alert (22:23:40) → checkout latency alert (22:25:40). [ograph_before; ograph_chains; ograph_why on the alert/config/log]  
+- Provenance supports these as directly harvested, non-model facts: Alertmanager provided the saturation alert, config harvest provided the configuration change, and log harvest provided the pool-exhaustion error; no quarantined facts were returned. [ograph_why]  
+- Beyond checkout, ledger-db directly affects **payments-api, orders-api, and inventory**, and transitively **web-frontend**; exposed business processes are **card payments, online sales, and order fulfilment**. [ograph_blast]  
+- The applicable prior mitigation is from similar incident **INC-4120** (“Card payments failing”), whose accepted cause was ledger-db pool saturation and whose successful mitigation was to **raise the ledger-db connection pool to 200**. [ograph_similar]
