@@ -142,7 +142,7 @@ Models run through pi on its existing login, `openai/gpt-6-luna` at $0.10 in and
 | Check | Result |
 |---|---|
 | Accuracy on 16 labeled threads | 15 of 16, then 16 and 15 in two repeat runs with no cache. The first prompt scored 13 of 16 in one run. See Phase 9 for what changed. The gate fails below 14 of 16 (85%) |
-| Replay | A re-harvest made 0 model calls and wrote 1 quad (the harvest time) |
+| Replay | A re-harvest made 0 model calls and wrote nothing |
 | Broken model (`scripts/eval/bad_model.py`) | Exercises non-JSON, out-of-vocabulary, invented-app, low-confidence and invented-call answers, plus a fabricated quote. All were quarantined, dropped or marked degraded. 0 invalid facts were committed, and the audit is clean |
 | Correct rejections with the real model | The model named the vendors CardRail and MailRelay as applications. The catalog gate refused to create them |
 
@@ -182,7 +182,7 @@ The base rate is 0.136, so co-occurrence barely beats chance. During an incident
 | New gateway kind: a confident model edge with no backing edge | Quarantined in all 3 cases. A model edge that the catalog declares is committed |
 | Real model on the demo threads | It proposed 1 to 2 calls per run. Every committed call is declared in the catalog. It also proposed `payments-api -> ledger-db` with a quote that does not name payments-api, and code dropped it |
 | Near-twin names | `inventory-service-uk` scored 0.98 against the catalog's `inventory-service-eu` and resolved to it silently. A fuzzy match now also needs a 0.03 margin over any other entity and must not differ by one whole unlike word. The new kind is quarantined 3 of 3; misspellings such as `inventry-service-eu` still resolve. RCAEval scores, the demo and the alias gate are unchanged |
-| Determinism | A fuzzy catalog match with tied scores picked its winner in hash order, so a re-submit could rewrite quarantine reasons. Ties now break by IRI. Re-submits wrote 1 quad in 5 of 5 runs |
+| Determinism | A fuzzy catalog match with tied scores picked its winner in hash order, so a re-submit could rewrite quarantine reasons. Ties now break by IRI. Re-submits wrote 1 quad, the harvest time, in 5 of 5 runs; an unchanged batch now writes nothing |
 
 ### SPARQL name check (`pi-contract.txt`)
 
@@ -252,9 +252,9 @@ A pure knowledge graph puts every metric point, log line and span in the graph a
 | | Pure knowledge graph | ograph (episodes plus pointers) |
 |---|---|---|
 | Quads | 3,924,039 | 394 (10,000x fewer) |
-| Store | 1,088 MiB | 0.54 MiB |
-| Ingest | 15.9 s (0.8 s parse, 15.1 s load) | 0.19 s median per case for the whole harvest, including detection |
-| "What happened in the 10 minutes before?" | 279,168 raw records, 5.5 MiB of text, in 386 ms | 12 episodes, 2.6 KiB, in 0.07 ms |
+| Store | 1,088 MiB | 0.52 MiB |
+| Ingest | 15.9 s (0.8 s parse, 15.1 s load) | 0.25 s median per case for a first harvest, including detection; each batch is one durable commit so other processes can share the store |
+| "What happened in the 10 minutes before?" | 279,168 raw records, 5.5 MiB of text, in 387 ms | 12 episodes, 2.6 KiB, in 0.07 ms |
 | Root cause on 90 cases | 0.63 AC@1 for one baseline written in SPARQL 1.1: a fixed-window mean shift in units of standard deviation | 0.93 AC@1 |
 | A day of this small system | 235 M quads, 64 GiB | 0.02 M quads |
 

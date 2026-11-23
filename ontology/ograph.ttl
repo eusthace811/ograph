@@ -102,7 +102,7 @@ harv:Harvest a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "One run of r
 harv:Quarantined a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A proposed fact the gateway refused, with its reason." .
 harv:LlmFact a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "Provenance of one fact a model proposed: model, prompt hash, confidence." .
 harv:source a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string ; rdfs:comment "The source a harvest read." .
-harv:at a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:dateTime ; rdfs:comment "When it was harvested." .
+harv:at a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:dateTime ; rdfs:comment "When the harvest last changed it." .
 harv:extractor a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string ; rdfs:comment "The rule or model that extracted a fact." .
 harv:status a owl:DatatypeProperty ; rdfs:domain harv:Harvest ; rdfs:range xsd:string ; rdfs:comment "Whether a harvest completed or was degraded." .
 harv:reason a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string ; rdfs:comment "Why a fact was quarantined." .

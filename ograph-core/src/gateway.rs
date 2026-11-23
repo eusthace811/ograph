@@ -575,6 +575,21 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, du
         quarantine.push(f(harv::REASON, s(&r.reason)));
         quarantine.push(f(harv::SOURCE, s(&batch.source)));
     }
+    let outcome = |removed, added| Outcome {
+        graph: graph.as_str().to_owned(),
+        proposed: batch.facts.len(),
+        accepted: accepted.len(),
+        quarantined: rejected.clone(),
+        removed,
+        added,
+        fuzzy_matches: fuzzy,
+        degraded: batch.degraded.clone(),
+    };
+    // Every commit syncs the disk, so a batch that changes nothing but its time commits nothing,
+    // and `harv:at` stays the time the graph last changed.
+    if !batch.failed() && unchanged(store, &graph, &triples, &qgraph, &quarantine)? {
+        return Ok(outcome(0, 0));
+    }
     let (removed, added) = store.transact_with(durable, |tx| {
         let gid = tx.intern(&graph.clone().into())?;
         let qid = tx.intern(&qgraph.clone().into())?;
@@ -597,16 +612,35 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, du
         let (r2, a2) = tx.replace_graph(qid, qids)?;
         Ok((r1 + r2, a1 + a2))
     })?;
-    Ok(Outcome {
-        graph: graph.as_str().to_owned(),
-        proposed: batch.facts.len(),
-        accepted: accepted.len(),
-        quarantined: rejected,
-        removed,
-        added,
-        fuzzy_matches: fuzzy,
-        degraded: batch.degraded.clone(),
-    })
+    Ok(outcome(removed, added))
+}
+
+/// Whether the store already holds exactly these triples in `graph` and `qgraph`, apart from the
+/// graph's `harv:at`.
+fn unchanged(store: &Store, graph: &NamedNode, triples: &[Triple], qgraph: &NamedNode, quarantine: &[Triple]) -> anyhow::Result<bool> {
+    let snap = store.snapshot()?;
+    let at = snap.iri(harv::AT)?;
+    for (g, ts) in [(graph, triples), (qgraph, quarantine)] {
+        let Some(gid) = snap.iri(g.as_str())? else { return Ok(ts.is_empty()) };
+        let mut want = FxHashSet::default();
+        for t in ts {
+            let (Some(s), Some(p), Some(o)) = (snap.id(&t.subject.clone().into())?, snap.id(&t.predicate.clone().into())?, snap.id(&t.object)?) else { return Ok(false) };
+            if Some(p) != at {
+                want.insert([s, p, o]);
+            }
+        }
+        let mut have = FxHashSet::default();
+        for q in snap.quads([None; 3], GraphSel::Named(gid)) {
+            let q = q?;
+            if Some(q[1]) != at {
+                have.insert([q[0], q[1], q[2]]);
+            }
+        }
+        if want != have {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 pub fn sha2_hash(s: &str) -> [u8; 32] {

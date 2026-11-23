@@ -168,11 +168,11 @@ fn main() -> anyhow::Result<()> {
     println!("bad subjects with a committed fact: {leaked}; good events missing: {missing_good}/{}; full SHACL audit violations: {}", good.len(), audit.len());
     drop(snap);
     let again = gateway::submit(&store, &ont, &b, t0 + 60_000)?;
-    println!("re-submit: removed {} added {} (only the harvest time should change: 1 and 1)", again.removed, again.added);
+    println!("re-submit: removed {} added {} (an unchanged batch writes nothing: 0 and 0)", again.removed, again.added);
     let snap = store.snapshot()?;
     let still_clean = gateway::audit(&snap, &ont).is_empty();
     drop(snap);
-    let ok = confirmed_edge && bad_fact_committed(&store, &b)? == 0 && missing_good == 0 && audit.is_empty() && still_clean && again.added <= 1 && problems.is_empty();
+    let ok = confirmed_edge && bad_fact_committed(&store, &b)? == 0 && missing_good == 0 && audit.is_empty() && still_clean && again.added == 0 && again.removed == 0 && problems.is_empty();
     println!("GATEWAY GATE: {}", if ok { "PASS" } else { "FAIL" });
     let _ = std::fs::remove_dir_all(&dir);
     std::process::exit(if ok { 0 } else { 1 });

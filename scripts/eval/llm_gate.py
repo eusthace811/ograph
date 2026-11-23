@@ -47,7 +47,7 @@ def main():
     after = len(cache.read_text().splitlines()) if cache.exists() else 0
     line = [l for l in out.splitlines() if "discussions" in l]
     print(f"2. replay: cache lines {before} -> {after} (new model calls: {after - before}); {line[0] if line else out[-200:]}")
-    replay_ok = after == before and line and "+1 -1 quads" in line[0]
+    replay_ok = after == before and line and "+0 -0 quads" in line[0]
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="ograph-badmodel-"))
     shutil.copytree(demo, tmp / "demo", ignore=shutil.ignore_patterns("store.redb", "cache"))
     cfg = (tmp / "demo" / ".ograph" / "config.toml").read_text()

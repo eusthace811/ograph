@@ -1,7 +1,7 @@
 1. accuracy: 16/16 threads classified as labeled (16 classified); misses (gold -> model): []
    model-proposed calls committed: 0, of them declared in the catalog: 0; quarantined as unconfirmed: []
-2. replay: cache lines 123 -> 123 (new model calls: 0); harvest/discussions/discussions/ops.json: 119 proposed, 117 accepted, 2 quarantined, +1 -1 quads (0.00 s)
-3. broken model harvest: ['harvest/discussions/discussions/ops.json: 116 proposed, 100 accepted, 16 quarantined, +397 -0 quads, DEGRADED: model answer was not JSON: Sure! The category is probably capacity. (0.00 s)']
+2. replay: cache lines 123 -> 123 (new model calls: 0); harvest/discussions/discussions/ops.json: 119 proposed, 117 accepted, 2 quarantined, +0 -0 quads (0.00 s)
+3. broken model harvest: ['harvest/discussions/discussions/ops.json: 116 proposed, 100 accepted, 16 quarantined, +397 -0 quads, DEGRADED: model answer was not JSON: Sure! The category is probably capacity. (0.01 s)']
    committed: categories ['UNKNOWN'], out-of-vocabulary [], invented apps [], low-confidence model facts 0, invented calls []
    quarantined 15: "OUTAGE" is not in the closed vocabulary of disc:category; "furious" is not in the closed vocabulary of disc:sentiment; "made-up-service" is not in the ops:Application catalog; not created; model confidence 0.20 is below 0.5; unconfirmed: no catalog or traces edge backs this model-proposed ops:d
    audit: 0 violations (0.0 s)
