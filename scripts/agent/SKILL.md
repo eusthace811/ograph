@@ -22,7 +22,10 @@ Work in this order and cite what each step returned:
 5. `ograph_why {node}` before you rely on a fact: which harvest asserted it, from which source
    record, and whether a model proposed it (with its confidence).
 6. Drill into the raw record named in `source_record` in its own system when you need detail.
-7. `ograph_sparql` for anything the verbs do not answer.
+7. `ograph_sparql` for anything the verbs do not answer. Each node stores only its most
+   specific type, so match `evt:Event` through its subclasses
+   (`VALUES ?type { evt:Alert evt:Deployment ... } ?e a ?type`); the error for
+   `?e a evt:Event` lists them.
 
 Only call `ograph_verdict` after a person confirms the cause, and pass their evidence.
 Never present a chain as a conclusion without that verdict.

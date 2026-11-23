@@ -68,9 +68,6 @@ pub struct Workspace {
     pub config: Config,
     pub ontology: Ontology,
     pub store: Store,
-    /// Held by every write, so a write never commits facts checked against a stale snapshot
-    /// while `serve` runs its watcher and requests side by side.
-    writer: std::sync::Mutex<()>,
 }
 
 pub fn find(start: &Path) -> Option<PathBuf> {
@@ -108,7 +105,7 @@ impl Workspace {
         let read = |n: &str, d: &str| std::fs::read_to_string(dir.join(n)).unwrap_or_else(|_| d.to_owned());
         let ontology = Ontology::load(&read("ontology.ttl", crate::ontology::DEFAULT_TTL), &read("shapes.ttl", crate::ontology::DEFAULT_SHAPES))?;
         let store = Store::open(&dir.join("store.redb"))?;
-        Ok(Self { root: root.to_owned(), dir, config, ontology, store, writer: Default::default() })
+        Ok(Self { root: root.to_owned(), dir, config, ontology, store })
     }
 
     pub fn llm(&self) -> Option<Llm> {
@@ -119,7 +116,7 @@ impl Workspace {
     /// Runs every source in layer order, then correlation for every incident. Each source file
     /// is one batch through the gateway.
     pub fn harvest(&self, only: Option<&str>, mut progress: impl FnMut(&Outcome, f64)) -> anyhow::Result<Vec<Outcome>> {
-        let _write = self.writer.lock().unwrap_or_else(|e| e.into_inner());
+        let _write = self.store.write_lock()?;
         let llm = self.llm();
         let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology };
         let mut sources = self.config.sources.clone();
@@ -232,7 +229,7 @@ impl Workspace {
 
     /// Records a human verdict on a chain. An accepted chain also writes `inc:cause`.
     pub fn verdict(&self, chain: &str, accept: bool, by: &str, evidence: &[String]) -> anyhow::Result<Outcome> {
-        let _write = self.writer.lock().unwrap_or_else(|e| e.into_inner());
+        let _write = self.store.write_lock()?;
         let snap = self.store.snapshot()?;
         let chain_iri = resolve_iri(chain);
         let cid = snap.iri(&chain_iri)?.ok_or_else(|| anyhow::anyhow!("no chain {chain}"))?;

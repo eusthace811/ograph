@@ -142,7 +142,7 @@ fn main() -> anyhow::Result<()> {
     let _ = bad_facts;
     let in_harvest = |local: &str| -> anyhow::Result<bool> {
         let q = format!("ASK {{ GRAPH ?g {{ ?s ?p ?o }} FILTER(STRSTARTS(STR(?g), \"https://ograph.dev/graph/harvest/\")) FILTER(?s = <https://ograph.dev/id/ev/{local}> || STRENDS(STR(?s), \"/{local}\")) }}");
-        Ok(matches!(sparql::run(&snap, &q, None)?, sparql::Answer::Boolean { value: true }))
+        Ok(matches!(sparql::run(&snap, &sparql::parse(&q)?, None)?, sparql::Answer::Boolean { value: true }))
     };
     println!("\n| kind | cases | cases with some fact committed (valid siblings of the bad fact) | quarantined facts (first reason) |\n|---|---|---|---|");
     let mut leaked = 0;
@@ -157,7 +157,7 @@ fn main() -> anyhow::Result<()> {
         println!("| {k} | {} | {committed} | {} ({}) |", locals.len(), reasons.len(), reason.replace('|', "/"));
     }
     let missing_good = good.iter().filter(|g| !in_harvest(g).unwrap()).count();
-    let confirmed_edge = sparql::run(&snap, "ASK { GRAPH ?g { id:app\\/checkout ops:dependsOn id:app\\/payments-api } FILTER(CONTAINS(STR(?g), \"/alerts/\")) }", None)?;
+    let confirmed_edge = sparql::run(&snap, &sparql::parse("ASK { GRAPH ?g { id:app\\/checkout ops:dependsOn id:app\\/payments-api } FILTER(CONTAINS(STR(?g), \"/alerts/\")) }")?, None)?;
     let confirmed_edge = matches!(confirmed_edge, sparql::Answer::Boolean { value: true });
     println!("model-proposed edge the catalog declares, committed: {confirmed_edge}");
     let audit = gateway::audit(&snap, &ont);

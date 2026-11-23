@@ -24,7 +24,7 @@ ograph lab                         # one HTML page over the whole graph
 
 ## How it works
 
-- **Raw telemetry stays in its own systems.** ograph keeps only episodes, such as "a burst of this log template" or "this metric left its band", with a pointer back to the first raw record. It does not keep every line, point or span. On one RCAEval case that is 368 quads instead of 3.9 million, and it ranks root causes better (0.93 against 0.63 top-1 for what SPARQL alone can express; see `docs/EVIDENCE.md`).
+- **Raw telemetry stays in its own systems.** ograph keeps only episodes, such as "a burst of this log template" or "this metric left its band", with a pointer back to the first raw record. It does not keep every line, point or span. On one RCAEval case that is 368 quads instead of 3.9 million, and it ranks root causes better (0.93 top-1, against 0.63 for a fixed-window mean-shift ranking written in SPARQL; see `docs/EVIDENCE.md`).
 - **The gateway owns every write.** Enrichers propose facts. The gateway checks:
   - IRIs, and catalog membership with fuzzy matching that refuses near-twins such as `-uk` against `-eu` and variants such as `-canary`;
   - closed vocabularies, model confidence and evidence;
@@ -44,15 +44,15 @@ ograph lab                         # one HTML page over the whole graph
 | Root cause on RCAEval RE2-OB (90 labeled failures), held-out reps | AC@1 0.93, AC@3 0.98, Avg@5 0.98 (network loss 0.80, delay 0.87). The published numbers are TORAI 0.83/0.95/0.93, CIRCA 0.67/0.89/0.85 and BARO 0.67/0.82/0.80 |
 | Similar past incident shares the root cause | 0.92 top-1 (82 of 89) and 0.98 on the held-out reps (59 of 60), 0.94 top-3, against about 0.20 by chance |
 | SPARQL correctness against Oxigraph in memory | 0 mismatches over 41 queries on 3.5 M quads |
-| W2, the 10 minutes before an incident | 0.003 ms native, 0.17 ms SPARQL, 0.10 ms Oxigraph |
+| W2, the 10 minutes before an incident | 0.003 ms native, 0.16 ms SPARQL, 0.10 ms Oxigraph |
 | W3, blast radius of the hub application | 15 ms native, 18 ms SPARQL, 137 ms Oxigraph |
 | SHACL Core, W3C test suite | 98 of 98 |
 | Gateway, 18 kinds of bad write plus a broken model | 0 invalid facts committed, every rejection quarantined with a reason |
 | Model-proposed dependencies | Committed only when a catalog or trace edge backs them. Co-occurring events were tested as support and rejected: 0.18 precision against a 0.14 base rate |
-| Thread classifier on 16 labeled threads | Mean 15.7 of 16 over 9 uncached runs, up from 13. It quotes the cause or answers UNKNOWN; voting across samples or models did not help |
+| Thread classifier on 16 labeled threads | 16 of 16 in the recorded gate run, up from 13; uncached reruns scored 15 or 16, and their logs are not checked in. It quotes the cause or answers UNKNOWN; voting across samples or models did not help |
 | Ontology coverage on 10 held-out questions | 6, 6, 6 and 5 of 6 covered and 4 of 4 gaps in four runs, up from 3 or 4 covered |
 | Aliases from runbooks | 3 of 3 stated aliases, 0 of 6 decoys |
-| Misspelled names in SPARQL | Rejected with the nearest declared name; 0 false rejections over every stored predicate and class |
+| Misspelled names in SPARQL | Rejected with the nearest declared name; 0 false rejections over every stored predicate and class. A superclass such as `evt:Event`, which no node stores, is rejected with its subclasses |
 | Build | Pure Rust: no `cc`, `cmake` or `bindgen`, and a clean CLI build takes 8 s |
 
 Every number comes from a script in `scripts/eval/` or a binary in `ograph-bench/`, with its output in `docs/evidence/`. `docs/EVIDENCE.md` explains each one, and `docs/PLAN.md` records the decisions.

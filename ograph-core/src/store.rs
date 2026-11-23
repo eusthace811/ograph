@@ -65,9 +65,17 @@ impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         // redb's page cache; a large store loads far faster when its B-trees stay cached.
         let cache_mb: usize = std::env::var("OGRAPH_CACHE_MB").ok().and_then(|v| v.parse().ok()).unwrap_or(1024);
-        let db = Database::builder().set_cache_size(cache_mb << 20).create(path)?;
+        // MultiWriter lets `serve`, a harvest and any number of read commands share the file;
+        // write transactions still run one at a time.
+        let db = Database::builder()
+            .set_cache_size(cache_mb << 20)
+            .set_concurrency_mode(redb::ConcurrencyMode::MultiWriter)
+            .create(path)?;
         let store = Self { db, path: path.to_owned() };
-        store.transact(|_| Ok(()))?;
+        // Only a new file lacks the tables, so a read command opens without a commit and its fsync.
+        if store.snapshot().is_err() {
+            store.transact(|_| Ok(()))?;
+        }
         Ok(store)
     }
 
@@ -75,18 +83,23 @@ impl Store {
         &self.path
     }
 
+    /// An exclusive lock across processes and threads, released when the file is dropped. A
+    /// harvest or verdict holds it from its snapshot to its commit, so it never commits facts
+    /// checked against a snapshot another writer has since changed.
+    pub fn write_lock(&self) -> std::io::Result<std::fs::File> {
+        let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(self.path.with_extension("lock"))?;
+        f.lock()?;
+        Ok(f)
+    }
+
     pub fn transact<R>(&self, f: impl FnOnce(&mut Tx<'_>) -> Result<R>) -> Result<R> {
         self.transact_with(true, f)
     }
 
-    /// `durable = false` skips the fsync. redb keeps the file consistent either way; a crash
-    /// loses non-durable commits back to the last durable one, and harvests are idempotent, so
-    /// re-running restores them. Bulk loads commit non-durably and finish with [`Store::flush`].
-    pub fn transact_with<R>(&self, durable: bool, f: impl FnOnce(&mut Tx<'_>) -> Result<R>) -> Result<R> {
-        let mut txn = self.db.begin_write()?;
-        if !durable {
-            txn.set_durability(redb::Durability::None).map_err(|e| corrupted(e.to_string()))?;
-        }
+    /// Every commit is durable whatever `durable` says: redb refuses non-durable commits on a
+    /// file shared between processes (see [`Store::open`]).
+    pub fn transact_with<R>(&self, _durable: bool, f: impl FnOnce(&mut Tx<'_>) -> Result<R>) -> Result<R> {
+        let txn = self.db.begin_write()?;
         let out = {
             let mut tx = Tx::open(&txn)?;
             let out = f(&mut tx)?;
@@ -97,9 +110,9 @@ impl Store {
         Ok(out)
     }
 
-    /// A durable empty commit: persists every earlier non-durable one.
+    /// Nothing to do: every commit is durable (see [`Store::transact_with`]).
     pub fn flush(&self) -> Result<()> {
-        self.transact(|_| Ok(()))
+        Ok(())
     }
 
     pub fn snapshot(&self) -> Result<Snapshot> {
@@ -340,21 +353,23 @@ impl<'t> Tx<'t> {
                 dropped.push(spo);
             }
         }
-        let dropped_on: FxHashSet<(Id, Id)> =
-            dropped.iter().filter(|t| t[1] == self.on).map(|t| (t[0], t[2])).collect();
-        let dropped_at: FxHashSet<(Id, Id)> =
-            dropped.iter().filter(|t| t[1] == self.at).map(|t| (t[0], t[2])).collect();
-        for &(s, t) in &dropped_at {
-            self.time.remove([t, s])?;
+        let mut dropped_on: FxHashMap<Id, Vec<Id>> = FxHashMap::default();
+        for t in dropped.iter().filter(|t| t[1] == self.on) {
+            dropped_on.entry(t[0]).or_default().push(t[2]);
+        }
+        for t in dropped.iter().filter(|t| t[1] == self.at) {
+            let (s, at) = (t[0], t[2]);
+            self.time.remove([at, s])?;
             let apps = self.union_objects(s, self.on)?;
-            let gone_apps = dropped_on.iter().filter(|(e, _)| *e == s).map(|(_, a)| *a);
-            for app in apps.into_iter().chain(gone_apps) {
-                self.app_time.remove([app, t, s])?;
+            for &app in apps.iter().chain(dropped_on.get(&s).into_iter().flatten()) {
+                self.app_time.remove([app, at, s])?;
             }
         }
-        for &(s, app) in &dropped_on {
+        for (&s, apps) in &dropped_on {
             for t in self.union_objects(s, self.at)? {
-                self.app_time.remove([app, t, s])?;
+                for &app in apps {
+                    self.app_time.remove([app, t, s])?;
+                }
             }
         }
         Ok(gone.len())
@@ -557,5 +572,54 @@ impl Snapshot {
                 Ok((name, t.len()?, s.stored_bytes(), s.metadata_bytes() + s.fragmented_bytes()))
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn events(name: &str, n: usize) -> (Store, Id, Id, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("ograph-store-{name}-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(&path).unwrap();
+        let (g, app) = store
+            .transact(|tx| {
+                let g = tx.intern(&NamedNode::new_unchecked("https://ograph.dev/g/test").into())?;
+                let app = tx.intern(&NamedNode::new_unchecked("https://ograph.dev/id/app/a").into())?;
+                let mut quads = Vec::new();
+                for k in 0..n {
+                    let e = tx.intern(&NamedNode::new_unchecked(format!("https://ograph.dev/id/ev/{k}")).into())?;
+                    quads.push([e, tx.at, term::time_id(1_700_000_000_000 + k as i64 * 1000), g]);
+                    quads.push([e, tx.on, app, g]);
+                }
+                tx.insert(quads)?;
+                Ok((g, app))
+            })
+            .unwrap();
+        (store, g, app, path)
+    }
+
+    #[test]
+    fn clearing_events_empties_the_time_indexes() {
+        let (store, g, app, path) = events("clear", 3);
+        assert_eq!(store.snapshot().unwrap().events_on(app, 0, Id::MAX).unwrap().len(), 3);
+        assert_eq!(store.transact(|tx| tx.clear_graph(g)).unwrap(), 6);
+        let snap = store.snapshot().unwrap();
+        assert_eq!(snap.events_on(app, 0, Id::MAX).unwrap(), vec![]);
+        assert_eq!(snap.stats().unwrap().iter().find(|t| t.0 == "time").unwrap().1, 0);
+        drop((snap, store));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_second_handle_shares_the_file() {
+        let (first, g, app, path) = events("shared", 3);
+        let second = Store::open(&path).unwrap();
+        assert_eq!(second.snapshot().unwrap().events_on(app, 0, Id::MAX).unwrap().len(), 3);
+        second.transact(|tx| tx.clear_graph(g)).unwrap();
+        assert_eq!(first.snapshot().unwrap().events_on(app, 0, Id::MAX).unwrap(), vec![]);
+        drop((first, second));
+        let _ = std::fs::remove_file(path);
     }
 }

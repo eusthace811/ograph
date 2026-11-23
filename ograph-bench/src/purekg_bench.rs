@@ -106,7 +106,7 @@ fn main() -> anyhow::Result<()> {
     let deps = "id:app\\/frontend id:app\\/checkoutservice id:app\\/cartservice id:app\\/currencyservice id:app\\/productcatalogservice id:app\\/recommendationservice id:app\\/shippingservice id:app\\/adservice id:app\\/emailservice id:app\\/paymentservice id:app\\/redis";
     let time_q = |q: &str| -> anyhow::Result<(f64, Answer)> {
         let t = Instant::now();
-        let r = sparql::run(&snap, q, None)?;
+        let r = sparql::run(&snap, &sparql::parse(q)?, None)?;
         Ok((t.elapsed().as_secs_f64() * 1e3, r))
     };
     let count = |r: &Answer| match r {

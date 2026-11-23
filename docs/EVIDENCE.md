@@ -29,7 +29,7 @@ The store changed in these ways from the spike:
 |---|---|---|
 | Correctness | 0 mismatches over 41 queries against Oxigraph in memory and the native paths | 0 mismatches, SPARQL against native |
 | Load | 12.7 s, 278 K quads/s (4 M-quad transactions) | 401 s, 88 K quads/s |
-| On disk after compaction | 658 MiB, 196 bytes/quad | 8.6 GiB, 256 bytes/quad |
+| On disk after compaction | 658 MiB, 196 bytes/quad | 8.4 GiB, 256 bytes/quad |
 | Open | 3 ms | 7 ms |
 | W1 (incidents on one team's apps in one region), SPARQL / native / Oxigraph | 10.2 / 7.7 / 5.7 ms | 185 / 159 ms for 10.7x the rows |
 | W2 (events in the 10 minutes before an incident), SPARQL / native / Oxigraph | 0.16 / 0.003 / 0.10 ms | 0.21 / 0.003 ms |
@@ -84,7 +84,7 @@ The gate found two real gaps, and both are fixed:
 |---|---|---|
 | 1. Which recent events could explain this incident? | `ograph before INC-5377`, `ograph chains INC-5377` | 9 events across the scope. Top cause ledger-db, with the chain `ledger-db:ALERT -> payments-api:LOG_ERROR -> payments-api:ALERT -> checkout:ALERT -> incident` (the designed cause) |
 | 2. Which services and business processes are affected? | `ograph blast ledger-db` | 5 dependents by distance. Processes affected: card payments, online sales and order fulfilment |
-| 3. Which past incidents resemble this one, and which mitigations worked? | `ograph similar INC-5377` | INC-4120: cause ledger-db, mitigation "raised ledger-db connection pool to 200" |
+| 3. Which past incidents resemble this one, and which mitigations worked? | `ograph similar INC-5377` | INC-4120, mitigation "raised ledger-db connection pool to 200". Its cause, ledger-db, shows only after the README's `verdict` step accepts INC-4120's top chain; before that the causes are empty |
 | 4. Which news relates to our vendors? | `ograph news` | CardRail latency, reaching payments-api and card payments. MailRelay deprecation, reaching notifications. An unrelated item was dropped |
 
 ## Phase 5: correlation and investigation memory on RCAEval RE2-OB
@@ -101,7 +101,7 @@ RCAEval RE2-OB (MIT) has 90 labeled failures: 5 services × 6 fault types × 3 r
 | **ograph, default (chain ranking, 30-minute window)** | **0.93 / 0.99 / 0.98** | **0.93 / 0.98 / 0.98** |
 | ograph, propagation ranking | 0.83 / 0.94 / 0.94 | 0.87 / 0.97 / 0.96 |
 | z-max with an oracle window (told the injection time) | 0.84 / 0.97 / 0.94 | 0.82 / 0.97 / 0.94 |
-| What a pure graph can rank with SPARQL 1.1 aggregates | 0.63 / 0.94 / 0.89 | 0.68 / 0.97 / 0.90 |
+| A fixed-window mean-shift ranking in SPARQL 1.1 aggregates | 0.63 / 0.94 / 0.89 | 0.68 / 0.97 / 0.90 |
 | Published TORAI (metrics, logs and traces) | 0.83 / 0.95 / 0.93 | |
 | Published CIRCA (metrics) | 0.67 / 0.89 / 0.85 | |
 | Published BARO (metrics) | 0.67 / 0.82 / 0.80 | |
@@ -229,7 +229,7 @@ A new `docs` source reads runbooks. It takes an alias only from a phrase that st
 | Check | Result |
 |---|---|
 | Aliases committed from the demo runbooks | 3 of 3 expected, 0 unexpected |
-| Decoys | 0 of 6 committed. "ledger-db (postgres)", "checkout (INC-4388)" and a version string matched no phrase. "the primary database (ledger-db)" and "orders-api is also called checkout" were quarantined |
+| Decoys | 0 of 6 committed. "ledger-db (postgres)", "checkout (INC-4388)" and a version string matched no phrase. "the primary database (ledger-db)" never reached the gateway: the two names share no part, so the enricher drops it. "orders-api is also called checkout" was quarantined |
 | Alerts that use an alias name | 12 facts quarantined without runbooks. With them, both alerts resolve to payments-api and search-api |
 | Root-cause chains for INC-5377 | Unchanged |
 
@@ -241,7 +241,7 @@ In RCAEval, `frontend-external` stays quarantined as a near match for `frontend`
 
 The classifier must now quote the words that state a cause, or answer UNKNOWN. A label in the vocabulary that comes without a verifiable quote becomes UNKNOWN in code. A label outside the vocabulary still goes to the gateway, so the quarantine keeps a record of that failure.
 
-Accuracy went from 13 of 16 to 15, 16 and 15 of 16 in three runs. The question thread is now UNKNOWN. The model answered UNKNOWN itself, with no quote, so the prompt made this fix. The code-level abstain never fired on the real model. On the broken model it turned every unquoted label into UNKNOWN. One network thread flipped between NETWORK and CAPACITY: "resolvers there were overloaded" matched the CAPACITY definition word for word. One sentence in the NETWORK definition (use it even when the network component failed because it was overloaded) fixed it in 9 of 9 runs, but it came from looking at that one thread. Over 9 uncached runs the mean is 15.7 of 16, and the last gate run scored 16. The residual misses moved: the elasticsearch thread came back CAPACITY in 2 of 9 runs, and the WAL thread came back UNKNOWN once.
+Accuracy went from 13 of 16 to 15, 16 and 15 of 16 in three runs. The question thread is now UNKNOWN. The model answered UNKNOWN itself, with no quote, so the prompt made this fix. The code-level abstain never fired on the real model. On the broken model it turned every unquoted label into UNKNOWN. One network thread flipped between NETWORK and CAPACITY: "resolvers there were overloaded" matched the CAPACITY definition word for word. One sentence in the NETWORK definition (use it even when the network component failed because it was overloaded) fixed it in 9 of 9 runs, but it came from looking at that one thread. Over 9 uncached runs the mean was 15.7 of 16 (those logs are not checked in), and the recorded gate run (`llm-gate.txt`) scored 16. The residual misses moved: the elasticsearch thread came back CAPACITY in 2 of 9 runs, and the WAL thread came back UNKNOWN once.
 
 **Voting did not pay.** Three samples from one model with a majority vote scored 15, 15, 15 at 48 calls instead of 16, because the DNS miss was systematic. Cross-model voting with a second model through pi, 2 models × 2 samples, scored 15 right and 1 abstained at 64 calls. After the DNS fix, both models once agreed on a wrong label. Voting cost a correct label and did not stop a wrong one, so it is not shipped.
 
@@ -255,14 +255,14 @@ A pure knowledge graph puts every metric point, log line and span in the graph a
 | Store | 1,088 MiB | 0.30 MiB |
 | Ingest | 15.9 s (0.8 s parse, 15.1 s load) | 0.19 s median per case for the whole harvest, including detection |
 | "What happened in the 10 minutes before?" | 279,168 raw records, 5.5 MiB of text, in 386 ms | 11 episodes, 2.2 KiB, in 0.05 ms |
-| Root cause on 90 cases | 0.63 AC@1 with the best statistic SPARQL 1.1 can express: a mean shift in units of standard deviation | 0.93 AC@1 |
+| Root cause on 90 cases | 0.63 AC@1 for one baseline written in SPARQL 1.1: a fixed-window mean shift in units of standard deviation | 0.93 AC@1 |
 | A day of this small system | 235 M quads, 64 GiB | 0.02 M quads |
 
 These are the reasons, each measured above:
 
 - **Size.** Raw telemetry is about 10,000 times larger as triples. At 196 to 256 bytes per quad, one day of an 11-service demo is 64 GiB. A real estate would multiply that by its service count.
 - **Agents.** The answer an agent needs is the 11 episodes, not the 279,168 records. 5.5 MiB of text does not fit a model's context, and the episodes fit in 2.2 KiB.
-- **SPARQL cannot express the detector.** SPARQL 1.1 has no median, MAD, window functions or online baseline. The best ranking it can express scores 0.63 AC@1, against ograph's 0.93.
+- **SPARQL cannot express the detector.** SPARQL 1.1 has no median, MAD, window functions or online baseline. A fixed-window mean-shift ranking, which it can express, scores 0.63 AC@1 against ograph's 0.93. That is one baseline, not an upper bound on SPARQL rankings.
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.

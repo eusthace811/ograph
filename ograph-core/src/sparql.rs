@@ -132,10 +132,34 @@ pub fn show(t: &Term) -> String {
     }
 }
 
-/// Rejects a query that names a class or property in one of the ontology's namespaces that the
-/// ontology does not declare (a typo returns no rows and looks like an answer), suggesting the
-/// nearest declared name.
-pub fn check_names(query: &str, ont: &crate::ontology::Ontology) -> anyhow::Result<()> {
+/// Text outside the string literals of a query's canonical serialization, where spargebra
+/// writes every literal in double quotes, escaping `"` and backslash.
+fn outside_literals(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let (mut start, mut quoted, mut escaped) = (0, false, false);
+    for (i, c) in text.char_indices() {
+        match (quoted, escaped, c) {
+            (true, true, _) => escaped = false,
+            (true, false, '\\') => escaped = true,
+            (true, false, '"') => (quoted, start) = (false, i + 1),
+            (false, _, '"') => {
+                out.push(&text[start..i]);
+                quoted = true;
+            }
+            _ => {}
+        }
+    }
+    if !quoted {
+        out.push(&text[start..]);
+    }
+    out
+}
+
+/// Parses a query and rejects ontology names it cannot match: a class or property in one of the
+/// ontology's namespaces that it does not declare (a typo returns no rows and looks like an
+/// answer), with the nearest declared name, and a class with subclasses, since the store holds
+/// only each node's most specific type.
+pub fn check(query: &str, ont: &crate::ontology::Ontology) -> anyhow::Result<spargebra::Query> {
     static IRI: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = IRI.get_or_init(|| regex::Regex::new(r"<(https://ograph\.dev/[^>\s]+)>").unwrap());
     let schema = [vocab::ops::NS, vocab::evt::NS, vocab::inc::NS, vocab::disc::NS, vocab::corr::NS, vocab::rca::NS, vocab::harv::NS];
@@ -144,39 +168,44 @@ pub fn check_names(query: &str, ont: &crate::ontology::Ontology) -> anyhow::Resu
             oxrdf::NamedOrBlankNodeRef::NamedNode(n) => Some(n.as_str().to_owned()),
             _ => None,
         }).collect();
-    let text = parse(query)?.to_string();
-    let mut unknown: Vec<String> = Vec::new();
-    for c in re.captures_iter(&text) {
-        let iri = &c[1];
-        if !schema.iter().any(|ns| iri.starts_with(ns)) || declared.contains(iri) {
-            continue;
-        }
+    let parsed = parse(query)?;
+    let text = parsed.to_string();
+    let (mut unknown, mut abstract_): (Vec<String>, Vec<String>) = Default::default();
+    for iri in outside_literals(&text).into_iter().flat_map(|t| re.captures_iter(t)).map(|c| c.get(1).unwrap().as_str()) {
         let name = vocab::compact(iri);
-        let local = |s: &str| s.rsplit([':', '#', '/']).next().unwrap_or(s).to_lowercase();
-        let nearest = declared
-            .iter()
-            .map(|d| vocab::compact(d))
-            .map(|d| (strsim::jaro_winkler(&local(&name), &local(&d)), d))
-            .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
-            .filter(|(s, _)| *s >= 0.8);
-        let msg = match nearest {
-            Some((_, d)) => format!("{name} (did you mean {d}?)"),
-            None => name,
+        let is_leaf = |c: &String| !ont.classes.iter().any(|(d, sups)| d != c && sups.contains(c));
+        let leaves: Vec<String> = ont.classes.iter().filter(|(c, sups)| *c != iri && sups.contains(iri) && is_leaf(c)).map(|(c, _)| vocab::compact(c)).collect();
+        let (list, msg) = if !leaves.is_empty() {
+            (&mut abstract_, format!("{name} has subclasses, and each node stores only its most specific type, so match those: VALUES ?type {{ {} }} ?x a ?type", leaves.join(" ")))
+        } else if !schema.iter().any(|ns| iri.starts_with(ns)) || declared.contains(iri) {
+            continue;
+        } else {
+            let local = |s: &str| s.rsplit([':', '#', '/']).next().unwrap_or(s).to_lowercase();
+            let nearest = declared
+                .iter()
+                .map(|d| vocab::compact(d))
+                .map(|d| (strsim::jaro_winkler(&local(&name), &local(&d)), d))
+                .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
+                .filter(|(s, _)| *s >= 0.8);
+            (&mut unknown, match nearest {
+                Some((_, d)) => format!("{name} (did you mean {d}?)"),
+                None => name,
+            })
         };
-        if !unknown.contains(&msg) {
-            unknown.push(msg);
+        if !list.contains(&msg) {
+            list.push(msg);
         }
     }
     anyhow::ensure!(unknown.is_empty(), "the ontology declares no {}; a query with an undeclared name matches nothing", unknown.join(", "));
-    Ok(())
+    anyhow::ensure!(abstract_.is_empty(), "{}", abstract_.join("; "));
+    Ok(parsed)
 }
 
-/// Runs a query and collects the answer. `limit` caps solution rows.
-pub fn run(snap: &Snapshot, query: &str, limit: Option<usize>) -> anyhow::Result<Answer> {
-    let parsed = parse(query)?;
+/// Runs a parsed query and collects the answer. `limit` caps solution rows.
+pub fn run(snap: &Snapshot, parsed: &spargebra::Query, limit: Option<usize>) -> anyhow::Result<Answer> {
     let evaluator = QueryEvaluator::new();
     let view = View::new(snap);
-    Ok(match evaluator.prepare(&parsed).execute(view)? {
+    Ok(match evaluator.prepare(parsed).execute(view)? {
         QueryResults::Solutions(sols) => {
             let variables: Vec<String> = sols.variables().iter().map(|v| v.as_str().to_owned()).collect();
             let vars: Vec<Variable> = sols.variables().to_vec();
@@ -205,4 +234,19 @@ pub fn solutions(snap: &Snapshot, query: &str) -> anyhow::Result<Vec<Vec<Option<
     };
     let vars: Vec<Variable> = sols.variables().to_vec();
     sols.map(|s| s.map(|s| vars.iter().map(|v| s.get(v).cloned()).collect()).map_err(Into::into)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check;
+
+    #[test]
+    fn check_reads_names_not_literals() {
+        let ont = crate::ontology::Ontology::load_default().unwrap();
+        let err = |q: &str| check(q, &ont).err().map(|e| e.to_string()).unwrap_or_default();
+        assert_eq!(err(r#"SELECT ("<https://ograph.dev/ops#typo> \" <https://ograph.dev/ops#typo2>" AS ?t) WHERE {}"#), "");
+        assert_eq!(err("SELECT ?x WHERE { ?x evt:severty ?s FILTER(?s < 2) }"), "the ontology declares no evt:severty (did you mean evt:severity?); a query with an undeclared name matches nothing");
+        assert!(err("SELECT ?x WHERE { ?x a/rdfs:subClassOf* evt:Event }").starts_with("evt:Event has subclasses, and each node stores only its most specific type, so match those: VALUES ?type { evt:Alert "));
+        assert_eq!(err("SELECT ?x WHERE { VALUES ?t { evt:Alert inc:Incident } ?x a ?t }"), "");
+    }
 }
