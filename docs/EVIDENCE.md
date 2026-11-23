@@ -251,7 +251,7 @@ A pure knowledge graph puts every metric point, log line and span in the graph a
 
 | | Pure knowledge graph | ograph (episodes plus pointers) |
 |---|---|---|
-| Quads | 3,924,039 | 369 (10,000x fewer) |
+| Quads | 3,924,039 | 370 (10,000x fewer) |
 | Store | 1,088 MiB | 0.52 MiB |
 | Ingest | 15.9 s (0.8 s parse, 15.1 s load) | 0.23 s median per case for a first harvest, including detection; each batch is one durable commit so other processes can share the store |
 | "What happened in the 10 minutes before?" | 279,168 raw records, 5.5 MiB of text, in 387 ms | 12 episodes, 2.6 KiB, in 0.07 ms |

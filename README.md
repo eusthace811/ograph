@@ -24,7 +24,7 @@ ograph lab                         # one HTML page over the whole graph
 
 ## How it works
 
-- **Raw telemetry stays in its own systems.** ograph keeps only episodes, such as "a burst of this log template" or "this metric left its band", with a pointer back to the first raw record. It does not keep every line, point or span. On one RCAEval case that is 369 quads instead of 3.9 million, and it ranks root causes better (0.93 top-1, against 0.63 for a fixed-window mean-shift ranking written in SPARQL; see `docs/EVIDENCE.md`).
+- **Raw telemetry stays in its own systems.** ograph keeps only episodes, such as "a burst of this log template" or "this metric left its band", with a pointer back to the first raw record. It does not keep every line, point or span. On one RCAEval case that is 370 quads instead of 3.9 million, and it ranks root causes better (0.93 top-1, against 0.63 for a fixed-window mean-shift ranking written in SPARQL; see `docs/EVIDENCE.md`).
 - **The gateway owns every write.** Enrichers propose facts. The gateway checks:
   - IRIs, and catalog membership with fuzzy matching that refuses near-twins such as `-uk` against `-eu` and variants such as `-canary`;
   - closed vocabularies, model confidence and evidence;

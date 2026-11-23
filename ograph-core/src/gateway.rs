@@ -551,6 +551,9 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, du
     for d in &batch.degraded {
         triples.push(h(harv::REASON, s(d)));
     }
+    for f in &batch.files {
+        triples.push(h(harv::FILE, s(f)));
+    }
     // Per-fact provenance for model-proposed facts: model, prompt hash and confidence.
     for (t, i) in &accepted {
         let Some(ProposedFact { method: Extraction::Llm { model, prompt_hash, confidence }, evidence, .. }) = batch.facts.get(*i) else { continue };
@@ -599,7 +602,8 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, du
         }
         if batch.failed() {
             // Keep the last good facts of an unreadable file, such as one caught mid-write.
-            ids.extend(tx.graph_quads(gid)?.into_iter().filter(|q| q[0] != gid).map(|[s, p, o, _]| [s, p, o]));
+            let file = tx.intern(&NamedNode::new_unchecked(harv::FILE).into())?;
+            ids.extend(tx.graph_quads(gid)?.into_iter().filter(|q| q[0] != gid || q[1] == file).map(|[s, p, o, _]| [s, p, o]));
         }
         let (r1, a1) = tx.replace_graph(gid, ids)?;
         let mut qids = Vec::with_capacity(quarantine.len());

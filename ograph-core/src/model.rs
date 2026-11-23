@@ -76,11 +76,13 @@ pub struct Batch {
     /// Record ids this batch read. Evidence must point at one of them or at an existing fact.
     pub records: std::collections::HashSet<String>,
     pub degraded: Vec<String>,
+    /// Files a batch that spans several files read, kept as `harv:file`.
+    pub files: Vec<String>,
 }
 
 impl Batch {
     pub fn new(source: &str, key: &str, extractor: &str) -> Self {
-        Self { source: source.into(), key: key.into(), extractor: extractor.into(), facts: vec![], records: Default::default(), degraded: vec![] }
+        Self { source: source.into(), key: key.into(), extractor: extractor.into(), facts: vec![], records: Default::default(), degraded: vec![], files: vec![] }
     }
 
     pub fn graph(&self) -> NamedNode {

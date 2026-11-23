@@ -1,5 +1,5 @@
 1. verdicts: covered questions reported covered 5/6; gap questions with the expected gap 4/4
    Q3 labeled covered, reported missing ['preceded']
 2. replay from cache, same report: True
-3. proposals merged into the ontology: 7 additions, 0 breaking, diff exit 0
+3. proposals merged into the ontology: 8 additions, 0 breaking, diff exit 0
 COVERAGE GATE: PASS

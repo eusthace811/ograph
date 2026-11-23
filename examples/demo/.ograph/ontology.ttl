@@ -68,7 +68,7 @@ inc:title a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:str
 inc:status a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string ; rdfs:comment "Whether the incident is open, mitigated or resolved." .
 inc:resolvedAt a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:dateTime ; rdfs:comment "When the incident was resolved." .
 inc:mitigation a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string ; rdfs:comment "What was done to mitigate or fix the incident." .
-inc:cause a owl:ObjectProperty ; rdfs:domain inc:Incident ; rdfs:range evt:Event ; rdfs:comment "An accepted cause, written only by a verdict." .
+inc:cause a owl:ObjectProperty ; rdfs:domain inc:Incident ; rdfs:range og:Thing ; rdfs:comment "An accepted cause, written only by a verdict: an event, or once its telemetry is gone, the event the verdict describes." .
 inc:faultType a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string ; rdfs:comment "The kind of fault that caused the incident." .
 
 # ---------- SLACK: discussion threads ----------
@@ -82,7 +82,7 @@ disc:at a owl:DatatypeProperty ; rdfs:domain disc:Thread ; rdfs:range xsd:dateTi
 
 # ---------- CORRELATION ----------
 corr:Chain a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A candidate causal chain. A hypothesis, never a conclusion." .
-corr:rootCause a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range evt:Event ; rdfs:comment "The event the chain proposes as the root cause." .
+corr:rootCause a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range og:Thing ; rdfs:comment "The event the chain proposes as the root cause; a chain only a verdict holds keeps it after its telemetry is gone, described by the verdict." .
 corr:leadsTo a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range inc:Incident ; rdfs:comment "The incident the chain explains." .
 corr:link a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range evt:Event ; rdfs:comment "An event along the chain between root cause and incident." .
 corr:candidateApp a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range ops:Application ; rdfs:comment "An application the chain implicates." .
@@ -110,6 +110,7 @@ harv:at a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:dateTime 
 harv:extractor a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string ; rdfs:comment "The rule or model that extracted a fact." .
 harv:status a owl:DatatypeProperty ; rdfs:domain harv:Harvest ; rdfs:range xsd:string ; rdfs:comment "Whether a harvest completed or was degraded." .
 harv:reason a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string ; rdfs:comment "Why a fact was quarantined." .
+harv:file a owl:DatatypeProperty ; rdfs:domain harv:Harvest ; rdfs:range xsd:string ; rdfs:comment "A file a harvest read, relative to the workspace." .
 harv:fact a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string ; rdfs:comment "The fact (subject, predicate, object) that provenance or a quarantine refers to." .
 harv:model a owl:DatatypeProperty ; rdfs:domain harv:LlmFact ; rdfs:range xsd:string ; rdfs:comment "The model that proposed a fact." .
 harv:promptHash a owl:DatatypeProperty ; rdfs:domain harv:LlmFact ; rdfs:range xsd:string ; rdfs:comment "A hash of the prompt the model was given." .

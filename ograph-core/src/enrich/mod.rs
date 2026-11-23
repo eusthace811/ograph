@@ -157,7 +157,7 @@ pub fn rel(root: &Path, p: &Path) -> String {
 pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
     match source {
         Source::Catalog { path } => return vec![catalog::harvest(ctx.root, path)],
-        Source::Incidents { path } => return vec![incidents(&[path], ctx)],
+        Source::Incidents { path } => return vec![incidents(&[path], &[], ctx)],
         _ => {}
     }
     let (files, unreadable) = walk(ctx.root, source.path());
@@ -195,21 +195,25 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
 
 /// The files of every incident source as one batch (see [`records::incidents`]). A source path
 /// or a directory below it that cannot be listed fails the batch.
-pub fn incidents(paths: &[&Path], ctx: &Ctx<'_>) -> Batch {
+/// `held` are the files the last incidents harvest read.
+pub fn incidents(paths: &[&Path], held: &[String], ctx: &Ctx<'_>) -> Batch {
     let (mut files, mut degraded) = (Vec::new(), Vec::new());
     for path in paths {
         let (found, unreadable) = walk(ctx.root, path);
-        // An empty incident directory is more likely an unmounted share than no incidents at
-        // all, and every incident shares one graph, so it fails the batch rather than empty it.
-        if found.is_empty() && unreadable.is_empty() && ctx.root.join(path).is_dir() {
-            degraded.push(format!("{} lists no files", rel(ctx.root, &ctx.root.join(path))));
+        // A directory that held incident files and now lists none is more likely an unmounted
+        // share than an empty export, and every incident shares one graph, so it fails the batch.
+        let dir = rel(ctx.root, &ctx.root.join(path));
+        if found.is_empty() && unreadable.is_empty() && ctx.root.join(path).is_dir() && held.iter().any(|f| f.starts_with(&format!("{dir}/"))) {
+            degraded.push(format!("{dir} lists no files; keeping the incidents it held"));
         }
         files.extend(found.into_iter().map(|f| (rel(ctx.root, &f), f)));
         degraded.extend(unreadable.iter().map(|d| format!("cannot read directory {}", rel(ctx.root, d))));
     }
     files.sort();
     files.dedup();
-    records::incidents(&files.into_iter().map(|(key, f)| (f, key)).collect::<Vec<_>>(), degraded)
+    let mut b = records::incidents(&files.iter().map(|(key, f)| (f.clone(), key.clone())).collect::<Vec<_>>(), degraded);
+    b.files = files.into_iter().map(|(key, _)| key).collect();
+    b
 }
 
 /// Seconds, milliseconds, microseconds or nanoseconds since the epoch (number or numeric string), or RFC 3339 / ISO 8601

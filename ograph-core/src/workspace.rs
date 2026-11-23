@@ -139,7 +139,7 @@ impl Workspace {
         for src in &ran {
             if let Source::Incidents { .. } = src {
                 if !std::mem::replace(&mut incidents_done, true) {
-                    batches.push(enrich::incidents(&incidents, &ctx));
+                    batches.push(enrich::incidents(&incidents, &self.incident_files()?, &ctx));
                 }
                 continue;
             }
@@ -172,8 +172,9 @@ impl Workspace {
             None => prunable_sources(&graphs),
             Some(_) => ran.iter().map(|s| s.name().to_owned()).collect(),
         };
-        let correlate = only.is_none_or(|o| o == "correlation");
-        if correlate && only.is_some() {
+        // Any input can move a chain (events, incidents, the dependency scope), and correlation
+        // is cheap, so every harvest re-correlates.
+        if only.is_some() {
             names.push("correlation".to_owned());
         }
         // Input graphs whose files are gone are pruned before any batch or correlation reads
@@ -189,15 +190,27 @@ impl Workspace {
             progress(&o, t.elapsed().as_secs_f64());
             out.push(o);
         }
-        if correlate {
-            for (o, b) in self.correlate_all()? {
-                progress(&o, 0.0);
-                kept.extend([b.graph(), b.quarantine_graph()]);
-                out.push(o);
-            }
+        for (o, b) in self.correlate_all()? {
+            progress(&o, 0.0);
+            kept.extend([b.graph(), b.quarantine_graph()]);
+            out.push(o);
         }
         self.prune(&chains, &kept, &kept_below)?;
         self.store.flush()?;
+        Ok(out)
+    }
+
+    /// The files the last incidents harvest read.
+    fn incident_files(&self) -> anyhow::Result<Vec<String>> {
+        let snap = self.store.snapshot()?;
+        let graph = Batch::new("incidents", "all", "").graph();
+        let (Some(g), Some(p)) = (snap.iri(graph.as_str())?, snap.iri(crate::vocab::harv::FILE)?) else { return Ok(vec![]) };
+        let mut out = Vec::new();
+        for o in snap.objects(g, p)? {
+            if let oxrdf::Term::Literal(l) = snap.term(o)? {
+                out.push(l.value().to_owned());
+            }
+        }
         Ok(out)
     }
 
@@ -298,6 +311,11 @@ impl Workspace {
             }
         }
         drop(snap);
+        // The verdict describes its root so the root can leave the sources; without a
+        // description there is nothing to keep.
+        if !kept.iter().any(|(q, _)| *q == rca::ROOT_CLASS) {
+            anyhow::bail!("the root of {chain} has no telemetry left and no earlier verdict; run `ograph harvest` and judge a current chain");
+        }
         let mut b = Batch::new("verdicts", &local, "human");
         let m = Extraction::Human { who: by.to_owned() };
         let ev = b.record(format!("verdict:{local}"));
@@ -314,7 +332,6 @@ impl Workspace {
         b.add(c.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(corr::CHAIN)), &ev, &m);
         b.add(c.clone(), corr::LEADS_TO, obj(incident.clone()), &ev, &m);
         b.add(c, corr::ROOT_CAUSE, obj(root.clone()), &ev, &m);
-        b.add(EntityRef::Known(root.clone()), RDF_TYPE, obj(NamedNode::new_unchecked(evt::EVENT)), &ev, &m);
         for (p, o) in kept {
             let o = match o {
                 oxrdf::Term::NamedNode(n) => obj(n),

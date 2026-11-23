@@ -111,6 +111,7 @@ ns!(harv, "https://ograph.dev/harv#", {
     REASON = "reason",
     FACT = "fact",
     STATUS = "status",
+    FILE = "file",
 });
 
 pub const RDF_TYPE: &str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
