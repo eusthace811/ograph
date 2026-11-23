@@ -1,0 +1,12 @@
+# Second held-out set, written after the baseline runs and before any prompt was run on it.
+# No fix was chosen by looking at these. Labels in questions-heldout-b-labels.json.
+Which team is responsible for inventory?
+Which applications are in the critical tier?
+Which config changes preceded the alert on checkout?
+What was the mitigation of INC-4388?
+Which candidate root causes were ranked highest for INC-5377?
+Which news items mention elasticsearch?
+Which cloud account is search-api billed to?
+What is the p99 latency target of payments-api?
+Which programming language is orders-api written in?
+Which tickets track the follow-up work for INC-4120?

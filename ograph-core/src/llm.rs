@@ -74,6 +74,19 @@ impl Llm {
             self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return Ok(a);
         }
+        // One retry: a timeout is usually the transport, not the question.
+        let answer = self.run(prompt, input).or_else(|_| self.run(prompt, input))?;
+        let mut cache = self.cache.lock().unwrap();
+        cache.insert(key.clone(), answer.clone());
+        if let Some(dir) = self.cache_path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&self.cache_path)?;
+        writeln!(f, "{}", serde_json::to_string(&Entry { key, answer: answer.clone() })?)?;
+        Ok(answer)
+    }
+
+    fn run(&self, prompt: &str, input: &str) -> anyhow::Result<String> {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (cmd, args) = self.config.command.split_first().ok_or_else(|| anyhow::anyhow!("empty llm command"))?;
         let mut child = Command::new(cmd).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
@@ -93,15 +106,7 @@ impl Llm {
         if !out.status.success() {
             anyhow::bail!("model command failed: {}", String::from_utf8_lossy(&out.stderr).trim());
         }
-        let answer = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-        let mut cache = self.cache.lock().unwrap();
-        cache.insert(key.clone(), answer.clone());
-        if let Some(dir) = self.cache_path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&self.cache_path)?;
-        writeln!(f, "{}", serde_json::to_string(&Entry { key, answer: answer.clone() })?)?;
-        Ok(answer)
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
     }
 
     /// Runs `ask` over many inputs with `parallel` workers, keeping input order.

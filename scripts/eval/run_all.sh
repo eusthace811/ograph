@@ -13,6 +13,7 @@ $B/store_bench --scale 1 --chunk 4000000 > $E/store-x1.txt
 python3 scripts/eval/llm_gate.py --bin $B/ograph --demo examples/demo > $E/llm-gate.txt
 python3 scripts/eval/alias_eval.py --bin $B/ograph --demo examples/demo > $E/alias.txt
 python3 scripts/eval/coverage_eval.py --bin $B/ograph --demo examples/demo > $E/coverage.txt
+python3 scripts/eval/coverage_eval.py --bin $B/ograph --demo examples/demo --questions questions-heldout-b.txt --labels questions-heldout-b-labels.json > $E/coverage-heldout-b.txt
 python3 scripts/agent/install.py --bin $B/ograph --root examples/demo --out target/ograph-pi.ts >/dev/null && node scripts/agent/test_pi.mjs target/ograph-pi.ts "$PWD/examples/demo" > $E/pi-contract.txt
 python3 scripts/eval/rcaeval_score.py --bin $B/ograph --cases data/rcaeval-cases --out data/rcaeval-final.json > $E/rcaeval-final.txt
 $B/confirm_eval data/rcaeval-cases > $E/confirm.txt

@@ -245,7 +245,7 @@ Decisions the evidence changed:
   - My first reading, a penalty multiplier, threw away most chains.
 - **The default extraction model is `openai/gpt-6-luna` through pi.**
   - It is the cheapest, and it matched larger models on the 8-thread test.
-  - On the demo's 16 labeled threads it classified 13 correctly. After the Phase 9 prompt it classifies 15 or 16.
+  - On the demo's 16 labeled threads it classified 13 correctly. After the Phase 9 prompt it classifies 15 or 16, mean 15.7 over 9 runs.
 - **Phase 9 ported five ideas from NVIDIA auto-ontology, and the evidence cut two of the planned parts.**
   - Co-occurring events do not confirm a model-proposed dependency. They scored 0.18 precision on RCAEval against a 0.14 base rate. Only catalog and trace edges count.
   - No model reads runbooks for aliases. With a quote check it still added a false alias and found no true one the phrases missed.

@@ -7,15 +7,16 @@
 3. Proposals: ontology.ttl plus the proposed Turtle parses, and `ograph ontology diff` reports
    only additions (nothing BREAKING).
 
-Usage: coverage_eval.py --bin target/release/ograph --demo examples/demo"""
+Usage: coverage_eval.py --bin target/release/ograph --demo examples/demo [--questions F --labels F]"""
 import argparse, json, pathlib, subprocess, sys, tempfile
 
 ap = argparse.ArgumentParser(); ap.add_argument("--bin", required=True); ap.add_argument("--demo", required=True)
+ap.add_argument("--questions", default="questions.txt"); ap.add_argument("--labels", default="questions-labels.json")
 a = ap.parse_args(); binp = str(pathlib.Path(a.bin).resolve()); demo = pathlib.Path(a.demo).resolve()
-labels = json.loads((demo / "questions-labels.json").read_text())
+labels = json.loads((demo / a.labels).read_text())
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="ograph-coverage-"))
 def run(out):
-    p = subprocess.run([binp, "--root", str(demo), "--json", "ontology", "coverage", str(demo / "questions.txt"), "--out", str(out)], capture_output=True, text=True)
+    p = subprocess.run([binp, "--root", str(demo), "--json", "ontology", "coverage", str(demo / a.questions), "--out", str(out)], capture_output=True, text=True)
     if p.returncode == 2: raise SystemExit(p.stderr)
     return json.loads(p.stdout)
 cache = demo / ".ograph" / "cache" / "llm.jsonl"
@@ -26,7 +27,9 @@ replay = again == first and len(cache.read_text().splitlines()) == lines
 ok_cov = ok_gap = 0; wrong = []
 for i, c in enumerate(first, 1):
     gaps = [g["text"].lower() for g in c["gaps"]]
-    if i in labels["covered"]:
+    if c.get("failed"):
+        wrong.append(f"Q{i} unchecked: {c['failed']}")
+    elif i in labels["covered"]:
         ok_cov += not gaps
         if gaps: wrong.append(f"Q{i} labeled covered, reported missing {gaps}")
     else:

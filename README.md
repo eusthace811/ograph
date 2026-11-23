@@ -49,7 +49,8 @@ ograph lab                         # one HTML page over the whole graph
 | SHACL Core, W3C test suite | 98 of 98 |
 | Gateway, 17 kinds of bad write plus a broken model | 0 invalid facts committed, every rejection quarantined with a reason |
 | Model-proposed dependencies | Committed only when a catalog or trace edge backs them. Co-occurring events were tested as support and rejected: 0.18 precision against a 0.14 base rate |
-| Thread classifier on 16 labeled threads | 15, 16 and 15 correct in three runs, up from 13. It quotes the cause or answers UNKNOWN |
+| Thread classifier on 16 labeled threads | Mean 15.7 of 16 over 9 uncached runs, up from 13. It quotes the cause or answers UNKNOWN; voting across samples or models did not help |
+| Ontology coverage on 10 held-out questions | 6, 6, 6 and 5 of 6 covered and 4 of 4 gaps in four runs, up from 3 or 4 covered |
 | Aliases from runbooks | 3 of 3 stated aliases, 0 of 6 decoys |
 | Misspelled names in SPARQL | Rejected with the nearest declared name; 0 false rejections over every stored predicate and class |
 | Build | Pure Rust: no `cc`, `cmake` or `bindgen`, and a clean CLI build takes 8 s |

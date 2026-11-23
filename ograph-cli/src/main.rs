@@ -357,13 +357,14 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 let report = ograph_core::coverage::report(&ws.ontology, &llm, &questions, is_entity);
                 let path = out.unwrap_or_else(|| ws.dir.join("proposed.ttl"));
                 std::fs::write(&path, ograph_core::coverage::proposals(&report))?;
-                let gaps = report.iter().filter(|c| !c.gaps.is_empty()).count();
+                let gaps = report.iter().filter(|c| !c.gaps.is_empty() || c.failed.is_some()).count();
                 print(json, &report, |r| {
                     for c in r {
                         let names: Vec<&str> = c.covered.iter().filter_map(|n| n.name.as_deref()).collect();
                         let missing: Vec<&str> = c.gaps.iter().map(|n| n.text.as_str()).collect();
-                        println!("{} {}\n    uses {}{}", if missing.is_empty() { "covered" } else { "GAP    " }, c.question, names.join(" "), if missing.is_empty() { String::new() } else { format!("\n    missing: {}", missing.join("; ")) });
-                        for n in &c.notes {
+                        let state = if c.failed.is_some() { "FAILED " } else if missing.is_empty() { "covered" } else { "GAP    " };
+                        println!("{state} {}\n    uses {}{}", c.question, names.join(" "), if missing.is_empty() { String::new() } else { format!("\n    missing: {}", missing.join("; ")) });
+                        for n in c.notes.iter().chain(&c.failed) {
                             println!("    note: {n}");
                         }
                     }

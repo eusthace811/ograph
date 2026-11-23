@@ -200,11 +200,12 @@ A query that uses a class or property the ontology does not declare now fails, w
 
 The set is 21 questions in `examples/demo/questions.txt`. We labeled 13 of them as covered and 8 as needing a concept the ontology lacks: on-call, SLO, revenue, cluster, feature flag, customer, error budget and runbook. We wrote these labels, so treat this set as a smoke test, not a benchmark.
 
-| Check | First prompt | Shipped prompt |
-|---|---|---|
-| Gap questions reported with the expected gap | 8 of 8 | 8 of 8 |
-| Covered questions reported covered | 9 of 13 | 11 of 13 |
-| Proposals merged into the ontology | | 17 additions, 0 breaking in `ograph ontology diff` |
+| Check | First prompt | Phase 9 prompt | Shipped (3 uncached runs) |
+|---|---|---|---|
+| Gap questions reported with the expected gap | 8 of 8 | 8 of 8 | 8, 8, 8 |
+| Covered questions reported covered | 9 of 13 | 11 of 13 | 13, 12, 12 (mean 12.1 over 11 runs) |
+| Held-out set B, 6 covered and 4 gaps, never inspected before the fixes were frozen | | 3, 4, 3 covered; 4 of 4 gaps | 6, 6, 6 covered, then 5 in the run on main (`coverage-heldout-b.txt`); 4 of 4 gaps |
+| Proposals merged into the ontology | | 17 additions, 0 breaking | 15 additions, 0 breaking in `ograph ontology diff` |
 
 Three changes took covered questions from 9 to 11:
 
@@ -212,7 +213,14 @@ Three changes took covered questions from 9 to 11:
 - **Catalog names dropped.** Code drops a gap that is a catalog name.
 - **Time words.** The prompt says that time words compare `evt:at`.
 
-The two remaining false gaps are "fails" and "facts". The gate requires every gap to be found, with at most two false gaps.
+Four more changes took it to 12 or 13 (`scripts/eval/repeat_gates.py` reruns every model gate N times with no cache):
+
+- **A failed model call no longer counts as covered.** A timed-out question used to pass silently. It is now reported FAILED and counted wrong, and model calls get one retry.
+- **Model spellings of declared names.** "rca:state accepted" or a full IRI in angle brackets reduce to the declared name instead of being rejected.
+- **Every class and property has an `rdfs:comment`.** 67 lacked one, and terms without a comment drew null mappings. A "feature toggle" comment on `ConfigChange` caused a false mapping and was removed.
+- **One entry per multi-word concept.** The model had mapped "model" to `harv:LlmFact` and left "facts" null.
+
+The false gaps left, "fails" and "facts", come and go from run to run, and both labels are arguable. Held-out set A (`questions-heldout.txt`) went from 4 to 5 covered to 6 of 6, but its baseline errors were seen before the comments were written, so set B (`questions-heldout-b.txt`) is the clean number. Asking the model to quote the comment of the closest declared term made it stricter, not more accurate (about 10 of 13, 23 s instead of 15 s), and was reverted. A majority of three samples gave the same mean at three times the calls.
 
 ### Exact-quote aliases (`alias.txt`)
 
@@ -233,7 +241,9 @@ In RCAEval, `frontend-external` stays quarantined as a near match for `frontend`
 
 The classifier must now quote the words that state a cause, or answer UNKNOWN. A label in the vocabulary that comes without a verifiable quote becomes UNKNOWN in code. A label outside the vocabulary still goes to the gateway, so the quarantine keeps a record of that failure.
 
-Accuracy went from 13 of 16 to 15, 16 and 15 of 16 in three runs. The question thread is now UNKNOWN. The model answered UNKNOWN itself, with no quote, so the prompt made this fix. The code-level abstain never fired on the real model. On the broken model it turned every unquoted label into UNKNOWN. One network thread still flips between NETWORK and CAPACITY.
+Accuracy went from 13 of 16 to 15, 16 and 15 of 16 in three runs. The question thread is now UNKNOWN. The model answered UNKNOWN itself, with no quote, so the prompt made this fix. The code-level abstain never fired on the real model. On the broken model it turned every unquoted label into UNKNOWN. One network thread flipped between NETWORK and CAPACITY: "resolvers there were overloaded" matched the CAPACITY definition word for word. One sentence in the NETWORK definition (use it even when the network component failed because it was overloaded) fixed it in 9 of 9 runs, but it came from looking at that one thread. Over 9 uncached runs the mean is 15.7 of 16, and the last gate run scored 16. The residual misses moved: the elasticsearch thread came back CAPACITY in 2 of 9 runs, and the WAL thread came back UNKNOWN once.
+
+**Voting did not pay.** Three samples from one model with a majority vote scored 15, 15, 15 at 48 calls instead of 16, because the DNS miss was systematic. Cross-model voting with a second model through pi, 2 models × 2 samples, scored 15 right and 1 abstained at 64 calls. After the DNS fix, both models once agreed on a wrong label. Voting cost a correct label and did not stop a wrong one, so it is not shipped.
 
 ## Why not a pure knowledge graph (`purekg.txt`, `rcaeval-final.txt`)
 

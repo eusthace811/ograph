@@ -21,6 +21,8 @@ pub struct Coverage {
     pub covered: Vec<Need>,
     pub gaps: Vec<Need>,
     pub notes: Vec<String>,
+    /// Set when the model gave no usable answer: the question is unchecked, not covered.
+    pub failed: Option<String>,
 }
 
 fn expand(name: &str) -> String {
@@ -60,6 +62,9 @@ pub fn prompt(ont: &Ontology) -> String {
         "\nList every concept the question needs: kinds of things, relationships, attributes and categorical values. \
          Skip words that only name one specific thing (an application name, an incident id, a time); those are data. \
          Words of time or order (before, during, last day, this month) are comparisons on evt:at and need no name. \
+         One concept often takes several words, such as a noun and the clause that qualifies it: give them one need with the \
+         declared name that represents them together, rather than splitting off a word and leaving it null. A verb or condition \
+         that only says how two concepts relate is represented by the property that links them. \
          Reply with one JSON object and nothing else:\n\
          {\"needs\": [{\"text\": <the words of the question, copied exactly>, \"kind\": \"class\" | \"property\" | \"value\", \"name\": <the declared class, property or vocabulary value that represents it, or null>}]}\n\
          Use null when nothing declared represents the concept; do not stretch a name to fit. The question:\n",
@@ -73,6 +78,16 @@ fn declared(ont: &Ontology, name: &str) -> bool {
     ont.is_class(&iri) || ont.property(&iri).is_some() || ont.vocabularies.values().flatten().any(|t| t.value == name)
 }
 
+/// Models sometimes write a full IRI in angle brackets, or a vocabulary value with its property
+/// ("rca:state accepted"); the bare IRI or the value alone is the declared name.
+fn declared_form(ont: &Ontology, name: &str) -> String {
+    let name = name.trim_start_matches('<').trim_end_matches('>');
+    match name.rsplit_once([' ', '=']) {
+        Some((_, value)) if !declared(ont, name) && declared(ont, value) => value.to_owned(),
+        _ => name.to_owned(),
+    }
+}
+
 /// `is_entity` says whether words name a known entity (an application in the catalog); such words
 /// are data, so they are never a gap even when the model lists them.
 pub fn report(ont: &Ontology, llm: &Llm, questions: &[String], is_entity: impl Fn(&str) -> bool) -> Vec<Coverage> {
@@ -81,15 +96,15 @@ pub fn report(ont: &Ontology, llm: &Llm, questions: &[String], is_entity: impl F
         .iter()
         .zip(llm.ask_all(&p, questions))
         .map(|(q, answer)| {
-            let mut c = Coverage { question: q.clone(), covered: vec![], gaps: vec![], notes: vec![] };
+            let mut c = Coverage { question: q.clone(), covered: vec![], gaps: vec![], notes: vec![], failed: None };
             let v = match answer.map(|a| first_json(&a)) {
                 Ok(Some(v)) => v,
                 Ok(None) => {
-                    c.notes.push("model answer was not JSON".into());
+                    c.failed = Some("model answer was not JSON".into());
                     return c;
                 }
                 Err(e) => {
-                    c.notes.push(format!("model call failed: {e:#}"));
+                    c.failed = Some(format!("model call failed: {e:#}"));
                     return c;
                 }
             };
@@ -100,7 +115,7 @@ pub fn report(ont: &Ontology, llm: &Llm, questions: &[String], is_entity: impl F
                     c.notes.push(format!("dropped \"{text}\": not in the question"));
                     continue;
                 }
-                let need = Need { text, kind: s("kind").unwrap_or_else(|| "class".into()), name: s("name") };
+                let need = Need { text, kind: s("kind").unwrap_or_else(|| "class".into()), name: s("name").map(|n| declared_form(ont, &n)) };
                 match &need.name {
                     Some(name) if declared(ont, name) => c.covered.push(need),
                     Some(name) => {
@@ -163,4 +178,19 @@ pub fn proposals(report: &[Coverage]) -> String {
         out.push_str(&format!("ops:{name} a {ty} ;\n  rdfs:comment {} .\n\n", serde_json::to_string(&why).unwrap_or_default()));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_spellings_of_declared_names() {
+        let ont = Ontology::load(crate::ontology::DEFAULT_TTL, crate::ontology::DEFAULT_SHAPES).unwrap();
+        assert_eq!(declared_form(&ont, "rca:state accepted"), "accepted");
+        assert_eq!(declared_form(&ont, "evt:severity=SEV1"), "SEV1");
+        assert_eq!(declared_form(&ont, "<https://ograph.dev/meta#Thing>"), "https://ograph.dev/meta#Thing");
+        assert!(declared(&ont, &declared_form(&ont, "<https://ograph.dev/meta#Thing>")));
+        assert_eq!(declared_form(&ont, "ops:Cluster name"), "ops:Cluster name");
+    }
 }

@@ -1,0 +1,12 @@
+# Held-out competency questions, written and labeled before any prompt change was run on them.
+# Labels in questions-heldout-labels.json. Covered ones lean on synonyms of declared names.
+Which applications does checkout depend on?
+Which vendors does payments-api use?
+Which monitors fired on search-api with SEV1 severity?
+Which releases of orders-api went out last week?
+Which incidents are still open?
+Which chat threads were classified as a network problem?
+Which datacenter rack hosts ledger-db?
+What is the monthly cloud cost of search-api?
+Which pull request introduced the bug in checkout v4.1.0?
+Which engineers are members of the team that owns payments-api?
