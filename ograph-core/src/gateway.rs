@@ -68,18 +68,23 @@ fn words(s: &str) -> Vec<String> {
     s.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_owned).collect()
 }
 
-/// `a` names a sibling of `b` rather than misspelling it: the same words but one, and that one
-/// unlike its counterpart (`inventory-service-uk` against `inventory-service-eu`, `v1` against
-/// `v2`), or the same words plus some (`payments-v2` against `payments`).
-fn sibling(a: &[String], b: &[String]) -> bool {
-    if a.len() != b.len() {
-        let (short, long) = if a.len() < b.len() { (a, b) } else { (b, a) };
-        let mut rest = long.iter();
-        return short.iter().all(|w| rest.any(|x| x == w));
+/// `query` names a sibling of the catalog name `known` rather than misspelling it: the same
+/// words but one, and that one unlike its counterpart (`inventory-service-uk` against
+/// `inventory-service-eu`, `v1` against `v2`), or the same words plus some that are not filler
+/// (`inventory-service-eu-canary` against `inventory-service-eu`, but not `checkout-svc`
+/// against `checkout`).
+fn sibling(query: &[String], known: &[String]) -> bool {
+    if query.len() != known.len() {
+        let mut rest = query.iter();
+        let contains = known.iter().all(|w| rest.any(|x| x == w));
+        return contains && query.iter().any(|w| !known.contains(w) && !FILLER.contains(&w.as_str()));
     }
-    let mut diff = a.iter().zip(b).filter(|(x, y)| x != y);
+    let mut diff = query.iter().zip(known).filter(|(x, y)| x != y);
     matches!((diff.next(), diff.next()), (Some((x, y)), None) if strsim::jaro_winkler(x, y) < SIBLING_WORD)
 }
+
+/// Words that name the kind of thing rather than which one.
+const FILLER: [&str; 6] = ["svc", "service", "srv", "server", "app", "api"];
 
 const CATALOG_CLASSES: [&str; 2] = [ops::APPLICATION, ops::TEAM];
 
@@ -525,6 +530,9 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, du
         }
         let (r1, a1) = tx.replace_graph(gid, ids)?;
         let mut qids = Vec::with_capacity(quarantine.len());
+        if batch.failed() {
+            qids.extend(tx.graph_quads(qid)?.into_iter().map(|[s, p, o, _]| [s, p, o]));
+        }
         for t in &quarantine {
             qids.push([tx.intern(&t.subject.clone().into())?, tx.intern(&t.predicate.clone().into())?, tx.intern(&t.object)?]);
         }

@@ -85,7 +85,7 @@ fn main() -> anyhow::Result<()> {
         b.add(g.clone(), evt::SEVERITY, lit(["SEV1", "SEV2", "SEV3"][i % 3]), &r, &rule);
         good.push(format!("good-{i}"));
     }
-    for (i, typo) in ["inventory-servcie-eu", "Inventory Service EU", "inventry-service-eu"].iter().enumerate() {
+    for (i, typo) in ["inventory-servcie-eu", "Inventory Service EU", "inventry-service-eu", "inventory-service-eu-svc"].iter().enumerate() {
         let r = b.record(format!("alert-typo-{i}"));
         let g = known("ev", &format!("good-typo-{i}"));
         b.add(g.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::ALERT)), &r, &rule);

@@ -7,6 +7,8 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
+use anyhow::Context;
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 
@@ -89,35 +91,54 @@ impl Llm {
     fn run(&self, prompt: &str, input: &str) -> anyhow::Result<String> {
         self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (cmd, args) = self.config.command.split_first().ok_or_else(|| anyhow::anyhow!("empty llm command"))?;
-        let mut child = Command::new(cmd).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+        // Its own process group, so a timeout also stops whatever the command started.
+        let mut child = Command::new(cmd)
+            .args(args)
+            .process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .with_context(|| format!("running {cmd}"))?;
         // Feed and drain the pipes on their own threads, so a large prompt or answer cannot
         // fill a pipe buffer and stall the child until the timeout.
         let mut stdin = child.stdin.take().expect("piped");
         let text = format!("{prompt}\n\n{input}");
-        let feed = std::thread::spawn(move || stdin.write_all(text.as_bytes()));
-        let drain = |r: Option<Box<dyn std::io::Read + Send>>| {
+        std::thread::spawn(move || stdin.write_all(text.as_bytes()));
+        let (tx, rx) = std::sync::mpsc::channel();
+        for (is_out, r) in [(true, child.stdout.take().map(|r| Box::new(r) as Box<dyn std::io::Read + Send>)), (false, child.stderr.take().map(|r| Box::new(r) as _))] {
+            let tx = tx.clone();
             std::thread::spawn(move || {
                 let mut buf = Vec::new();
                 r.map(|mut r| r.read_to_end(&mut buf));
-                buf
-            })
-        };
-        let stdout = drain(child.stdout.take().map(|r| Box::new(r) as _));
-        let stderr = drain(child.stderr.take().map(|r| Box::new(r) as _));
+                let _ = tx.send((is_out, buf));
+            });
+        }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(self.config.timeout_s);
+        let timed_out = |child: &mut std::process::Child| {
+            // A negative pid signals the whole group.
+            let _ = Command::new("kill").args(["-KILL", &format!("-{}", child.id())]).status();
+            let _ = child.kill();
+            let _ = child.wait();
+            anyhow::anyhow!("model command timed out after {} s", self.config.timeout_s)
+        };
         let status = loop {
             if let Some(status) = child.try_wait()? {
                 break status;
             }
             if std::time::Instant::now() > deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                anyhow::bail!("model command timed out after {} s", self.config.timeout_s);
+                return Err(timed_out(&mut child));
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         };
-        let _ = feed.join();
-        let (out, err) = (stdout.join().unwrap_or_default(), stderr.join().unwrap_or_default());
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        for _ in 0..2 {
+            // A process the command left behind can hold the pipes open past its exit.
+            let Ok((is_out, buf)) = rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) else {
+                return Err(timed_out(&mut child));
+            };
+            *(if is_out { &mut out } else { &mut err }) = buf;
+        }
         if !status.success() {
             anyhow::bail!("model command failed: {}", String::from_utf8_lossy(&err).trim());
         }
@@ -184,5 +205,14 @@ mod tests {
         let config = LlmConfig { command: vec!["sh".into(), "-c".into(), "cat >/dev/null; head -c 200000 /dev/zero | tr '\\0' a".into()], model: "t".into(), parallel: 1, timeout_s: 5 };
         let llm = Llm::new(config, std::env::temp_dir().join("ograph-llm-test-none/llm.jsonl"));
         assert_eq!(llm.run("p", &"x".repeat(200_000)).unwrap().len(), 200_000);
+    }
+
+    #[test]
+    fn timeout_holds_when_a_leftover_process_keeps_the_pipe_open() {
+        let config = LlmConfig { command: vec!["sh".into(), "-c".into(), "cat >/dev/null; sleep 30 & echo hi".into()], model: "t".into(), parallel: 1, timeout_s: 1 };
+        let llm = Llm::new(config, std::env::temp_dir().join("ograph-llm-test-none/llm.jsonl"));
+        let t = std::time::Instant::now();
+        assert!(llm.run("p", "x").unwrap_err().to_string().contains("timed out"));
+        assert!(t.elapsed().as_secs() < 5);
     }
 }

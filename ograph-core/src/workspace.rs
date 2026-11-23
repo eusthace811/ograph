@@ -127,8 +127,20 @@ impl Workspace {
         let mut out = Vec::new();
         let mut kept = HashSet::new();
         let ran: Vec<&Source> = sources.iter().filter(|s| only.is_none_or(|o| o == s.name())).collect();
+        // A source whose path cannot be listed (a mistyped path, an unmounted disk) reports one
+        // failed batch and keeps every graph it had.
+        let mut unreadable = Vec::new();
         for src in &ran {
-            for batch in enrich::harvest(src, &ctx) {
+            let p = self.root.join(src.path());
+            let batches = if p.is_file() || std::fs::read_dir(&p).is_ok() {
+                enrich::harvest(src, &ctx)
+            } else {
+                unreadable.push(src.name());
+                let mut b = Batch::new(src.name(), &src.path().to_string_lossy(), "failed");
+                b.degraded.push(format!("cannot read {}", p.display()));
+                vec![b]
+            };
+            for batch in batches {
                 let t = std::time::Instant::now();
                 let o = gateway::submit_with(&self.store, &self.ontology, &batch, now_ms(), false)?;
                 progress(&o, t.elapsed().as_secs_f64());
@@ -136,7 +148,12 @@ impl Workspace {
                 out.push(o);
             }
         }
-        let mut names: Vec<&str> = ran.iter().map(|s| s.name()).collect();
+        // A full harvest owns every harvest graph but the verdicts; `--only` owns its kind's.
+        let mut names: Vec<String> = match only {
+            None => self.prunable_sources()?,
+            Some(_) => ran.iter().map(|s| s.name().to_owned()).collect(),
+        };
+        names.retain(|n| !unreadable.contains(&n.as_str()));
         if only.is_none_or(|o| o == "correlation") {
             self.store.flush()?;
             for (o, b) in self.correlate_all()? {
@@ -144,16 +161,35 @@ impl Workspace {
                 kept.extend([b.graph(), b.quarantine_graph()]);
                 out.push(o);
             }
-            names.push("correlation");
+            if only.is_some() {
+                names.push("correlation".to_owned());
+            }
         }
         self.prune(&names, &kept)?;
         self.store.flush()?;
         Ok(out)
     }
 
+    /// Every source name with a graph in the store, except the verdicts people recorded.
+    fn prunable_sources(&self) -> anyhow::Result<Vec<String>> {
+        let snap = self.store.snapshot()?;
+        let mut names = std::collections::BTreeSet::new();
+        for (g, _) in snap.graphs()? {
+            if let oxrdf::Term::NamedNode(n) = snap.term(g)?
+                && let Some(rest) = n.as_str().strip_prefix(vocab::GRAPH)
+                && let Some(rest) = rest.strip_prefix("harvest/").or_else(|| rest.strip_prefix("quarantine/"))
+                && let Some((source, _)) = rest.split_once('/')
+                && source != "verdicts"
+            {
+                names.insert(source.to_owned());
+            }
+        }
+        Ok(names.into_iter().collect())
+    }
+
     /// Clears the graphs of `sources` that this run did not write: files that were deleted or
     /// renamed, and incidents that no longer have chains.
-    fn prune(&self, sources: &[&str], kept: &HashSet<NamedNode>) -> anyhow::Result<()> {
+    fn prune(&self, sources: &[String], kept: &HashSet<NamedNode>) -> anyhow::Result<()> {
         let prefixes: Vec<String> = sources
             .iter()
             .flat_map(|s| [format!("{}harvest/{}/", vocab::GRAPH, slug(s)), format!("{}/{}/", vocab::QUARANTINE, slug(s))])

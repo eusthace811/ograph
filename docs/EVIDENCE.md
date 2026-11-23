@@ -63,7 +63,7 @@ Interleaved, sequential runs on 12 cases (3 each) give a median of 0.228 s befor
 |---|---|
 | SHACL Core, W3C suite (`shacl-core.txt`) | 98 of 98 on `sh:conforms` and result count. rudof's measured 92 came from a harness that ignored `sht:dataGraph`; with a fixed harness it would likely match |
 | `ograph ontology check` | 0 problems. Every IRI the code uses is declared |
-| Gateway gate, 18 kinds of bad write plus 43 good events (`gateway.txt`) | 0 bad facts committed, every kind quarantined with its reason, 43 of 43 good events committed (3 of them misspelled names that must still resolve), full audit clean, and a re-submit writes 1 quad (the harvest time) |
+| Gateway gate, 18 kinds of bad write plus 44 good events (`gateway.txt`) | 0 bad facts committed, every kind quarantined with its reason, 44 of 44 good events committed (4 of them misspelled or suffixed names that must still resolve), full audit clean, and a re-submit writes 1 quad (the harvest time) |
 
 The rudof `shacl` crate was measured and rejected:
 
