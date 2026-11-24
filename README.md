@@ -2,7 +2,7 @@
 
 ograph builds an ontology-driven observability knowledge graph and queries it from the command line, in the way Netflix's "Ontology-Driven Observability" describes. It works the same way on a laptop and on a corporate network.
 
-- **Ingest.** It reads your catalog, deployments, config changes, alerts, incidents, logs, metrics, traces, chat threads and news.
+- **Ingest.** It reads your catalog, deployments, config changes, commits, alerts, incidents, logs, metrics, traces, error reports, chat threads and news.
 - **The gateway.** Every proposed fact passes a validation gateway against the ontology before it is stored.
 - **The store.** Facts go into a pure-Rust quad store on redb.
 - **Questions.** It answers four investigation questions on native indexes.
@@ -32,6 +32,8 @@ ograph chains INC-5377             #    ranked root-cause candidates with their 
 ograph blast ledger-db             # 2. which services and business processes this affects
 ograph similar INC-5377            # 3. past incidents like this one, their causes and mitigations
 ograph news                        # 4. news touching the vendors our applications use
+ograph code INC-5377               # with a code source: the lines, commits and files behind it
+ograph suspects INC-5377           # likely causes from dependencies and recent commits
 ograph why id:inc/inc-4120         # provenance of every fact about a node
 ograph verdict id:chain/inc-4120-1 accept --evidence PM-4120 --by oncall   # the chain ranked 1 now
 ograph sparql 'SELECT ?app WHERE { ?app ops:dependsOn+ id:app\/ledger-db }'

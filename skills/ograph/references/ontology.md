@@ -11,12 +11,17 @@ ograph ontology check
 ```
 
 ```
-ontology v1: 24 classes, 59 properties, 8 closed vocabularies, 126 shapes; 0 problems
+ontology v1.1: 26 classes, 62 properties, 8 closed vocabularies, 132 shapes; 0 problems
 ```
 
 It reports drift between the code and the file, such as a property the code writes that the
 ontology does not declare. Run it after upgrading ograph: an older `ontology.ttl` can refuse
 facts a newer binary writes (verdicts fail with "the ontology refuses N of its facts").
+
+Version 1.1 added the code terms: the classes `evt:Commit` and `evt:Exception`, the properties
+`evt:revision`, `evt:changedFile` and `evt:codeLocation`, and the signals `COMMIT` and
+`EXCEPTION`. A workspace created before it needs the new `ontology.ttl` and `shapes.ttl` before
+a `code` or `errors` source is added, or their facts are quarantined.
 
 ## Diff before you install a change
 

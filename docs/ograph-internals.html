@@ -737,7 +737,7 @@ pub enum EntityRef {
 
   <h3>Identifiers and closed vocabularies</h3>
   <p>Code mints every IRI, never a model. Data nodes live under <code>https://ograph.dev/id/</code> and must match one scheme: a lower-case kind, then a slug. An event&rsquo;s IRI is derived from its content, such as <code>id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000</code>, so harvesting the same record twice yields the same node.</p>
-  <p>Eight properties take values from closed lists that the ontology declares with a definition per value: <code>evt:signal</code> (13 values), <code>evt:severity</code> (4), <code>disc:category</code> (8), <code>disc:sentiment</code> (3), <code>inc:status</code> (3), <code>ops:tier</code> (4), <code>rca:state</code> (2) and <code>harv:status</code> (2). The model prompt is generated from the same lists the gateway enforces, so the two cannot drift apart.</p>
+  <p>Eight properties take values from closed lists that the ontology declares with a definition per value: <code>evt:signal</code> (15 values), <code>evt:severity</code> (4), <code>disc:category</code> (8), <code>disc:sentiment</code> (3), <code>inc:status</code> (3), <code>ops:tier</code> (4), <code>rca:state</code> (2) and <code>harv:status</code> (2). The model prompt is generated from the same lists the gateway enforces, so the two cannot drift apart.</p>
 
   <h3>Named graphs are the provenance</h3>
   <p>Each batch commits to its own named graph, and the default graph is the deduplicated union of them all. Asking &ldquo;says who?&rdquo; of any triple is a lookup of which graphs hold it. Re-harvesting a file replaces its graph, which makes a harvest idempotent, and deleting a file prunes its graph on the next run.</p>

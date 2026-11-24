@@ -85,6 +85,68 @@ ledger-db is depended on by 5 applications
 
 Distance is in dependency hops. Business processes come from the ownership source.
 
+## 5. Where in the code
+
+Run this when the workspace has a `code` source (`.ograph/config.toml`), after `chains`.
+
+```bash
+ograph code INC-1
+```
+
+```
+id:inc/inc-1 on checkout at 2026-11-23T13:52:00Z
+lines behind the events before it:
+  checkout         EXCEPTION       shop/services/checkout/client.py:6  TimeoutError: pool exhausted
+  checkout         EXCEPTION       shop/services/payments/pool.py:11  TimeoutError: pool exhausted
+  checkout         LOG_ERROR       shop/services/checkout/client.py:8  payment call failed: upstream timeout <*>
+  payments         LOG_ERROR       shop/services/payments/pool.py:11  ledger-db connection pool exhausted after <*> <*>
+commits before it:
+  - 12.0 min  payments         98aecc6b2ee7  payments: shrink ledger pool to 20 to save memory  changed shop/services/payments/pool.py:11
+files its description is about (unsure):
+    9.08  shop/services/checkout/client.py:8
+    8.84  shop/logs/app.log:3
+    7.38  shop/docs/postmortems/2026-01-ledger-pool.md:1
+    6.88  shop/services/payments/pool.py:11
+    5.66  shop/trace.txt:5
+past write-ups:
+   18.15  shop/docs/postmortems/2026-01-ledger-pool.md  (card, connection, exhausted, failing, ledger-db, payments, pool)
+    0.74  shop/docs/postmortems/2026-03-search-disk.md  (out)
+```
+
+- The first two sections come from the graph: the statement that writes each log burst, the
+  frames of each exception's stack trace, and the commits in the correlation window.
+- A commit followed by `changed <path:line>` changed the file behind one of those events. It is
+  the strongest lead to report: give its revision, file and line. It is still a hypothesis.
+- The last two sections come from ogrep, which ranks files and past write-ups against the
+  incident's title and its top chain. `(unsure)` means the first file does not stand clear of
+  the rest. Read a write-up before you suggest its fix.
+- `--json` gives `locations`, `commits` (with `touches`), `files`, `files_confidence`,
+  `writeups` and `degraded`. A reason under `degraded` means ogrep could not answer for a
+  repository: say so, do not report the empty list as "nothing found".
+- Commits outside the correlation window are not listed. `suspects --since 7d` reaches further back.
+- `ogrep index .` in the code repository makes these lookups fast. ograph does not build that
+  index itself.
+
+## When telemetry says little
+
+```bash
+ograph suspects INC-5377                 # the incident's application, commits since the day before
+ograph suspects checkout,payments --since 3d
+```
+
+```
+  1. payments               score 2.73  distance 1  explains checkout
+     98aecc6b2ee7  2026-11-23T13:40:00Z  payments: shrink ledger pool to 20 to save memory  (shop/services/payments/pool.py)
+  2. checkout               score 1.00  distance 0  explains checkout
+```
+
+- Run it when `before` and `chains` find nothing or little. It needs no telemetry: ogrep ranks
+  the failing applications and what they depend on by distance and by recent commits.
+- Other incidents opened within the correlation window count as failing too, so one upstream
+  cause that explains several of them ranks higher.
+- With a `code` source, `chains` prints the same list when it ranks no application.
+- Say that these suspects come from the dependency graph and recent commits, not from telemetry.
+
 ## Vendor news
 
 ```bash
@@ -102,8 +164,9 @@ first symptom. Say so as a lead to check, not as a cause.
 2. The top candidates with score and chain id, called hypotheses.
 3. The similar past incident, its confirmed cause and the mitigation that worked.
 4. The blast radius: applications, business processes, other open incidents.
-5. The source records a person should open.
-6. What the person must confirm before a verdict.
+5. With a `code` source: the commit, file and line behind the top candidate, if `code` found one.
+6. The source records a person should open.
+7. What the person must confirm before a verdict.
 
 If the harvest quarantined facts, check them (`references/data-quality.md`) before saying an
 expected event is absent: a misspelled service name is quarantined, not lost.

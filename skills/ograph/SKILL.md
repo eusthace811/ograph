@@ -7,8 +7,8 @@ allowed-tools: Bash(ograph:*)
 # Incident investigation with ograph
 
 ograph keeps a knowledge graph of the service catalog, dependencies, business processes,
-vendors, deployments, config changes, alerts, incidents, log and metric anomalies, slow or
-failed traces, chat threads and news. Raw logs, metrics and traces stay in their own systems;
+vendors, deployments, config changes, commits, alerts, incidents, log and metric anomalies, slow
+or failed traces, exceptions, chat threads and news. Raw logs, metrics and traces stay in their own systems;
 every event points back to its first raw record (`source_record`).
 
 ## Quick start
@@ -33,6 +33,9 @@ ograph chains INC-5377 --top 10
 ograph chains INC-5377 --rank propagation   # second opinion: anomaly spread, not chain score
 ograph blast ledger-db                 # name, alias or IRI of an application
 ograph similar INC-5377 --top 3
+ograph code INC-5377                   # lines, commits, files and past write-ups behind it (needs a code source)
+ograph suspects INC-5377               # likely causes from dependencies and recent commits, no telemetry needed
+ograph suspects checkout,payments --since 3d   # the same for failing applications
 ograph news                            # all news; --since 24h, 7d counts back from now
 ```
 
@@ -104,7 +107,8 @@ Inside SPARQL, escape a `/` in a prefixed name, and the dots of a version (`id:a
 ## Rules for investigating
 
 1. Start with `before`, then `chains`. Read the signal types (DEPLOYMENT, CONFIG_CHANGE, ALERT,
-   LOG_ERROR, METRIC_ANOMALY, TRACE_FAILED, TRACE_SLOW) and the order they happened in.
+   LOG_ERROR, METRIC_ANOMALY, TRACE_FAILED, TRACE_SLOW, COMMIT, EXCEPTION) and the order they
+   happened in.
 2. A chain is a hypothesis. Say "the strongest candidate is" with its score and evidence, never
    "the cause is", unless a verdict accepted it.
 3. Check `similar` before proposing a fix: a mitigation that worked before is the best lead.
@@ -115,7 +119,12 @@ Inside SPARQL, escape a `/` in a prefixed name, and the dots of a version (`id:a
    evidence and use their role (`--by oncall`).
 7. An empty answer (exit 1) is information: say what you looked for and widen the window or the
    question; do not invent events.
-8. The graph keeps episodes and pointers, not raw detail. For a config change's old and new
+8. When the workspace has a `code` source, run `code` after `chains`: it names the lines behind
+   the events and the commits that changed them. Report a commit under `touches` as a lead with
+   its revision, file and line. It is still a hypothesis.
+9. When `before` and `chains` find little, run `suspects`. Say that its list comes from the
+   dependency graph and recent commits, not from telemetry.
+10. The graph keeps episodes and pointers, not raw detail. For a config change's old and new
    value, a log line or a metric curve, open the event's `source_record` (`--json`) in its file.
 
 Report what [references/investigation.md](references/investigation.md) lists under "What to report".

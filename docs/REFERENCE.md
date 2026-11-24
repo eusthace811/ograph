@@ -9,7 +9,9 @@ Every command takes `--root DIR` (the directory holding `.ograph/`, found by sea
 | `ograph init` | Creates `.ograph/` with `config.toml`, `ontology.ttl` and `shapes.ttl` |
 | `ograph harvest [--only KIND]` | Runs the enrichers in layer order. Each source file becomes one named graph, except incidents, which all share one, then correlation runs for every incident. KIND is a kind from `config.toml` such as `config_changes`, its graph name such as `config`, or `correlation` |
 | `ograph before INC [--window 10m] [--depth 4]` | Events before an incident on its application and the applications it depends on (question 1). An episode that began up to 24 hours before the window and is still under way when it opens counts too |
-| `ograph chains INC [--rank chain\|propagation] [--window 30m] [--top 5] [--set k=v]` | Ranked root-cause applications, each with its best chain. A chain's id, such as `id:chain/inc-5377-e1fef786a90c3b12`, comes from its incident and root event, so it names the same hypothesis after any re-correlation. The number printed before an application is its chain's `corr:rank` after a harvest with the configured settings; a harvest stores the chains of the first `max_chains` applications |
+| `ograph chains INC [--rank chain\|propagation] [--window 30m] [--top 5] [--set k=v]` | Ranked root-cause applications, each with its best chain. A chain's id, such as `id:chain/inc-5377-e1fef786a90c3b12`, comes from its incident and root event, so it names the same hypothesis after any re-correlation. The number printed before an application is its chain's `corr:rank` after a harvest with the configured settings; a harvest stores the chains of the first `max_chains` applications. When no application ranks and a `code` source is configured, the answer also carries `suspects`, the list `ograph suspects INC` gives, and the exit code is 0 when that list is not empty |
+| `ograph code INC [--top 5]` | Where an incident points in the code. `locations` are the lines behind its candidate events: the log bursts and exceptions that carry `evt:codeLocation`, newest first. `commits` are the candidate commits. Those that changed a located file come first, and `touches` lists those lines. `files` are the files the incident's description is about, and `writeups` are the past incident write-ups that share its words. ogrep ranks both in every `code` repository, and `--top` limits them. The description is the incident title, then the applications and messages along the top-ranked chain. Candidate events come from the configured correlation window. A repository ogrep cannot answer for is named in `degraded`. Without a `code` source `files` and `writeups` are empty |
+| `ograph suspects INC\|APP[,APP...] [--since WHEN]` | Likely causes from the dependency graph and recent commits, with no telemetry. It runs `ogrep --suspects` in each `catalog` and `code` repository and uses the first that answers. For an incident, the failing applications are its own and those of the other incidents opened within the correlation window of it, and commits count from the day before it. For application names, commits count from 24 hours ago. `--since` takes what ogrep takes: `24h`, `3d` or a date such as `2026-11-22`. A repository ogrep cannot answer for is reported on standard error |
 | `ograph blast APP [--depth 8]` | Dependents by distance, the business processes they support, and open incidents (question 2) |
 | `ograph similar INC [--top 5]` | Past incidents with the same signature, with their accepted causes and mitigations (question 3) |
 | `ograph news [--since DURATION]` | News that mentions a vendor our applications use (all of it by default, or only the last DURATION, such as `7d`), with the affected applications and processes (question 4) |
@@ -22,7 +24,7 @@ Every command takes `--root DIR` (the directory holding `.ograph/`, found by sea
 | `ograph ontology coverage QUESTIONS [--out FILE]` | Needs a model. For each question in the file (one per line), it reports the declared names that represent it and the concepts nothing declared represents. Gaps go to `.ograph/proposed.ttl` as Turtle for a person to review, merge into `ontology.ttl`, then check with `ontology diff`. Exits 1 when any question has a gap |
 | `ograph lab [--out FILE]` | Writes a self-contained HTML page of incidents, causes, timelines and similar incidents |
 | `ograph stats`, `ograph compact` | Shows size per table, or rewrites the store file without free pages |
-| `ograph serve [--addr A]` / `ograph serve --mcp` | Serves line-delimited JSON-RPC over TCP, with the address in `.ograph/serve.json`. Every 5 s it compares the path, modification time and size of each file a harvest reads (for a catalog, the YAML and `.env` files `ogrep --files` lists, so ignore rules apply), plus `config.toml`, `ontology.ttl` and `shapes.ttl`, and re-harvests on any addition, edit or deletion, retrying a failed harvest at the next poll. With `--mcp`, serves MCP over stdio without polling |
+| `ograph serve [--addr A]` / `ograph serve --mcp` | Serves line-delimited JSON-RPC over TCP, with the address in `.ograph/serve.json`. Every 5 s it compares the path, modification time and size of each file a harvest reads (for a catalog, the YAML and `.env` files `ogrep --files` lists, so ignore rules apply; for a `code` repository, only `.git/logs/HEAD`, which changes with every commit, pull and checkout), plus `config.toml`, `ontology.ttl` and `shapes.ttl`, and re-harvests on any addition, edit or deletion, retrying a failed harvest at the next poll. With `--mcp`, serves MCP over stdio without polling |
 
 A node name may be any of these:
 
@@ -58,6 +60,7 @@ min_confidence = 0.6        # Netflix: chains under 0.6 are discarded
 w_time = 0.6                # Netflix: time_proximity * 0.6 + severity * 0.4
 w_severity = 0.4
 known_pair_prior = 0.9      # Netflix: known causal pairs carry a 0.9 prior
+code_pair_prior = 0.9       # a commit that changed the file behind a later event; 0 turns the rule off
 rank = "chain"              # or "propagation"
 prop_weights = [0.4, 0.5, 0.1, 0.0]  # propagation: strength, chain, spread, onset
 signature_window_s = 900    # the window `similar` compares
@@ -90,15 +93,33 @@ JSON inputs may be a JSON array, one object, or JSON lines.
 | `docs` | Runbooks and other prose, Markdown or text | `ops:alias`, only from a phrase that states one: `A, also known as B`, `A aka B`, `A (aka B)`, `A, formerly B`, `A is also called B`, or `A (b-c)` where the parenthesis holds a kebab or snake identifier that does not end in a number and shares a part other than `api`, `svc` or a similar word with `A` |
 | `deployments` | `{"service", "version", "at"}` | `evt:Deployment` |
 | `config_changes` | `{"service", "key", "at"}` | `evt:ConfigChange` |
+| `code` | A git repository that holds the services' code and their operations files. It may be the catalog's repository. Optional `since` (default `"30d"`) is passed to `ogrep --since` as written: `30d`, `2w` or a date. ograph runs `ogrep --entities` to list the services, then `ogrep --timeline` for each | `evt:Commit` per service and commit, with `evt:revision`, `evt:summary` (the subject) and up to 50 `evt:changedFile`. With a `code` source, a log burst or an exception also gets `evt:codeLocation` where ogrep finds its message or its stack frames |
 | `alerts` | Alertmanager webhook (`{"alerts": [{"labels": {...}, "startsAt"}]}`) or one alert per line | `evt:Alert` with mapped severity |
 | `incidents` | `{"id", "title", "service", "opened", "severity", "status", "resolved", "mitigation", "fault"}`. The id may be a string or an integer. An incident may appear in several records, files and `incidents` sources: each field comes from the last record that states it, in file path order across all incident sources and then record order, so name date-stamped exports so that they sort by date. The fields are merged before they are checked, so an incident whose service is in one file and whose open time is in another is whole after one harvest | `inc:Incident` |
 | `logs` | `{"ts", "service", "message", "level"?}`, or plain text with leading timestamps (the service is then the file name) | `evt:LogError` per error-template burst. Raw lines stay in the file |
 | `metrics` | CSV with a `time` column and `<service>_<metric>` columns | `evt:MetricAnomaly` per robust-z episode. Points stay in the file |
 | `traces` | `{"trace_id", "span_id", "parent_span_id", "service", "start_ms", "duration_us", "status"}`. The RCAEval names `serviceName`, `startTimeMillis`, `duration`, `statusCode`, `spanID`, `parentSpanID` and `traceID` also work. A Jaeger export, which keeps services under `processes`, needs flattening to one span per line first. A span's parent is looked up in the span's own trace. Spans without a trace id count as one trace | `evt:TraceFailed` and `evt:TraceSlow` per minute, plus `ops:dependsOn` inferred from parent spans |
+| `errors` | `{"service", "at", "message", "stack", "level"?, "count"?}` from an error tracker. `app`, `time`, `timestamp`, `ts`, `error`, `title`, `stacktrace`, `trace` and `severity` also work | `evt:Exception` with mapped severity (SEV3 when the record states none). With a `code` source, up to 8 `evt:codeLocation` from the stack trace. A file's first 200 distinct traces are looked up |
 | `discussions` | A Slack export: `[{"ts", "thread_ts"?, "channel", "text"}]` | `disc:Thread`, with incident references by regex. With a model, it also proposes `disc:category`, `disc:sentiment`, `disc:about` and `ops:dependsOn`. A category needs a quote from the thread that states the cause, or it becomes UNKNOWN. A dependency needs a quote that names both applications |
 | `news` | `{"at", "title", "summary", "mentions": [names]}` | `evt:NewsItem` and `evt:mentions` |
 
-Every event carries its evidence: `file#record`, `file:line` or `file@ms`. `ograph why` shows it.
+Every event carries its evidence: `file#record`, `file:line`, `file@ms` or, for a commit, `repository@revision`. `ograph why` shows it.
+
+### Code
+
+ograph asks ogrep about code and keeps only pointers. Paths are relative to the workspace root.
+
+| Term | Meaning |
+|---|---|
+| `evt:Commit` | A commit to a service's code or configuration. Signal `COMMIT`, severity SEV4 |
+| `evt:Exception` | An error report with a stack trace. Signal `EXCEPTION` |
+| `evt:revision` | The full commit id |
+| `evt:changedFile` | A file the commit changed |
+| `evt:codeLocation` | `path:line` of the code behind an event: the statement that writes a log template, or a frame of a stack trace |
+
+- **Correlation.** A link from a commit to a later event scores `code_pair_prior` when the commit changed the file of one of the event's code locations. Every other link scores as before.
+- **Speed.** Run `ogrep index .` in the code repository to make these lookups fast. ograph does not build that index. Without it ogrep scans every file and prints a warning.
+- **Failure.** A missing or failing ogrep never fails a harvest or a query. The harvest line says `DEGRADED`, the events are kept without code locations, and the queries list the reason.
 
 ## The gateway
 

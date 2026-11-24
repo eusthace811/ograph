@@ -82,8 +82,8 @@ kind = "deployments"        # JSON: service, version, at
 path = "exports/deploys"
 ```
 
-Other kinds: `ownership`, `docs`, `config_changes`, `logs`, `metrics`, `traces`, `discussions`,
-`news`. Their formats are in `docs/REFERENCE.md`, "Input formats".
+Other kinds: `ownership`, `docs`, `config_changes`, `code`, `logs`, `metrics`, `traces`, `errors`,
+`discussions`, `news`. Their formats are in `docs/REFERENCE.md`, "Input formats".
 
 Harvest and check the result:
 
@@ -120,7 +120,42 @@ From then on, `similar` shows that cause for any incident that looks like this o
 
 For vendor news: `ograph news --since 7d`.
 
-## 5. Ask anything else
+## 5. Point ograph at your code
+
+With a `code` source an investigation can end at a commit, a file and a line. The source is a
+git repository that holds the services' code. It may be the catalog's repository.
+
+```toml
+[[source]]
+kind = "code"               # commits become events; log lines and stack traces get code locations
+path = "../shop"
+since = "30d"               # optional: how far back commits are read
+
+[[source]]
+kind = "errors"             # optional: error tracker export with stack traces
+path = "exports/errors.jsonl"
+```
+
+Harvest, then ask:
+
+```bash
+ograph harvest
+ograph code INC-5377        # lines behind the events, commits that changed them, related files, past write-ups
+ograph suspects INC-5377    # likely causes from dependencies and recent commits, with no telemetry
+```
+
+`code` reads the graph first: the lines behind the log bursts and exceptions before the
+incident, and the commits before it. A commit that changed one of those lines' files is listed
+first. Then ogrep ranks the files and the past incident write-ups that match the incident's
+description.
+
+`suspects` needs no telemetry. Use it when `before` and `chains` find little. With a `code`
+source, `chains` adds the same list when it ranks no application.
+
+Run `ogrep index .` in the code repository once to make these lookups fast. ograph does not
+build that index. Without it ogrep scans every file.
+
+## 6. Ask anything else
 
 Everything is queryable with SPARQL. The ontology's prefixes, `id:` and `g:` are predeclared.
 
@@ -137,7 +172,7 @@ prefixes and more recipes are in `skills/ograph/references/sparql.md`.
 Add `--json` to any command for machine-readable output. Exit codes: 0 found, 1 nothing found,
 2 error.
 
-## 6. Keep it fresh
+## 7. Keep it fresh
 
 ```bash
 ograph serve --addr 127.0.0.1:7474
@@ -147,7 +182,7 @@ ograph serve --addr 127.0.0.1:7474
 settings, and answers JSON-RPC on that address. A scheduled `ograph harvest` (cron, CI) works
 too. Both can run while people and agents query.
 
-## 7. Use it from an agent
+## 8. Use it from an agent
 
 **Any agent with a shell.** Install the skill in `skills/ograph/`, which teaches the commands,
 the investigation order and the rules (chains are hypotheses; verdicts only after a person
@@ -159,11 +194,11 @@ confirms):
 ```
 
 **MCP clients.** Point them at `ograph serve --mcp --root /path/to/workspace`. The tools are
-`before`, `chains`, `blast`, `similar`, `why`, `news`, `sparql` and `verdict`.
+`before`, `chains`, `blast`, `similar`, `code`, `suspects`, `why`, `news`, `sparql` and `verdict`.
 
 **pi.** `python3 scripts/agent/install.py --bin "$(which ograph)" --root /path/to/workspace --out ~/.pi/agent/extensions/ograph.ts`.
 
-## 8. Maintain
+## 9. Maintain
 
 ```bash
 ograph stats                    # store size and contents
@@ -185,6 +220,7 @@ ograph ontology diff new.ttl    # before changing the ontology; BREAKING lines n
 | `unknown field ...` on any command | A typo in `.ograph/config.toml`. The message names the expected keys |
 | `the ontology declares no X (did you mean Y?)` | A misspelled name in a SPARQL query |
 | `verdict not recorded: the ontology refuses ...` | `.ograph/ontology.ttl` is older than the binary. Run `ograph ontology check` and update it |
+| `DEGRADED: ogrep ...` on a `code`, `logs` or `errors` line | ogrep could not answer for a code repository. The events are kept without code locations. Check that the path is a git repository and that `ogrep` runs there, then harvest again |
 | `DEGRADED: ogrep not runnable` on the catalog line, and almost everything quarantined | `ogrep` is not on `PATH`; install it (section 1) or set `OGRAPH_OGREP`, then harvest again |
 | Windows: `running pi` fails in a harvest with `[llm.extract]` | npm installs pi as `pi.cmd`, which Windows starts only through `cmd`. Begin the command with `"cmd", "/C", "pi", ...` |
 | Windows: `./x install` says ograph.exe is still running | Stop `ograph serve` (Ctrl-C), or `taskkill //IM ograph.exe //F` |

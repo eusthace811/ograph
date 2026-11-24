@@ -26,6 +26,9 @@ path = "exports/deploys"
 kind = "config_changes"   # {"service","key","at"}
 path = "exports/config.jsonl"
 [[source]]
+kind = "code"             # a git repo with the services' code; since = "30d" is optional
+path = "../shop"
+[[source]]
 kind = "alerts"           # Alertmanager webhook JSON or one alert per line
 path = "exports/alerts"
 [[source]]
@@ -41,6 +44,9 @@ path = "exports/metrics.csv"
 kind = "traces"           # {"trace_id","span_id","parent_span_id","service","start_ms","duration_us","status"}
 path = "exports/traces"
 [[source]]
+kind = "errors"           # error tracker: {"service","at","message","stack","level","count"}
+path = "exports/errors.jsonl"
+[[source]]
 kind = "discussions"      # Slack export [{"ts","thread_ts","channel","text"}]
 path = "exports/slack"
 [[source]]
@@ -52,6 +58,13 @@ path = "exports/news.jsonl"
   source must name an application it knows (exact name, alias, or a close spelling). Reading it
   needs `ogrep` on `PATH` (or `OGRAPH_OGREP=/path/to/ogrep`). Without it, the harvest still runs
   but quarantines every fact about a service as "not in the ops:Application catalog".
+- A `code` source turns each service's commits into `COMMIT` events with their changed files.
+  It also lets ogrep locate log bursts and stack traces, so `LOG_ERROR` and `EXCEPTION` events
+  get a `path:line`. It may be the same repository as the catalog. `ograph code` and the
+  `chains` fallback to `suspects` need it.
+- Run `ogrep index .` in the code repository to make those lookups fast. ograph does not build
+  that index itself; without it ogrep scans every file.
+- An `errors` source works without a `code` source: the exceptions are events, without lines.
 - Times may be epoch seconds, ms, µs or ns, or ISO 8601 with any offset; between 1971 and 2200.
 - JSON files may be one array, one object, or JSON lines.
 - An incident may be updated across files: each field comes from the last record that states
@@ -78,6 +91,8 @@ harvested 16 batches in 0.2 s; 3 facts quarantined (see `ograph sparql` on graph
 - Correlation reruns after every harvest, including `--only`.
 - `--only KIND` harvests one kind (`alerts`, `config_changes`, `correlation`, ...).
 - A source that cannot be read keeps its last good facts and shows `DEGRADED: <why>`.
+- `DEGRADED: ogrep ...` on a `logs` or `errors` line means ogrep could not answer for a code
+  repository: the events are kept, without code locations, until a harvest where it can.
 
 ## Model-assisted facts (optional)
 
