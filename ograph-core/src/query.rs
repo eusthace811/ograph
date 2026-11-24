@@ -461,7 +461,7 @@ pub fn code(s: &Snapshot, incident: &str, st: &Settings) -> anyhow::Result<(Code
         found.sort();
         locations.extend(found.into_iter().map(|location| CodeLocation { event: vocab::compact(&c.iri), app: c.app_name.clone(), signal: c.kind.clone(), at: at.clone(), location, summary: describe(c.id) }));
         if c.kind == "COMMIT" {
-            let mut files = c.changed.clone();
+            let mut files = correlate::texts(s, c.id, ids.changed_file)?;
             files.sort();
             commits.push(CodeCommit { event: vocab::compact(&c.iri), app: c.app_name.clone(), at, minutes_before: ((t - c.at_ms) as f64 / 60_000.0 * 10.0).round() / 10.0, revision: text(c.id, revision), summary: describe(c.id), files, touches: vec![] });
         }

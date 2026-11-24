@@ -60,7 +60,6 @@ min_confidence = 0.6        # Netflix: chains under 0.6 are discarded
 w_time = 0.6                # Netflix: time_proximity * 0.6 + severity * 0.4
 w_severity = 0.4
 known_pair_prior = 0.9      # Netflix: known causal pairs carry a 0.9 prior
-code_pair_prior = 0.9       # a commit that changed the file behind a later event; 0 turns the rule off
 rank = "chain"              # or "propagation"
 prop_weights = [0.4, 0.5, 0.1, 0.0]  # propagation: strength, chain, spread, onset
 signature_window_s = 900    # the window `similar` compares
@@ -117,7 +116,7 @@ ograph asks ogrep about code and keeps only pointers. Paths are relative to the 
 | `evt:changedFile` | A file the commit changed |
 | `evt:codeLocation` | `path:line` of the code behind an event: the statement that writes a log template, or a frame of a stack trace |
 
-- **Correlation.** A link from a commit to a later event scores `code_pair_prior` when the commit changed the file of one of the event's code locations. Every other link scores as before.
+- **Correlation.** A commit is a candidate event like a deployment and scores by the generic rule. `ograph code` shows which commits changed the file behind a later event; chain scores do not use that (docs/EVIDENCE.md).
 - **Speed.** Run `ogrep index .` in the code repository to make these lookups fast. ograph does not build that index. Without it ogrep scans every file and prints a warning.
 - **Failure.** A missing or failing ogrep never fails a harvest or a query. The harvest line says `DEGRADED`, the events are kept without code locations, and the queries list the reason.
 
