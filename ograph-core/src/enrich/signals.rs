@@ -201,11 +201,15 @@ pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<(Batch, Vec
         }
     }
     let m = Extraction::Rule { extractor: "drain-burst".into() };
+    let new_m = Extraction::Rule { extractor: "drain-new-message".into() };
     let mut fired = Vec::new();
     for (svc, (drain, lines, examples)) in per {
         let Some(t0) = lines.iter().map(|l| l.0).min() else { continue };
         let mut buckets: BTreeMap<usize, BTreeMap<i64, (usize, i64)>> = BTreeMap::new();
+        // When each template was first written, at any level.
+        let mut first_seen: BTreeMap<usize, i64> = BTreeMap::new();
         for &(t, idx, errorish) in &lines {
+            first_seen.entry(idx).and_modify(|s| *s = (*s).min(t)).or_insert(t);
             if errorish {
                 let e = buckets.entry(idx).or_default().entry(t.div_euclid(60_000)).or_insert((0, t));
                 e.0 += 1;
@@ -215,6 +219,7 @@ pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<(Batch, Vec
         for (idx, minutes) in buckets {
             let text = drain.templates.get(idx).map(|t| t.text()).unwrap_or_default();
             let mut fired_until = i64::MIN;
+            let mut bursts: Vec<i64> = Vec::new();
             for (&minute, &(count, first)) in &minutes {
                 let prior: f64 = (1..=5).map(|k| minutes.get(&(minute - k)).map_or(0, |x| x.0) as f64).sum::<f64>() / 5.0;
                 let warm = first - t0 >= 120_000;
@@ -223,6 +228,7 @@ pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<(Batch, Vec
                     continue;
                 }
                 fired_until = minute + 5;
+                bursts.push(minute);
                 let ratio = count as f64 / prior.max(0.2);
                 let ev = b.record(format!("{key}@{}", first));
                 let s = known("ev", &format!("log/{}/{}/{first}", slug(&svc), &hex::encode(crate::gateway::sha2_hash(&text))[..12]));
@@ -232,6 +238,23 @@ pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<(Batch, Vec
                 if let Some(example) = examples.get(idx).filter(|x| !x.trim().is_empty()) {
                     fired.push(Burst { event: s, evidence: ev, template: text.clone(), example: example.clone() });
                 }
+            }
+            // A message the service never wrote before: one or two error lines are too few
+            // for a burst, and they are often the first sign of a change. A burst in the same
+            // five minutes already says it.
+            let Some((&minute, &(_, first))) = minutes.iter().next() else { continue };
+            let new = d.log_new_after_s > 0 && first_seen.get(&idx).is_some_and(|seen| seen.div_euclid(60_000) == minute && seen - t0 >= d.log_new_after_s * 1000);
+            if !new || bursts.iter().any(|b| (minute..=minute + 5).contains(b)) {
+                continue;
+            }
+            let count: usize = minutes.range(minute..=minute + 5).map(|(_, x)| x.0).sum();
+            let ev = b.record(format!("{key}@{}", first));
+            let s = known("ev", &format!("log-new/{}/{}/{first}", slug(&svc), &hex::encode(crate::gateway::sha2_hash(&text))[..12]));
+            let e = Event { class: evt::LOG_ERROR, on: &svc, at: first, signal: "LOG_NEW", severity: "SEV4", value: None };
+            let details = [(evt::TEMPLATE, lit(text.chars().take(300).collect::<String>())), (evt::COUNT, lit(Literal::from(count as i64)))];
+            event(&mut b, &s, e, details, &ev, &new_m);
+            if let Some(example) = examples.get(idx).filter(|x| !x.trim().is_empty()) {
+                fired.push(Burst { event: s, evidence: ev, template: text.clone(), example: example.clone() });
             }
         }
     }

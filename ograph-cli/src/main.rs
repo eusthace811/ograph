@@ -313,7 +313,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         Cmd::Code { incident, top } => {
             let snap = ws.store.snapshot()?;
             let c = ws.code(&snap, &incident, top)?;
-            let found = !(c.locations.is_empty() && c.commits.is_empty() && c.files.is_empty() && c.writeups.is_empty());
+            let found = !(c.locations.is_empty() && c.commits.is_empty() && c.deployments.is_empty() && c.files.is_empty() && c.writeups.is_empty());
             print(json, &c, |c| {
                 println!("{} on {} at {}", c.incident, c.app, c.at);
                 if !c.locations.is_empty() {
@@ -321,6 +321,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 }
                 for l in &c.locations {
                     println!("  {:<16} {:<15} {}  {}", l.app, l.signal, l.location, l.summary.as_deref().unwrap_or(""));
+                    if let Some(i) = &l.introduced {
+                        println!("  {:<16} {:<15} first added {:.1} days before by {:.12}  {}", "", "", i.days_before, i.revision, i.summary);
+                    }
                 }
                 if !c.commits.is_empty() {
                     println!("commits before it:");
@@ -328,6 +331,13 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 for k in &c.commits {
                     let touches = if k.touches.is_empty() { String::new() } else { format!("  changed {}", k.touches.join(", ")) };
                     println!("  -{:>5.1} min  {:<16} {:.12}  {}{touches}", k.minutes_before, k.app, k.revision.as_deref().unwrap_or("?"), k.summary.as_deref().unwrap_or(""));
+                }
+                if !c.deployments.is_empty() {
+                    println!("deployments before it:");
+                }
+                for d in &c.deployments {
+                    let touches = if d.touches.is_empty() { String::new() } else { format!("  changed {}", d.touches.join(", ")) };
+                    println!("  -{:>5.1} min  {:<16} {}  {} files since the version before{touches}", d.minutes_before, d.app, d.version.as_deref().unwrap_or("?"), d.files.len());
                 }
                 if !c.files.is_empty() {
                     println!("files its description is about ({}):", c.files_confidence.as_deref().unwrap_or("unranked"));

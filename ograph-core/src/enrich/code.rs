@@ -23,7 +23,20 @@ pub fn harvest(root: &Path, path: &Path, since: &str) -> Batch {
         }
     };
     let m = Extraction::Rule { extractor: "ogrep-timeline".into() };
-    let timelines = ogrep::each(&services, |service| ogrep::timeline(&dir, service, since));
+    // One call for every service where ogrep takes a list; one call each, side by side,
+    // where it does not (0.2.0).
+    let timelines: Vec<Result<Vec<ogrep::Commit>, ogrep::Failure>> = match ogrep::timelines(&dir, &services, since) {
+        Ok(all) => {
+            let mut per: Vec<Vec<ogrep::Commit>> = vec![Vec::new(); services.len()];
+            for (service, commit) in all {
+                if let Some(n) = services.iter().position(|s| *s == service) {
+                    per[n].push(commit);
+                }
+            }
+            per.into_iter().map(Ok).collect()
+        }
+        _ => ogrep::each(&services, |service| ogrep::timeline(&dir, service, since, None)),
+    };
     for (service, commits) in services.iter().zip(timelines) {
         let commits = match commits {
             Ok(c) => c,

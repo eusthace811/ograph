@@ -118,6 +118,9 @@ pub struct Edge {
 pub struct Entity {
     pub id: String,
     pub kind: String,
+    /// Other names the operations files give it, such as a Kubernetes Service in front of a
+    /// workload with another name (ogrep newer than 0.2.0).
+    pub aliases: Vec<String>,
     pub location: Location,
     pub edges: Vec<Edge>,
 }
@@ -137,6 +140,8 @@ pub fn entities(dir: &Path) -> Result<Vec<Entity>, Failure> {
         kind: String,
         #[serde(default)]
         locations: Vec<Location>,
+        #[serde(default)]
+        aliases: Vec<String>,
     }
     #[derive(Deserialize)]
     struct RawEdge {
@@ -154,6 +159,7 @@ pub fn entities(dir: &Path) -> Result<Vec<Entity>, Failure> {
         .map(|d| Entity {
             id: d.entity.id,
             kind: d.entity.kind,
+            aliases: d.entity.aliases,
             location: d.entity.locations.into_iter().next().unwrap_or_default(),
             edges: d
                 .edges
@@ -188,16 +194,33 @@ pub struct Commit {
     pub files: Vec<String>,
 }
 
-/// `ogrep --timeline SERVICE --since SINCE . --json`: commits to one service, newest first.
-/// ogrep also lists commits to the service's direct dependencies; those are left out.
-pub fn timeline(dir: &Path, service: &str, since: &str) -> Result<Vec<Commit>, Failure> {
+/// `ogrep --timeline SERVICE --since SINCE [--until UNTIL] . --json`: commits to one service,
+/// newest first. ogrep also lists commits to the service's direct dependencies; those are left
+/// out. With two revisions as the bounds (a newer ogrep than 0.2.0 reads them), the commits
+/// are those `until` holds and `since` does not, as `git log SINCE..UNTIL` lists them.
+pub fn timeline(dir: &Path, service: &str, since: &str, until: Option<&str>) -> Result<Vec<Commit>, Failure> {
     #[derive(Deserialize)]
     struct Data {
         service: String,
         commit: Commit,
     }
-    let text = stdout(dir, "--timeline", &["--timeline", service, "--since", since, ".", "--json"], None, false)?;
+    let mut args = vec!["--timeline", service, "--since", since];
+    args.extend(until.into_iter().flat_map(|u| ["--until", u]));
+    args.extend([".", "--json"]);
+    let text = stdout(dir, "--timeline", &args, None, false)?;
     Ok(records::<Data>(&text, Some("event")).into_iter().filter(|d| d.service == service).map(|d| d.commit).collect())
+}
+
+/// `ogrep --timeline A,B,C --since SINCE . --json`: the commits to each of `services` in one
+/// call, as (service, commit). ogrep 0.2.0 takes one service per call and fails on a list.
+pub fn timelines(dir: &Path, services: &[String], since: &str) -> Result<Vec<(String, Commit)>, Failure> {
+    #[derive(Deserialize)]
+    struct Data {
+        service: String,
+        commit: Commit,
+    }
+    let text = stdout(dir, "--timeline", &["--timeline", &services.join(","), "--since", since, ".", "--json"], None, false)?;
+    Ok(records::<Data>(&text, Some("event")).into_iter().filter(|d| services.contains(&d.service)).map(|d| (d.service, d.commit)).collect())
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -211,14 +234,19 @@ pub struct Suspect {
     pub changes: Vec<Commit>,
 }
 
-/// `ogrep --suspects A,B --since SINCE . --json`: likely causes for failing services from the
-/// dependency graph and recent commits, best first.
-pub fn suspects(dir: &Path, failing: &[String], since: &str) -> Result<Vec<Suspect>, Failure> {
+/// `ogrep --suspects A,B --since SINCE [--until UNTIL] . --json`: likely causes for failing
+/// services from the dependency graph and the commits between the two times, best first.
+/// ogrep 0.2.0 has no `--until` here and fails when given one.
+pub fn suspects(dir: &Path, failing: &[String], since: &str, until: Option<&str>) -> Result<Vec<Suspect>, Failure> {
     #[derive(Deserialize)]
     struct Data {
         suspect: Suspect,
     }
-    let text = stdout(dir, "--suspects", &["--suspects", &failing.join(","), "--since", since, ".", "--json"], None, false)?;
+    let failing = failing.join(",");
+    let mut args = vec!["--suspects", failing.as_str(), "--since", since];
+    args.extend(until.into_iter().flat_map(|u| ["--until", u]));
+    args.extend([".", "--json"]);
+    let text = stdout(dir, "--suspects", &args, None, false)?;
     Ok(records::<Data>(&text, Some("suspect")).into_iter().map(|d| d.suspect).collect())
 }
 
@@ -331,6 +359,28 @@ pub fn about(dir: &Path, text: &str, budget: usize) -> Result<About, Failure> {
         }
     }
     Ok(about)
+}
+
+/// The commit that first added a line.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Introduced {
+    pub sha: String,
+    #[serde(default)]
+    pub subject: String,
+    pub time: i64,
+    pub path: String,
+}
+
+/// `ogrep --introduced -F -e TEXT --until UNTIL . --json`: the commit that first added a line
+/// holding `text`, among those made until `until`. Nothing when no commit did. It needs the
+/// history index (`ogrep index --history`), and fails without it.
+pub fn introduced(dir: &Path, text: &str, until: &str) -> Result<Option<Introduced>, Failure> {
+    #[derive(Deserialize)]
+    struct Data {
+        first_added: Option<Introduced>,
+    }
+    let out = stdout(dir, "--introduced", &["--introduced", "-F", "-e", text, "--until", until, ".", "--json"], None, false)?;
+    Ok(records::<Data>(&out, Some("introduced")).into_iter().find_map(|d| d.first_added))
 }
 
 #[cfg(test)]

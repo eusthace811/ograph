@@ -6,10 +6,13 @@ use std::path::{Path, PathBuf};
 
 const T: i64 = 1_795_442_000;
 const SHA: &str = "98aecc6b2ee7d4a7bcecf025720a5200f55f35ce";
+const FIRST: &str = "0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f60718293";
 
-/// A stand-in for ogrep that answers each flag ograph calls for a repository of three services,
-/// checkout -> payments -> ledger-db. It appends its arguments to `.calls` in the repository,
-/// and fails every call in a repository that holds a file named `.fail`.
+/// A stand-in for ogrep that answers each flag ograph calls for a repository of four services,
+/// checkout -> payments -> ledger-db as files declare them, and checkout -> mailer as ogrep
+/// infers it. It appends its arguments to `.calls` in the repository, fails every call in a
+/// repository that holds a file named `.fail`, and in one that holds `.old` refuses what ogrep
+/// 0.2.0 refuses: a list of services and `--until` for `--timeline` and `--suspects`.
 fn ogrep() -> &'static Path {
     static OGREP: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     OGREP.get_or_init(|| {
@@ -18,16 +21,21 @@ fn ogrep() -> &'static Path {
             r#"#!/bin/sh
 echo "$*" >> .calls
 [ -f .fail ] && {{ echo "boom" >&2; exit 2; }}
+if [ -f .old ]; then case "$1 $*" in
+  "--timeline "*" --until "*|"--suspects "*" --until "*) echo "ogrep: --until and --author need --history or --introduced" >&2; exit 2 ;;
+  "--timeline --timeline "*,*) echo "ogrep: no service named \"$2\"" >&2; exit 2 ;;
+esac; fi
 case "$1" in
 --files) find . -path '*/.*' -prune -o -type f -print ;;
 --entities) cat <<'X'
-{{"type":"entity","data":{{"edges":[{{"evidence":{{"file":"compose.yml","line":4}},"from":"checkout","provenance":"declared","relation":"depends_on","to":"payments"}}],"entity":{{"id":"checkout","kind":"service","locations":[{{"file":"compose.yml","line":2}}]}}}}}}
+{{"type":"entity","data":{{"edges":[{{"evidence":{{"file":"compose.yml","line":4}},"from":"checkout","provenance":"declared","relation":"depends_on","to":"payments"}},{{"evidence":{{"file":"compose.yml","line":3}},"from":"checkout","provenance":"inferred","relation":"calls","to":"payments"}},{{"evidence":{{"file":"compose.yml","line":3}},"from":"checkout","provenance":"inferred","relation":"calls","to":"mailer"}},{{"evidence":{{"file":"compose.yml","line":3}},"from":"checkout","provenance":"inferred","relation":"telemetry","to":"ledger-db"}}],"entity":{{"aliases":["checkout-external"],"id":"checkout","kind":"service","locations":[{{"file":"compose.yml","line":2}}]}}}}}}
 {{"type":"entity","data":{{"edges":[{{"evidence":{{"file":"compose.yml","line":7}},"from":"payments","provenance":"declared","relation":"depends_on","to":"ledger-db"}}],"entity":{{"id":"payments","kind":"service","locations":[{{"file":"compose.yml","line":5}}]}}}}}}
 {{"type":"entity","data":{{"edges":[],"entity":{{"id":"ledger-db","kind":"service","locations":[{{"file":"compose.yml","line":10}}]}}}}}}
+{{"type":"entity","data":{{"edges":[],"entity":{{"id":"mailer","kind":"service","locations":[{{"file":"compose.yml","line":12}}]}}}}}}
 X
 ;;
 --timeline) case "$2" in
-  payments|checkout) echo '{{"type":"event","data":{{{commit},"service":"payments","time":1}}}}' ;;
+  *payments*|checkout) echo '{{"type":"event","data":{{{commit},"service":"payments","time":1}}}}' ;;
   *) exit 1 ;;
   esac ;;
 --log-templates)
@@ -45,13 +53,16 @@ X
   echo '{{"type":"rank","data":{{"path":{{"text":"./compose.yml"}},"rank":2,"score":1.2}}}}' ;;
 --similar-incidents)
   echo '{{"type":"incident","data":{{"path":"docs/postmortems/2026-01-ledger-pool.md","score":16.189942,"terms":["exhausted","pool"]}}}}' ;;
+--introduced)
+  echo '{{"type":"introduced","data":{{"commits":2,"files_at_head":1,"first_added":{{"author":"a","date":"2026-11-20","line_number":11,"path":"services/payments/pool.py","sha":"{FIRST}","subject":"payments: add the ledger pool","text":"log.error()","time":{added}}},"last_removed":null}}}}' ;;
 --suspects)
   echo '{{"type":"suspect","data":{{"rank":1,"suspect":{{"changes":[{{"files":["services/payments/pool.py"],"sha":"{SHA}","subject":"payments: shrink ledger pool","time":{at}}}],"distance":1.0,"explains":["checkout"],"score":2.727272727272727,"service":"payments"}}}}}}'
   echo '{{"type":"suspect","data":{{"rank":2,"suspect":{{"changes":[],"distance":0.0,"explains":["checkout"],"score":1.0,"service":"checkout"}}}}}}' ;;
 *) echo "unexpected: $*" >&2; exit 2 ;;
 esac
 "#,
-            at = T - 720
+            at = T - 720,
+            added = T - 3 * 86_400
         );
         let p = std::env::temp_dir().join(format!("ograph-code-test-ogrep-{}.sh", std::process::id()));
         std::fs::write(&p, script).unwrap();
@@ -146,6 +157,114 @@ fn a_commit_is_a_change_event_on_its_service() {
     // the commits of a service's dependencies; it stays one event, on payments.
     assert_eq!(values(&root, "SELECT ?e WHERE { ?e a evt:Commit }"), ["https://ograph.dev/id/ev/commit-payments-98aecc6b2ee7"]);
     assert_eq!(violations(&root), 0);
+    assert_eq!(calls(&root).lines().filter(|l| l.starts_with("--timeline")).collect::<Vec<_>>(), ["--timeline checkout,payments,ledger-db,mailer --since 30d . --json"]);
+}
+
+#[test]
+fn an_ogrep_that_takes_one_service_at_a_time_is_asked_for_each() {
+    let root = workspace("commits-old", &format!("{CATALOG}{CODE}"), &[("shop/.old", "")]);
+    let out = harvest(&root);
+    assert!(out.iter().all(|o| o.degraded.is_empty()), "{out:?}");
+    assert_eq!(values(&root, "SELECT ?r WHERE { ?e a evt:Commit ; evt:revision ?r }"), [SHA]);
+    let mut asked: Vec<String> = calls(&root).lines().filter(|l| l.starts_with("--timeline")).map(str::to_owned).collect();
+    asked.sort();
+    assert_eq!(asked, ["--timeline checkout --since 30d . --json", "--timeline checkout,payments,ledger-db,mailer --since 30d . --json", "--timeline ledger-db --since 30d . --json", "--timeline mailer --since 30d . --json", "--timeline payments --since 30d . --json"]);
+}
+
+#[test]
+fn a_call_ogrep_infers_is_a_dependency_unless_the_catalog_says_declared_only() {
+    let depends = |root: &Path| values(root, "SELECT ?to WHERE { id:app\\/checkout ops:dependsOn ?to }");
+    let root = workspace("inferred", CATALOG, &[]);
+    harvest(&root);
+    assert_eq!(depends(&root), ["https://ograph.dev/id/app/mailer", "https://ograph.dev/id/app/payments"]);
+    assert_eq!(values(&root, "SELECT ?a WHERE { id:app\\/checkout ops:alias ?a }"), ["checkout-external"]);
+    let declared = workspace("declared-only", "[[source]]\nkind = \"catalog\"\npath = \"shop\"\ninferred = false\n", &[]);
+    harvest(&declared);
+    assert_eq!(depends(&declared), ["https://ograph.dev/id/app/payments"]);
+}
+
+/// Fifteen quiet minutes of payments, then `lines` error lines of a message it never wrote.
+fn first_lines(lines: i64) -> String {
+    let mut out = String::new();
+    for i in 0..30 {
+        out += &format!("{{\"ts\":{},\"service\":\"payments\",\"level\":\"info\",\"message\":\"charge ok id={i} took 80ms\"}}\n", T - 1000 + i * 30);
+    }
+    for i in 0..lines {
+        out += &format!("{{\"ts\":{},\"service\":\"payments\",\"level\":\"error\",\"message\":\"ledger-db connection pool exhausted after 3000ms waiting=6{i}\"}}\n", T - 100 + i);
+    }
+    out
+}
+
+const LOGS: &str = "[[source]]\nkind = \"logs\"\npath = \"logs.jsonl\"\n";
+
+#[test]
+fn the_first_line_of_a_new_error_message_is_an_event_with_its_line_of_code() {
+    let root = workspace("log-new", &format!("{CATALOG}{CODE}{LOGS}"), &[("logs.jsonl", &first_lines(2))]);
+    harvest(&root);
+    let about = |p: &str| values(&root, &format!("SELECT ?v WHERE {{ ?e a evt:LogError ; evt:on id:app\\/payments ; evt:signal \"LOG_NEW\" ; {p} ?v }}"));
+    assert_eq!(about("evt:template"), ["ledger-db connection pool exhausted after <*> <*>"]);
+    assert_eq!(about("evt:count"), ["2"]);
+    assert_eq!(about("evt:at"), [ograph_core::term::format_millis((T - 100) * 1000)]);
+    assert_eq!(about("evt:codeLocation"), ["shop/services/payments/pool.py:11"]);
+    assert_eq!(values(&root, "SELECT ?e WHERE { ?e a evt:LogError }").len(), 1);
+    assert_eq!(violations(&root), 0);
+}
+
+#[test]
+fn a_burst_of_a_new_message_is_one_event_and_the_detector_can_be_turned_off() {
+    let signals = |root: &Path| values(root, "SELECT ?s WHERE { ?e a evt:LogError ; evt:signal ?s }");
+    let burst = workspace("log-new-burst", &format!("{CATALOG}{LOGS}"), &[("logs.jsonl", &first_lines(5))]);
+    harvest(&burst);
+    assert_eq!(signals(&burst), ["LOG_ERROR"]);
+    let off = workspace("log-new-off", &format!("{CATALOG}{LOGS}"), &[("logs.jsonl", &first_lines(2))]);
+    let config = std::fs::read_to_string(off.join(".ograph/config.toml")).unwrap();
+    std::fs::write(off.join(".ograph/config.toml"), format!("{config}[detect]\nlog_new_after_s = 0\n")).unwrap();
+    harvest(&off);
+    assert!(signals(&off).is_empty());
+    // The fixture of the other tests starts ten minutes before its burst: too little history
+    // to call a message new.
+    let short = workspace("log-new-short", &format!("{CATALOG}{LOGS}"), &[("logs.jsonl", &logs())]);
+    harvest(&short);
+    assert_eq!(signals(&short), ["LOG_ERROR"]);
+}
+
+const DEPLOYS: &str = "[[source]]\nkind = \"deployments\"\npath = \"deployments.jsonl\"\n";
+
+fn deployments() -> String {
+    format!("{{\"service\":\"payments\",\"version\":\"v1\",\"at\":{}}}\n{{\"service\":\"payments\",\"version\":\"v2\",\"at\":{}}}\n{{\"service\":\"checkout\",\"version\":\"v7\",\"at\":{}}}\n", T - 7200, T - 900, T - 800)
+}
+
+#[test]
+fn a_deployment_lists_the_files_changed_since_the_version_before() {
+    let root = workspace("deploy-files", &format!("{CATALOG}{CODE}{DEPLOYS}{EVERYTHING}"), &[("deployments.jsonl", &deployments()), ("logs.jsonl", &logs()), ("errors.jsonl", &errors())]);
+    let out = harvest(&root);
+    assert!(out.iter().all(|o| o.degraded.is_empty()), "{out:?}");
+    let pool = "shop/services/payments/pool.py";
+    assert_eq!(values(&root, "SELECT ?v WHERE { ?e a evt:Deployment ; evt:changedFile ?f ; evt:version ?v }"), ["v2"]);
+    assert_eq!(values(&root, "SELECT ?f WHERE { ?e a evt:Deployment ; evt:changedFile ?f }"), [pool]);
+    // One call: the first deployment of a service has no version before it.
+    assert_eq!(calls(&root).lines().filter(|l| l.contains("--until")).collect::<Vec<_>>(), ["--timeline payments --since v1 --until v2 . --json"]);
+    assert_eq!(violations(&root), 0);
+    let ws = Workspace::open(&root).unwrap();
+    let (answer, _) = ograph_core::query::code(&ws.store.snapshot().unwrap(), "INC-1", &ws.config.correlation).unwrap();
+    assert_eq!(
+        serde_json::to_value(&answer.deployments).unwrap(),
+        serde_json::json!([{"event": format!("id:ev/deploy-payments-v2-{}", (T - 900) * 1000), "app": "payments", "at": ograph_core::term::format_millis((T - 900) * 1000), "minutes_before": 15.0, "version": "v2", "files": [pool], "touches": [format!("{pool}:11")]}])
+    );
+}
+
+#[test]
+fn deployments_keep_no_files_without_a_code_source_or_with_an_ogrep_that_reads_no_revisions() {
+    let plain = workspace("deploy-plain", &format!("{CATALOG}{DEPLOYS}"), &[("deployments.jsonl", &deployments())]);
+    let out = harvest(&plain);
+    assert!(out.iter().all(|o| o.degraded.is_empty()), "{out:?}");
+    assert_eq!(calls(&plain), "--entities . --json\n");
+    let old = workspace("deploy-old", &format!("{CATALOG}{CODE}{DEPLOYS}"), &[("deployments.jsonl", &deployments()), ("shop/.old", "")]);
+    let out = harvest(&old);
+    let o = out.iter().find(|o| o.graph.ends_with("/deployments/deployments.jsonl")).unwrap();
+    assert_eq!(o.degraded, ["deployments.jsonl: 1 of 1 deployments could not be compared with the version before, so they list no changed files: ogrep --timeline failed: ogrep: --until and --author need --history or --introduced"]);
+    assert_eq!(values(&old, "SELECT ?e WHERE { ?e a evt:Deployment }").len(), 3);
+    assert!(values(&old, "SELECT ?f WHERE { ?e evt:changedFile ?f . ?e a evt:Deployment }").is_empty());
 }
 
 #[test]
@@ -223,6 +342,11 @@ fn code_adds_the_files_and_write_ups_ogrep_finds_for_the_incident() {
     assert_eq!(answer["files_confidence"], "confident");
     assert_eq!(answer["writeups"], serde_json::json!([{"path": "shop/docs/postmortems/2026-01-ledger-pool.md", "score": 16.19, "terms": ["exhausted", "pool"]}]));
     assert_eq!(answer["degraded"], serde_json::json!([]));
+    // The message of the located log line entered the code three days before the incident.
+    assert_eq!(answer["locations"][2]["introduced"], serde_json::json!({"revision": FIRST, "at": ograph_core::term::format_millis((T - 3 * 86_400) * 1000), "days_before": 3.0, "summary": "payments: add the ledger pool", "path": "shop/services/payments/pool.py"}));
+    assert_eq!(answer["locations"][0].get("introduced"), None);
+    let opened = ograph_core::term::format_millis(T * 1000);
+    assert!(calls(&root).contains(&format!("--introduced -F -e ledger-db connection pool exhausted after --until {opened} . --json\n")), "{}", calls(&root));
     let top = ws.code(&ws.store.snapshot().unwrap(), "INC-1", 1).unwrap();
     assert_eq!(top.files.len(), 1);
 }
@@ -250,7 +374,18 @@ fn suspects_of_an_incident_are_asked_for_its_application_since_the_day_before() 
     // INC-2 opened inside the correlation window of INC-1, so its application fails with it;
     // INC-3 opened two hours earlier.
     let day_before = ograph_core::term::format_millis((T - 86_400) * 1000)[..10].to_owned();
-    assert_eq!(calls(&root).lines().last(), Some(format!("--suspects checkout,payments --since {day_before} . --json").as_str()));
+    let opened = ograph_core::term::format_millis(T * 1000);
+    assert_eq!(calls(&root).lines().last(), Some(format!("--suspects checkout,payments --since {day_before} --until {opened} . --json").as_str()));
+}
+
+#[test]
+fn an_ogrep_that_cannot_stop_at_the_incident_is_asked_again_and_the_answer_says_so() {
+    let root = workspace("suspects-old", CATALOG, &[("shop/.old", "")]);
+    harvest(&root);
+    let opened = ograph_core::term::format_millis(T * 1000);
+    assert_eq!(suspects(&root, "INC-1", None), (expected_suspects(), vec![format!("shop: this ogrep cannot stop at {opened}, so commits made after it count too")]));
+    let day_before = ograph_core::term::format_millis((T - 86_400) * 1000)[..10].to_owned();
+    assert_eq!(calls(&root).lines().last(), Some(format!("--suspects checkout --since {day_before} . --json").as_str()));
 }
 
 #[test]

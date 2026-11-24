@@ -393,6 +393,10 @@ pub struct Code {
     pub locations: Vec<CodeLocation>,
     /// Candidate commits: those that changed a located file first, then newest first.
     pub commits: Vec<CodeCommit>,
+    /// Deployments before the incident whose changed files are known, those that changed a
+    /// located file first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub deployments: Vec<CodeDeployment>,
     /// The files the incident's description is about, best first.
     pub files: Vec<CodeFile>,
     /// `confident` or `unsure`: whether ogrep's first file stands clear of the rest.
@@ -410,6 +414,19 @@ pub struct CodeLocation {
     pub at: String,
     pub location: String,
     pub summary: Option<String>,
+    /// For a log message: the commit that first added it to the code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub introduced: Option<Introduced>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct Introduced {
+    pub revision: String,
+    pub at: String,
+    pub days_before: f64,
+    pub summary: String,
+    /// Where the commit added it, which is another path if the file has moved since.
+    pub path: String,
 }
 
 #[derive(Serialize)]
@@ -422,6 +439,19 @@ pub struct CodeCommit {
     pub summary: Option<String>,
     pub files: Vec<String>,
     /// The locations of this answer in a file the commit changed.
+    pub touches: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct CodeDeployment {
+    pub event: String,
+    pub app: String,
+    pub at: String,
+    pub minutes_before: f64,
+    pub version: Option<String>,
+    /// The files changed since the version the application ran before.
+    pub files: Vec<String>,
+    /// The locations of this answer in a file the deployment changed.
     pub touches: Vec<String>,
 }
 
@@ -454,26 +484,43 @@ pub fn code(s: &Snapshot, incident: &str, st: &Settings) -> anyhow::Result<(Code
     let (template, summary, revision, title) = (s.iri(evt::TEMPLATE)?, s.iri(evt::SUMMARY)?, s.iri(evt::REVISION)?, s.iri(inc::TITLE)?);
     let text = |e: Id, p: Option<Id>| p.and_then(|p| s.object(e, p).ok().flatten()).and_then(|v| literal(s, v));
     let describe = |e: Id| text(e, template).or_else(|| text(e, summary));
-    let (mut locations, mut commits) = (Vec::new(), Vec::new());
+    let version = s.iri(evt::VERSION)?;
+    let minutes_before = |at_ms: i64| ((t - at_ms) as f64 / 60_000.0 * 10.0).round() / 10.0;
+    let (mut locations, mut commits, mut deployments) = (Vec::new(), Vec::new(), Vec::new());
     for c in cands.iter().rev() {
         let at = term::format_millis(c.at_ms);
         let mut found = correlate::texts(s, c.id, ids.code_location)?;
         found.sort();
-        locations.extend(found.into_iter().map(|location| CodeLocation { event: vocab::compact(&c.iri), app: c.app_name.clone(), signal: c.kind.clone(), at: at.clone(), location, summary: describe(c.id) }));
+        locations.extend(found.into_iter().map(|location| CodeLocation { event: vocab::compact(&c.iri), app: c.app_name.clone(), signal: c.kind.clone(), at: at.clone(), location, summary: describe(c.id), introduced: None }));
         if c.kind == "COMMIT" {
             let mut files = correlate::texts(s, c.id, ids.changed_file)?;
             files.sort();
-            commits.push(CodeCommit { event: vocab::compact(&c.iri), app: c.app_name.clone(), at, minutes_before: ((t - c.at_ms) as f64 / 60_000.0 * 10.0).round() / 10.0, revision: text(c.id, revision), summary: describe(c.id), files, touches: vec![] });
-        }
-    }
-    for c in &mut commits {
-        for l in &locations {
-            if c.files.iter().any(|f| f == correlate::location_file(&l.location)) && !c.touches.contains(&l.location) {
-                c.touches.push(l.location.clone());
+            commits.push(CodeCommit { event: vocab::compact(&c.iri), app: c.app_name.clone(), at, minutes_before: minutes_before(c.at_ms), revision: text(c.id, revision), summary: describe(c.id), files, touches: vec![] });
+        } else if c.kind == "DEPLOYMENT" {
+            let mut files = correlate::texts(s, c.id, ids.changed_file)?;
+            files.sort();
+            if !files.is_empty() {
+                deployments.push(CodeDeployment { event: vocab::compact(&c.iri), app: c.app_name.clone(), at, minutes_before: minutes_before(c.at_ms), version: text(c.id, version), files, touches: vec![] });
             }
         }
     }
+    let touched = |files: &[String]| {
+        let mut touches: Vec<String> = Vec::new();
+        for l in &locations {
+            if files.iter().any(|f| f == correlate::location_file(&l.location)) && !touches.contains(&l.location) {
+                touches.push(l.location.clone());
+            }
+        }
+        touches
+    };
+    for c in &mut commits {
+        c.touches = touched(&c.files);
+    }
+    for d in &mut deployments {
+        d.touches = touched(&d.files);
+    }
     commits.sort_by_key(|c| c.touches.is_empty());
+    deployments.sort_by_key(|d| d.touches.is_empty());
     let mut words: Vec<String> = text(i, title).into_iter().collect();
     let analysis = correlate::analyze(s, &ids, i, st)?;
     if let Some(chain) = analysis.apps.first().and_then(|r| r.chain.as_ref()) {
@@ -483,7 +530,7 @@ pub fn code(s: &Snapshot, incident: &str, st: &Settings) -> anyhow::Result<(Code
         }
     }
     let words = words.join(" ").replace("<*>", " ").split_whitespace().collect::<Vec<_>>().join(" ");
-    let answer = Code { incident: vocab::compact(&literal(s, i).unwrap_or_default()), app: app_name(s, &ids, app), at: term::format_millis(t), locations, commits, files: vec![], files_confidence: None, writeups: vec![], degraded: vec![] };
+    let answer = Code { incident: vocab::compact(&literal(s, i).unwrap_or_default()), app: app_name(s, &ids, app), at: term::format_millis(t), locations, commits, deployments, files: vec![], files_confidence: None, writeups: vec![], degraded: vec![] };
     Ok((answer, words))
 }
 
@@ -534,10 +581,62 @@ pub fn code_search(answer: &mut Code, text: &str, root: &Path, repos: &[PathBuf]
     answer.files_confidence = first.and_then(|(_, level)| level);
 }
 
+/// A message shorter than this is in too many lines of a repository to date.
+const MIN_MESSAGE: usize = 12;
+
+/// The longest part of a log template between its variable parts: what the code most likely
+/// holds as written.
+fn constant_part(template: &str) -> Option<&str> {
+    template.split("<*>").map(str::trim).filter(|part| part.chars().count() >= MIN_MESSAGE).max_by_key(|part| part.len())
+}
+
+/// The history half of `ograph code`: for each located log message, the commit that first
+/// added it, among the commits made until the incident. A message can enter the code days
+/// before it is first written, which the commits of the correlation window do not show. One
+/// ogrep call per distinct message, side by side.
+pub fn code_history(answer: &mut Code, root: &Path, repos: &[PathBuf]) {
+    let Some(t) = crate::enrich::parse_iso(&answer.at) else { return };
+    let mut asks: Vec<(&PathBuf, &str)> = Vec::new();
+    let mut ask_of = Vec::new();
+    for l in &answer.locations {
+        let file = correlate::location_file(&l.location);
+        let ask = l.summary.as_deref().filter(|_| l.signal.starts_with("LOG_")).and_then(constant_part).zip(repos.iter().find(|r| Path::new(file).starts_with(rel(root, r))));
+        ask_of.push(ask.map(|(part, repo)| {
+            asks.iter().position(|a| *a == (repo, part)).unwrap_or_else(|| {
+                asks.push((repo, part));
+                asks.len() - 1
+            })
+        }));
+    }
+    let found = ogrep::each(&asks, |(repo, part)| ogrep::introduced(repo, part, &answer.at));
+    let mut notes = Vec::new();
+    let found: Vec<Option<Introduced>> = found
+        .into_iter()
+        .zip(&asks)
+        .map(|(r, (repo, _))| match r {
+            Ok(c) => c.map(|c| Introduced { revision: c.sha, at: term::format_millis(c.time * 1000), days_before: ((t - c.time * 1000) as f64 / 86_400_000.0 * 10.0).round() / 10.0, summary: c.subject, path: rel(root, &repo.join(c.path)) }),
+            Err(e) => {
+                let note = format!("{}: {e}", rel(root, repo));
+                if !notes.contains(&note) {
+                    notes.push(note);
+                }
+                None
+            }
+        })
+        .collect();
+    drop(asks);
+    for (l, ask) in answer.locations.iter_mut().zip(ask_of) {
+        l.introduced = ask.and_then(|n| found[n].clone());
+    }
+    answer.degraded.extend(notes);
+}
+
 /// The applications `ograph suspects` asks ogrep about, and how far back it looks by default.
 pub struct Failing {
     pub apps: Vec<String>,
     pub since: String,
+    /// For an incident, the time it opened: commits made after it cannot have caused it.
+    pub until: Option<String>,
 }
 
 /// The graph half of `ograph suspects`. An incident fails its own application and those of the
@@ -563,7 +662,7 @@ pub fn failing(s: &Snapshot, target: &str, st: &Settings) -> anyhow::Result<Fail
         others.sort();
         others.dedup();
         let apps = std::iter::once(app_name(s, ids, app)).chain(others).collect();
-        return Ok(Failing { apps, since: term::format_millis(t - 86_400_000).chars().take(10).collect() });
+        return Ok(Failing { apps, since: term::format_millis(t - 86_400_000).chars().take(10).collect(), until: Some(term::format_millis(t)) });
     }
     let application = s.iri(ops::APPLICATION)?;
     let apps: Vec<String> = target
@@ -576,7 +675,7 @@ pub fn failing(s: &Snapshot, target: &str, st: &Settings) -> anyhow::Result<Fail
         })
         .collect();
     anyhow::ensure!(!apps.is_empty(), "suspects needs an incident or application names");
-    Ok(Failing { apps, since: "24h".into() })
+    Ok(Failing { apps, since: "24h".into(), until: None })
 }
 
 #[derive(Serialize, Clone)]
@@ -600,12 +699,20 @@ pub struct SuspectChange {
 }
 
 /// The ogrep half of `ograph suspects`: likely causes from the dependency graph and the commits
-/// since `since`, from the first of `repos` ogrep answers for. The second value says why the
-/// repositories before it gave nothing.
-pub fn suspects(root: &Path, repos: &[PathBuf], failing: &[String], since: &str) -> (Vec<Suspect>, Vec<String>) {
+/// from `since` to `until`, from the first of `repos` ogrep answers for. The second value says
+/// why the repositories before it gave nothing. An ogrep too old to take `until` is asked
+/// again without it, and the answer then also counts later commits, which a note says.
+pub fn suspects(root: &Path, repos: &[PathBuf], failing: &[String], since: &str, until: Option<&str>) -> (Vec<Suspect>, Vec<String>) {
     let mut degraded = Vec::new();
     for repo in repos {
-        match ogrep::suspects(repo, failing, since) {
+        let mut answer = ogrep::suspects(repo, failing, since, until);
+        if let (Some(until), Err(ogrep::Failure::Failed { stderr, .. })) = (until, &answer)
+            && stderr.contains("--until")
+        {
+            degraded.push(format!("{}: this ogrep cannot stop at {until}, so commits made after it count too", rel(root, repo)));
+            answer = ogrep::suspects(repo, failing, since, None);
+        }
+        match answer {
             Ok(found) => {
                 let change = |c: ogrep::Commit| SuspectChange { revision: c.sha, summary: c.subject, at: term::format_millis(c.time * 1000), files: c.files.iter().map(|f| rel(root, &repo.join(f))).collect() };
                 let out = found.into_iter().enumerate().map(|(k, x)| Suspect { rank: k + 1, app: x.service, score: round2(x.score), distance: x.distance, explains: x.explains, changes: x.changes.into_iter().map(change).collect() });

@@ -25,7 +25,13 @@ use std::path::{Path, PathBuf};
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Source {
     /// Runs `ogrep --entities . --json` in a repository: Backstage, Compose, Kubernetes.
-    Catalog { path: PathBuf },
+    /// `inferred` also takes the calls ogrep infers from configuration (an environment
+    /// variable that holds another service's address) as dependencies.
+    Catalog {
+        path: PathBuf,
+        #[serde(default = "yes")]
+        inferred: bool,
+    },
     /// JSON lines `{"app", "process"}` or `{"app", "vendor"}`.
     Ownership { path: PathBuf },
     /// Runbooks and other prose: other names for an application where the text states them.
@@ -49,6 +55,10 @@ pub enum Source {
     Errors { path: PathBuf },
     Discussions { path: PathBuf },
     News { path: PathBuf },
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn default_since() -> String {
@@ -77,7 +87,7 @@ impl Source {
 
     pub fn path(&self) -> &Path {
         match self {
-            Source::Catalog { path }
+            Source::Catalog { path, .. }
             | Source::Ownership { path }
             | Source::Docs { path }
             | Source::Deployments { path }
@@ -106,6 +116,9 @@ pub struct Detect {
     pub metric_min_history_s: i64,
     pub log_burst_factor: f64,
     pub log_min_count: usize,
+    /// Seconds of a service's log a message must be absent from before its first error line
+    /// counts as a new message. 0 turns the detector off.
+    pub log_new_after_s: i64,
     pub trace_error_rate: f64,
     pub trace_slow_factor: f64,
     /// Metric names (substrings) where a drop is as anomalous as a rise, such as throughput.
@@ -114,7 +127,7 @@ pub struct Detect {
 
 impl Default for Detect {
     fn default() -> Self {
-        Self { metric_z: 5.0, metric_baseline_s: 300, metric_min_run: 3, metric_min_history_s: 150, log_burst_factor: 3.0, log_min_count: 3, trace_error_rate: 0.05, trace_slow_factor: 2.0, two_sided: vec!["workload".into(), "throughput".into(), "requests".into()] }
+        Self { metric_z: 5.0, metric_baseline_s: 300, metric_min_run: 3, metric_min_history_s: 150, log_burst_factor: 3.0, log_min_count: 3, log_new_after_s: 600, trace_error_rate: 0.05, trace_slow_factor: 2.0, two_sided: vec!["workload".into(), "throughput".into(), "requests".into()] }
     }
 }
 
@@ -133,7 +146,7 @@ pub struct Ctx<'a> {
 /// itself or every regular file below it, sorted.
 pub fn files(root: &Path, source: &Source) -> Vec<PathBuf> {
     match source {
-        Source::Catalog { path } => catalog::files(root, path),
+        Source::Catalog { path, .. } => catalog::files(root, path),
         Source::Code { path, .. } => Some(root.join(path).join(".git/logs/HEAD")).filter(|f| f.is_file()).into_iter().collect(),
         _ => walk(root, source.path()).0,
     }
@@ -187,7 +200,7 @@ pub fn rel(root: &Path, p: &Path) -> String {
 /// gateway keeps the last good facts of a failed batch's key and of every key below it.
 pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
     match source {
-        Source::Catalog { path } => return vec![catalog::harvest(ctx.root, path)],
+        Source::Catalog { path, inferred } => return vec![catalog::harvest(ctx.root, path, *inferred)],
         Source::Code { path, since } => return vec![code::harvest(ctx.root, path, since)],
         Source::Incidents { path } => return vec![incidents(&[path], &[], ctx)],
         _ => {}
@@ -209,7 +222,12 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
             Source::Errors { .. } => errors::harvest(&file, &key, ctx),
             Source::Ownership { .. } => records::ownership(&file, &key),
             Source::Docs { .. } => docs::harvest(&file, &key),
-            Source::Deployments { .. } => records::deployments(&file, &key),
+            Source::Deployments { .. } => records::deployments(&file, &key).map(|(mut b, deploys)| {
+                if !ctx.code.is_empty() {
+                    records::deployment_files(&mut b, ctx, deploys);
+                }
+                b
+            }),
             Source::ConfigChanges { .. } => records::config_changes(&file, &key),
             Source::Alerts { .. } => records::alerts(&file, &key),
             Source::News { .. } => records::news(&file, &key),

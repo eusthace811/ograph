@@ -138,6 +138,7 @@ impl Workspace {
     pub fn code(&self, snap: &crate::store::Snapshot, incident: &str, top: usize) -> anyhow::Result<crate::query::Code> {
         let (mut answer, text) = crate::query::code(snap, incident, &self.config.correlation)?;
         crate::query::code_search(&mut answer, &text, &self.root, &self.code_repos(), top);
+        crate::query::code_history(&mut answer, &self.root, &self.code_repos());
         Ok(answer)
     }
 
@@ -146,7 +147,7 @@ impl Workspace {
     /// The second value says why ogrep gave nothing.
     pub fn suspects(&self, snap: &crate::store::Snapshot, target: &str, since: Option<&str>, st: &Settings) -> anyhow::Result<(Vec<crate::query::Suspect>, Vec<String>)> {
         let failing = crate::query::failing(snap, target, st)?;
-        Ok(crate::query::suspects(&self.root, &self.service_repos(), &failing.apps, since.unwrap_or(&failing.since)))
+        Ok(crate::query::suspects(&self.root, &self.service_repos(), &failing.apps, since.unwrap_or(&failing.since), failing.until.as_deref()))
     }
 
     /// What `ograph chains` falls back to when telemetry ranked no application: the suspects

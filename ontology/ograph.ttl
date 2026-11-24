@@ -39,7 +39,7 @@ evt:Event a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "Something that 
 evt:Deployment a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A release: a new version of an application's code was rolled out or rolled back." .
 evt:ConfigChange a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A runtime setting or limit of an application changed without a deploy." .
 evt:Alert a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A monitor fired on an application." .
-evt:LogError a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A burst of one log template at error level. Raw lines stay in the log system." .
+evt:LogError a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A burst of one log template at error level, or the first lines of a new one. Raw lines stay in the log system." .
 evt:MetricAnomaly a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A metric of an application left its normal band." .
 evt:TraceFailed a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "Request spans through an application ended with an error status." .
 evt:TraceSlow a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "Request spans through an application took far longer than usual." .
@@ -63,7 +63,7 @@ evt:count a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:intege
 evt:until a owl:DatatypeProperty, owl:FunctionalProperty ; rdfs:domain evt:Event ; rdfs:range xsd:dateTime ; rdfs:comment "Last point of an episode that the detector saw as anomalous; the episode spans evt:at to evt:until." .
 evt:mentions a owl:ObjectProperty ; rdfs:domain evt:NewsItem ; rdfs:range og:Thing ; rdfs:comment "Something the news item names: a vendor, an application or a technology." .
 evt:revision a owl:DatatypeProperty ; rdfs:domain evt:Commit ; rdfs:range xsd:string ; rdfs:comment "The full commit id." .
-evt:changedFile a owl:DatatypeProperty ; rdfs:domain evt:Commit ; rdfs:range xsd:string ; rdfs:comment "A file the commit changed, relative to the workspace root." .
+evt:changedFile a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:string ; rdfs:comment "A file a commit changed, or a deployment changed since the version before it, relative to the workspace root." .
 evt:codeLocation a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:string ; rdfs:comment "The path:line of the code behind the event, with the path relative to the workspace root." .
 
 # ---------- INCIDENT ----------
@@ -132,6 +132,7 @@ evt:signal og:vocabulary
   [ og:value "ALERT" ; rdfs:comment "A monitor fired." ],
   [ og:value "INCIDENT" ; rdfs:comment "A declared incident." ],
   [ og:value "LOG_ERROR" ; rdfs:comment "A burst of error log lines with one template." ],
+  [ og:value "LOG_NEW" ; rdfs:comment "The first error lines of a message the service had not written before, too few for a burst." ],
   [ og:value "METRIC_ANOMALY" ; rdfs:comment "A metric left its normal band." ],
   [ og:value "TRACE_FAILED" ; rdfs:comment "Spans ended with an error status." ],
   [ og:value "TRACE_SLOW" ; rdfs:comment "Spans took far longer than usual." ],

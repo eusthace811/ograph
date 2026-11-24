@@ -2,7 +2,7 @@
 //! record becomes one event node whose evidence is `file#n`, the n-th record of the file
 //! counting from 1 (an array element, or a non-blank JSON line).
 
-use super::{Event, app, dt, event, json_records, parse_time, str_field};
+use super::{Ctx, Event, EvidenceRef, app, dt, event, json_records, ogrep, parse_time, rel, str_field};
 use crate::model::{Batch, EntityRef, Extraction, Object, entity, known, lit, obj, slug};
 use crate::vocab::{RDF_TYPE, evt, inc, ops};
 use oxrdf::NamedNode;
@@ -125,17 +125,72 @@ pub fn alerts(path: &Path, key: &str) -> anyhow::Result<Batch> {
     Ok(b)
 }
 
-pub fn deployments(path: &Path, key: &str) -> anyhow::Result<Batch> {
+/// A deployment whose changed files a `code` source can name.
+pub struct Deploy {
+    event: EntityRef,
+    evidence: EvidenceRef,
+    service: String,
+    version: String,
+    at: i64,
+}
+
+pub fn deployments(path: &Path, key: &str) -> anyhow::Result<(Batch, Vec<Deploy>)> {
     let mut b = Batch::new("deployments", key, "deployments-v1");
     let m = rule("deploy-export");
+    let mut deploys = Vec::new();
     for (i, r) in json_records(path)?.iter().enumerate() {
         let ev = b.record(format!("{key}#{}", i + 1));
         let (Some(svc), Some(t)) = (str_field(r, &["service", "app"]), ["at", "time", "finished_at"].iter().find_map(|f| r.get(*f).and_then(parse_time))) else { continue };
-        let version = str_field(r, &["version", "tag", "commit"]).unwrap_or("unknown");
-        let s = known("ev", &format!("deploy/{}/{}/{t}", slug(svc), slug(version)));
-        event(&mut b, &s, Event { class: evt::DEPLOYMENT, on: svc, at: t, signal: "DEPLOYMENT", severity: "SEV4", value: None }, [(evt::VERSION, lit(version))], &ev, &m);
+        let version = str_field(r, &["version", "tag", "commit"]);
+        let s = known("ev", &format!("deploy/{}/{}/{t}", slug(svc), slug(version.unwrap_or("unknown"))));
+        event(&mut b, &s, Event { class: evt::DEPLOYMENT, on: svc, at: t, signal: "DEPLOYMENT", severity: "SEV4", value: None }, [(evt::VERSION, lit(version.unwrap_or("unknown")))], &ev, &m);
+        if let Some(version) = version {
+            deploys.push(Deploy { event: s, evidence: ev, service: svc.to_owned(), version: version.to_owned(), at: t });
+        }
     }
-    Ok(b)
+    Ok((b, deploys))
+}
+
+/// A release can hold hundreds of commits; this many files say which parts of the code it
+/// touched.
+const MAX_FILES: usize = 200;
+
+/// Adds `evt:changedFile` to each deployment of one file whose version, and the version the
+/// same service ran before it, are revisions of a code repository (a tag or a commit id): the
+/// files of the commits to the service between the two, from `ogrep --timeline`. Deployments
+/// whose versions are not revisions keep no files, and one note says how many.
+pub fn deployment_files(b: &mut Batch, ctx: &Ctx<'_>, mut deploys: Vec<Deploy>) {
+    deploys.sort_by(|x, y| (&x.service, x.at).cmp(&(&y.service, y.at)));
+    let pairs: Vec<(&Deploy, &Deploy)> = deploys.windows(2).map(|w| (&w[0], &w[1])).filter(|(before, d)| before.service == d.service && before.version != d.version).collect();
+    // Per pair: the commits between the two versions in the first repository that knows both.
+    let shipped = ogrep::each(&pairs, |(before, d)| {
+        let mut failure = None;
+        for repo in ctx.code {
+            match ogrep::timeline(repo, &d.service, &before.version, Some(&d.version)) {
+                Ok(commits) => return Ok((repo, commits)),
+                Err(e) => failure = failure.or(Some(e.to_string())),
+            }
+        }
+        Err(failure)
+    });
+    let m = rule("ogrep-timeline");
+    let mut failures = Vec::new();
+    for ((_, d), shipped) in pairs.iter().zip(shipped) {
+        match shipped {
+            Ok((repo, commits)) => {
+                let mut files: Vec<String> = commits.iter().flat_map(|c| &c.files).map(|f| rel(ctx.root, &repo.join(f))).collect();
+                files.sort();
+                files.dedup();
+                for file in files.into_iter().take(MAX_FILES) {
+                    b.add(d.event.clone(), evt::CHANGED_FILE, lit(file), &d.evidence, &m);
+                }
+            }
+            Err(e) => failures.extend(e),
+        }
+    }
+    if let Some(first) = failures.first() {
+        b.degraded.push(format!("{}: {} of {} deployments could not be compared with the version before, so they list no changed files: {first}", b.key, failures.len(), pairs.len()));
+    }
 }
 
 pub fn config_changes(path: &Path, key: &str) -> anyhow::Result<Batch> {
