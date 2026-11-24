@@ -262,7 +262,7 @@ fn deployments_keep_no_files_without_a_code_source_or_with_an_ogrep_that_reads_n
     let old = workspace("deploy-old", &format!("{CATALOG}{CODE}{DEPLOYS}"), &[("deployments.jsonl", &deployments()), ("shop/.old", "")]);
     let out = harvest(&old);
     let o = out.iter().find(|o| o.graph.ends_with("/deployments/deployments.jsonl")).unwrap();
-    assert_eq!(o.degraded, ["deployments.jsonl: 1 of 1 deployments could not be compared with the version before, so they list no changed files: ogrep --timeline failed: ogrep: --until and --author need --history or --introduced"]);
+    assert_eq!(o.degraded, ["deployments.jsonl: 1 of 1 deployments could not be compared with the version before, so they list no changed files: this ogrep cannot compare two revisions; it needs a release after 0.2.0"]);
     assert_eq!(values(&old, "SELECT ?e WHERE { ?e a evt:Deployment }").len(), 3);
     assert!(values(&old, "SELECT ?f WHERE { ?e evt:changedFile ?f . ?e a evt:Deployment }").is_empty());
 }

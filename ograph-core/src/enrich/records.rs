@@ -189,6 +189,8 @@ pub fn deployment_files(b: &mut Batch, ctx: &Ctx<'_>, mut deploys: Vec<Deploy>) 
         }
     }
     if let Some(first) = failures.first() {
+        // What ogrep 0.2.0 answers when `--timeline` is given `--until`.
+        let first = if first.contains("--until and --author") { "this ogrep cannot compare two revisions; it needs a release after 0.2.0" } else { first.as_str() };
         b.degraded.push(format!("{}: {} of {} deployments could not be compared with the version before, so they list no changed files: {first}", b.key, failures.len(), pairs.len()));
     }
 }
