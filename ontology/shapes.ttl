@@ -12,7 +12,7 @@
 # properties are derived from ograph.ttl in code, so they are not repeated here.
 
 shape:Event a sh:NodeShape ;
-  sh:targetClass evt:Deployment, evt:ConfigChange, evt:Alert, evt:LogError, evt:MetricAnomaly, evt:TraceFailed, evt:TraceSlow, evt:E2EFailure, inc:Incident ;
+  sh:targetClass evt:Deployment, evt:ConfigChange, evt:Alert, evt:LogError, evt:MetricAnomaly, evt:TraceFailed, evt:TraceSlow, evt:E2EFailure, evt:Commit, evt:Exception, inc:Incident ;
   sh:property [ sh:path evt:at ; sh:minCount 1 ; sh:message "an event needs a time" ] ;
   sh:property [ sh:path evt:on ; sh:minCount 1 ; sh:message "an event needs the application it happened on" ] .
 

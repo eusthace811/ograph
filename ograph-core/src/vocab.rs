@@ -52,6 +52,11 @@ ns!(evt, "https://ograph.dev/evt#", {
     MENTIONS = "mentions",
     E2E_FAILURE = "E2EFailure",
     EXPERIMENT = "Experiment",
+    COMMIT = "Commit",
+    EXCEPTION = "Exception",
+    REVISION = "revision",
+    CHANGED_FILE = "changedFile",
+    CODE_LOCATION = "codeLocation",
 });
 
 ns!(inc, "https://ograph.dev/inc#", {

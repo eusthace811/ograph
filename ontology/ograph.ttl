@@ -11,11 +11,11 @@
 @prefix rca:  <https://ograph.dev/rca#> .
 @prefix harv: <https://ograph.dev/harv#> .
 
-# ograph ontology, version 1. Modules follow Netflix's namespaces: OPS (catalog), events
+# ograph ontology, version 1.1. Modules follow Netflix's namespaces: OPS (catalog), events
 # (ALERT, LOG, METRIC, TIMELINE), INCIDENT, SLACK (disc), CORRELATION, RCA and HARVEST.
 # Only what the four benchmark questions need is modeled.
 
-<https://ograph.dev/ontology> a owl:Ontology ; owl:versionInfo "1" .
+<https://ograph.dev/ontology> a owl:Ontology ; owl:versionInfo "1.1" .
 
 # ---------- OPS: the catalog ----------
 og:Thing a owl:Class ; rdfs:comment "Anything the graph can name." .
@@ -46,6 +46,8 @@ evt:TraceSlow a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "Request sp
 evt:Experiment a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An A/B test or canary started or changed allocation." .
 evt:E2EFailure a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A synthetic end-to-end check failed." .
 evt:NewsItem a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An external news development about a vendor or a technology we run." .
+evt:Commit a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A commit to an application's code or configuration in its repository." .
+evt:Exception a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An error report with a stack trace from an error tracker." .
 
 evt:at a owl:DatatypeProperty, owl:FunctionalProperty ; rdfs:domain evt:Event ; rdfs:range xsd:dateTime ; rdfs:comment "When the event happened." .
 evt:on a owl:ObjectProperty ; rdfs:domain evt:Event ; rdfs:range ops:Application ; rdfs:comment "The application the event happened on." .
@@ -60,6 +62,9 @@ evt:value a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:decima
 evt:count a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:integer ; rdfs:comment "How many times it occurred, such as log lines in a burst." .
 evt:until a owl:DatatypeProperty, owl:FunctionalProperty ; rdfs:domain evt:Event ; rdfs:range xsd:dateTime ; rdfs:comment "Last point of an episode that the detector saw as anomalous; the episode spans evt:at to evt:until." .
 evt:mentions a owl:ObjectProperty ; rdfs:domain evt:NewsItem ; rdfs:range og:Thing ; rdfs:comment "Something the news item names: a vendor, an application or a technology." .
+evt:revision a owl:DatatypeProperty ; rdfs:domain evt:Commit ; rdfs:range xsd:string ; rdfs:comment "The full commit id." .
+evt:changedFile a owl:DatatypeProperty ; rdfs:domain evt:Commit ; rdfs:range xsd:string ; rdfs:comment "A file the commit changed, relative to the workspace root." .
+evt:codeLocation a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:string ; rdfs:comment "The path:line of the code behind the event, with the path relative to the workspace root." .
 
 # ---------- INCIDENT ----------
 inc:Incident a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A declared incident: a disruption people tracked, with an id such as INC-4120." .
@@ -134,7 +139,9 @@ evt:signal og:vocabulary
   [ og:value "E2E_FAILURE" ; rdfs:comment "A synthetic end-to-end check failed." ],
   [ og:value "DISCUSSION" ; rdfs:comment "People discussed a problem in chat." ],
   [ og:value "NEWS" ; rdfs:comment "An external news development." ],
-  [ og:value "DEPENDENCY_CHANGE" ; rdfs:comment "A library, base image or upstream API version changed." ] .
+  [ og:value "DEPENDENCY_CHANGE" ; rdfs:comment "A library, base image or upstream API version changed." ],
+  [ og:value "COMMIT" ; rdfs:comment "A commit changed an application's code or configuration." ],
+  [ og:value "EXCEPTION" ; rdfs:comment "An error tracker reported an exception with a stack trace." ] .
 
 evt:severity og:vocabulary
   [ og:value "SEV1" ; rdfs:comment "Critical: customers broadly affected." ],
