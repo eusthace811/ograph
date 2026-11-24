@@ -7,6 +7,7 @@ pub mod catalog;
 pub mod discussions;
 pub mod docs;
 pub mod drain;
+pub mod ogrep;
 pub mod records;
 pub mod signals;
 
