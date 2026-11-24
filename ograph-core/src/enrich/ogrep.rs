@@ -38,6 +38,29 @@ fn run(dir: &Path, args: &[&str], stdin: Option<&str>) -> std::io::Result<Output
     })
 }
 
+/// `f` of every item, in order, on up to eight threads: each call is one short-lived process,
+/// and a repository with fifty services would otherwise wait for fifty of them in turn.
+pub fn each<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut out: Vec<(usize, R)> = std::thread::scope(|s| {
+        let workers: Vec<_> = (0..items.len().min(8))
+            .map(|_| {
+                s.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        let Some(item) = items.get(i) else { return done };
+                        done.push((i, f(item)));
+                    }
+                })
+            })
+            .collect();
+        workers.into_iter().flat_map(|w| w.join().expect("an ogrep call does not panic")).collect()
+    });
+    out.sort_by_key(|(i, _)| *i);
+    out.into_iter().map(|(_, r)| r).collect()
+}
+
 /// Standard output of a call. ogrep exits 1 when it found nothing, which is empty output
 /// unless `strict`.
 fn stdout(dir: &Path, flag: &'static str, args: &[&str], stdin: Option<&str>, strict: bool) -> Result<String, Failure> {

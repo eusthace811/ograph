@@ -167,7 +167,7 @@ fn error_like() -> &'static regex::Regex {
 /// JSON lines `{"ts", "service", "message", "level"?}` or plain text with leading timestamps
 /// (the service is then the file stem). With a `code` source, each burst also gets the line of
 /// code that writes its template.
-pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
+pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<(Batch, Vec<Burst>)> {
     let d = ctx.detect;
     let locate = !ctx.code.is_empty();
     let mut b = Batch::new("logs", key, "drain-burst-v1");
@@ -235,29 +235,45 @@ pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
             }
         }
     }
-    if !fired.is_empty() {
-        locate_bursts(&mut b, ctx, &fired);
-    }
-    Ok(b)
+    Ok((b, fired))
 }
 
-struct Burst {
+/// A log burst that a `code` source can locate.
+pub struct Burst {
     event: EntityRef,
     evidence: EvidenceRef,
     template: String,
     example: String,
 }
 
-/// Adds `evt:codeLocation` to each burst whose message ogrep finds in a code repository: one
+/// Adds `evt:codeLocation` to each burst whose message ogrep finds in a code repository.
+/// `fired` holds the bursts of each log file with the index of its batch. Each file is one
+/// ogrep call per repository, and the files run side by side: one call for all of them would
+/// be cheaper still, but ogrep merges similar messages into one template and answers only for
+/// its first line, which lost one location in ten on real code (docs/EVIDENCE.md).
+pub fn locate_bursts(batches: &mut [Batch], ctx: &Ctx<'_>, fired: &[(usize, Vec<Burst>)]) {
+    let fired: Vec<&(usize, Vec<Burst>)> = fired.iter().filter(|(_, bursts)| !bursts.is_empty()).collect();
+    let m = Extraction::Rule { extractor: "ogrep-template-to-code".into() };
+    for ((n, bursts), (found, notes)) in fired.iter().zip(ogrep::each(&fired, |(_, bursts)| locate(ctx, bursts))) {
+        batches[*n].degraded.extend(notes);
+        for (f, at) in bursts.iter().zip(found) {
+            if let Some(at) = at {
+                batches[*n].add(f.event.clone(), evt::CODE_LOCATION, lit(at), &f.evidence, &m);
+            }
+        }
+    }
+}
+
+/// The code location of each burst of one log file, and what went wrong on the way: one
 /// example message per template goes to a temporary file, and `ogrep --template-to-code` names
 /// the statement that writes each line. The first repository that locates a line wins.
-fn locate_bursts(b: &mut Batch, ctx: &Ctx<'_>, fired: &[Burst]) {
+fn locate(ctx: &Ctx<'_>, bursts: &[Burst]) -> (Vec<Option<String>>, Vec<String>) {
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     // ogrep reports only the first line of a group of lines with one template, so each
     // template is written once and every burst of it shares the answer.
     let mut templates: Vec<&str> = Vec::new();
     let mut lines = String::new();
-    for f in fired {
+    for f in bursts {
         if !templates.contains(&f.template.as_str()) {
             templates.push(&f.template);
             lines.extend(f.example.chars().map(|c| if matches!(c, '\n' | '\r') { ' ' } else { c }));
@@ -266,10 +282,10 @@ fn locate_bursts(b: &mut Batch, ctx: &Ctx<'_>, fired: &[Burst]) {
     }
     let file = std::env::temp_dir().join(format!("ograph-log-examples-{}-{}.txt", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
     if let Err(e) = std::fs::write(&file, lines) {
-        b.degraded.push(format!("cannot write {}: {e}", file.display()));
-        return;
+        return (vec![None; bursts.len()], vec![format!("cannot write {}: {e}", file.display())]);
     }
     let mut found: Vec<Option<String>> = vec![None; templates.len()];
+    let mut notes = Vec::new();
     for repo in ctx.code {
         if found.iter().all(Option::is_some) {
             break;
@@ -284,7 +300,7 @@ fn locate_bursts(b: &mut Batch, ctx: &Ctx<'_>, fired: &[Burst]) {
             }
             Err(e) => {
                 let stop = matches!(e, ogrep::Failure::NotRunnable(_));
-                b.degraded.push(e.to_string());
+                notes.push(e.to_string());
                 if stop {
                     break;
                 }
@@ -292,13 +308,8 @@ fn locate_bursts(b: &mut Batch, ctx: &Ctx<'_>, fired: &[Burst]) {
         }
     }
     let _ = std::fs::remove_file(&file);
-    let m = Extraction::Rule { extractor: "ogrep-template-to-code".into() };
-    for f in fired {
-        let n = templates.iter().position(|t| *t == f.template).expect("every fired template is listed");
-        if let Some(at) = &found[n] {
-            b.add(f.event.clone(), evt::CODE_LOCATION, lit(at.as_str()), &f.evidence, &m);
-        }
-    }
+    let at = |f: &Burst| found[templates.iter().position(|t| *t == f.template).expect("every template is listed")].clone();
+    (bursts.iter().map(at).collect(), notes)
 }
 
 /// The first of `fields` that is a string.

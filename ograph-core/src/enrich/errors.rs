@@ -52,31 +52,30 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
         b.degraded.push(format!("{key}: {} distinct stack traces, only the first {MAX_TRACES} were looked up in the code", traces.len()));
     }
     let located = Extraction::Rule { extractor: "ogrep-stack-trace".into() };
-    'traces: for (stack, events) in traces.iter().take(MAX_TRACES) {
+    let traces = &traces[..traces.len().min(MAX_TRACES)];
+    // Per trace: its frames in the first repository that has any, and what went wrong on the way.
+    let found = ogrep::each(traces, |(stack, _)| {
+        let mut notes = Vec::new();
         for repo in ctx.code {
-            let frames = match ogrep::stack_trace(repo, stack) {
-                Ok(f) => f,
-                Err(e @ ogrep::Failure::NotRunnable(_)) => {
-                    b.degraded.push(e.to_string());
-                    break 'traces;
-                }
-                Err(e) => {
-                    let note = e.to_string();
-                    if !b.degraded.contains(&note) {
-                        b.degraded.push(note);
-                    }
-                    continue;
-                }
-            };
-            if frames.is_empty() {
-                continue;
+            match ogrep::stack_trace(repo, stack) {
+                Ok(frames) if !frames.is_empty() => return (Some((repo, frames)), notes),
+                Ok(_) => {}
+                Err(e) => notes.push(e.to_string()),
             }
-            for (s, ev) in events {
-                for frame in frames.iter().take(MAX_FRAMES) {
-                    b.add(s.clone(), evt::CODE_LOCATION, lit(code_location(ctx.root, repo, frame)), ev, &located);
-                }
+        }
+        (None, notes)
+    });
+    for ((_, events), (hit, notes)) in traces.iter().zip(found) {
+        for note in notes {
+            if !b.degraded.contains(&note) {
+                b.degraded.push(note);
             }
-            break;
+        }
+        let Some((repo, frames)) = hit else { continue };
+        for (s, ev) in events {
+            for frame in frames.iter().take(MAX_FRAMES) {
+                b.add(s.clone(), evt::CODE_LOCATION, lit(code_location(ctx.root, repo, frame)), ev, &located);
+            }
         }
     }
     Ok(b)

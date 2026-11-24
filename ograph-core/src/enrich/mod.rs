@@ -201,6 +201,7 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
             b
         })
         .collect();
+    let mut bursts = Vec::new();
     for file in files {
         let key = rel(ctx.root, &file);
         let result = match source {
@@ -212,7 +213,10 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
             Source::ConfigChanges { .. } => records::config_changes(&file, &key),
             Source::Alerts { .. } => records::alerts(&file, &key),
             Source::News { .. } => records::news(&file, &key),
-            Source::Logs { .. } => signals::logs(&file, &key, ctx),
+            Source::Logs { .. } => signals::logs(&file, &key, ctx).map(|(b, fired)| {
+                bursts.push((out.len(), fired));
+                b
+            }),
             Source::Metrics { .. } => signals::metrics(&file, &key, ctx.detect),
             Source::Traces { .. } => signals::traces(&file, &key, ctx.detect),
             Source::Discussions { .. } => discussions::harvest(&file, &key, ctx),
@@ -223,6 +227,7 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
             b
         }));
     }
+    signals::locate_bursts(&mut out, ctx, &bursts);
     out
 }
 
