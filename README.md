@@ -10,7 +10,7 @@ ograph builds an ontology-driven observability knowledge graph and queries it fr
 
 New here? Start with [`docs/GUIDE.md`](docs/GUIDE.md). For a plain-language tour with diagrams, read [ograph, explained](https://eusthace811.github.io/ograph/). For how it works inside, read [ograph internals](https://eusthace811.github.io/ograph/ograph-internals.html). Agents use the skill in [`skills/ograph/`](skills/ograph/SKILL.md).
 
-Install a prebuilt release on Linux, macOS or Windows (Git Bash). It also installs `ogrep` 0.2+, which ograph needs on `PATH`:
+Install a prebuilt release on Linux, macOS or Windows (Git Bash). It also installs `ogrep` 0.3+, which ograph needs on `PATH`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/eusthace811/ograph/main/install.sh | sh

@@ -14,7 +14,7 @@
 #   ./x vendor             cargo vendor into ./vendor; while it exists, ./x builds offline from it
 #   ./x <anything else>    passed to cargo (clippy, fmt, tree, ...)
 #
-# ograph needs ogrep 0.2 or newer on PATH to read the service catalog; `./x doctor` checks it.
+# ograph needs ogrep 0.3 or newer on PATH to read the service catalog; `./x doctor` checks it.
 #
 # Registry: cargo uses the machine's own ~/.cargo/config.toml, which on a corporate laptop
 # normally already replaces crates.io with Artifactory. To point one run somewhere without
@@ -109,7 +109,7 @@ check_ogrep() {
     return 1
   fi
   case "$version" in
-    "ogrep 0.0."*|"ogrep 0.1."*) echo "ogrep:         $version is too old; ograph needs 0.2 or newer"; return 1 ;;
+    "ogrep 0.0."*|"ogrep 0.1."*|"ogrep 0.2."*) echo "ogrep:         $version is too old; ograph needs 0.3 or newer"; return 1 ;;
   esac
   echo "ogrep:         $version ($(command -v "$bin"))"
 }

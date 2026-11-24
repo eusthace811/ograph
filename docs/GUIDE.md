@@ -28,7 +28,7 @@ place of crates.io, usually an Artifactory Cargo remote. If `./x doctor` cannot 
 crates, it prints the lines to add. `OGRAPH_CARGO_REGISTRY=sparse+https://<host>/artifactory/api/cargo/<repo>/index/`
 uses a registry for one run, and `./x vendor` prepares an offline build.
 
-ograph also needs `ogrep` 0.2 or newer on `PATH`. It reads the service catalog (Backstage,
+ograph also needs `ogrep` 0.3 or newer on `PATH`. It reads the service catalog (Backstage,
 Compose, Kubernetes and Prometheus files), and only the catalog can create applications. Without
 it the harvest still runs, but every fact about a service is quarantined as "not in the catalog",
 so the questions have nothing to answer. `install.sh` installs it; from source it is:

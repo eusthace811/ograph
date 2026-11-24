@@ -64,7 +64,7 @@ path = "exports/news.jsonl"
 - A `code` source turns each service's commits into `COMMIT` events with their changed files.
   It also lets ogrep locate log bursts and stack traces, so `LOG_ERROR` and `EXCEPTION` events
   get a `path:line`. A deployment whose version and the one before it are tags or commit ids of
-  the repository gets the files changed between them (ogrep newer than 0.2.0). It may be the same
+  the repository gets the files changed between them (ogrep 0.3 or newer). It may be the same
   repository as the catalog. `ograph code` and the
   `chains` fallback to `suspects` need it.
 - Run `ogrep index .` in the code repository to make those lookups fast, and

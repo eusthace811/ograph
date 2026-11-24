@@ -119,7 +119,7 @@ pub struct Entity {
     pub id: String,
     pub kind: String,
     /// Other names the operations files give it, such as a Kubernetes Service in front of a
-    /// workload with another name (ogrep newer than 0.2.0).
+    /// workload with another name (ogrep 0.3 or newer).
     pub aliases: Vec<String>,
     pub location: Location,
     pub edges: Vec<Edge>,
@@ -196,7 +196,7 @@ pub struct Commit {
 
 /// `ogrep --timeline SERVICE --since SINCE [--until UNTIL] . --json`: commits to one service,
 /// newest first. ogrep also lists commits to the service's direct dependencies; those are left
-/// out. With two revisions as the bounds (a newer ogrep than 0.2.0 reads them), the commits
+/// out. With two revisions as the bounds (ogrep 0.3 or newer reads them), the commits
 /// are those `until` holds and `since` does not, as `git log SINCE..UNTIL` lists them.
 pub fn timeline(dir: &Path, service: &str, since: &str, until: Option<&str>) -> Result<Vec<Commit>, Failure> {
     #[derive(Deserialize)]

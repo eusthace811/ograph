@@ -297,7 +297,7 @@ Not measured: a Windows run, a repository larger than 654 files, and whether com
 
 ## Phase 11: more from ogrep (`catalog.txt`, `code-history.txt`, `log-new.txt`, `code-regression.txt`)
 
-Phase 10 ended with a list of what else ogrep could give. This phase builds each item and measures it. Three of them needed changes in ogrep itself, which are on its `ops-gaps` branch (five commits after 0.2.0); every number below says which ogrep it was measured with. Measured on 2026-11-24.
+Phase 10 ended with a list of what else ogrep could give. This phase builds each item and measures it. Three of them needed changes in ogrep itself, which were on its `ops-gaps` branch when measured (five commits after 0.2.0) and are released as ogrep 0.3.0; every number below says which ogrep it was measured with. Measured on 2026-11-24.
 
 | Addition | Result |
 |---|---|

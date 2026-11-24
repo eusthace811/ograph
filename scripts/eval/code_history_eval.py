@@ -14,7 +14,7 @@ statement, commit or pair of tags, so the right answer is known.
   K  hand-off             `ogrep --related-tests` and `ogrep --callers -w`, which the skill
                           tells an agent to run on a located line
 
-J needs an ogrep that reads revisions as the bounds of `--timeline` (newer than 0.2.0).
+J needs an ogrep that reads revisions as the bounds of `--timeline` (0.3 or newer).
 
 Usage: code_history_eval.py --bin target/release/ograph --repo PATH --work DIR [--seed N]
 """

@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag such as v0.1.0 to build ograph for each platform, publish the archives and
+# Push a tag such as v0.2.0 to build ograph for each platform, publish the archives and
 # SHA256SUMS as a GitHub release, and then install that release with install.sh.
 
 on:

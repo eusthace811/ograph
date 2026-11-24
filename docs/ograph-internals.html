@@ -499,7 +499,7 @@ td.num, th.num { text-align: right; padding-right: 0; white-space: nowrap; }
   <h1>How ograph works inside</h1>
   <p class="dek">The data model, the quad store, the validation gateway, the detectors and the correlation engine, with the measurement behind each design choice. If you are new to ograph, read the <a href="ograph-explained.html">plain-language explainer</a> first.</p>
   <ul class="meta">
-    <li>ograph 0.1.0</li>
+    <li>ograph 0.2.0</li>
     <li>November 2026</li>
     <li>20 minute read</li>
     <li>For engineers who will run, extend or review it</li>
@@ -583,7 +583,7 @@ td.num, th.num { text-align: right; padding-right: 0; white-space: nowrap; }
       </tbody>
     </table>
   </div>
-  <p>ogrep runs as a separate program, found on <code>PATH</code> or through <code>OGRAPH_OGREP</code>, so either tool can be upgraded without rebuilding the other. ograph needs version 0.2 or newer. It is a hard requirement for this one layer only. Without it the harvest still runs, but the catalog line reports <code>DEGRADED: ogrep not runnable</code>, no applications exist, and the gateway quarantines every fact that names a service.</p>
+  <p>ogrep runs as a separate program, found on <code>PATH</code> or through <code>OGRAPH_OGREP</code>, so either tool can be upgraded without rebuilding the other. ograph needs version 0.3 or newer. It is a hard requirement for this one layer only. Without it the harvest still runs, but the catalog line reports <code>DEGRADED: ogrep not runnable</code>, no applications exist, and the gateway quarantines every fact that names a service.</p>
 
   <h3>The unit of writing</h3>
   <p>An enricher produces a batch: a source name, a stable key (the file path), and a list of proposed facts. The types make some mistakes unrepresentable. A model-proposed fact cannot exist without a confidence, and a confidence cannot be built outside 0 to 1.</p>
