@@ -107,8 +107,9 @@ Inside SPARQL, escape a `/` in a prefixed name, and the dots of a version (`id:a
 ## Rules for investigating
 
 1. Start with `before`, then `chains`. Read the signal types (DEPLOYMENT, CONFIG_CHANGE, ALERT,
-   LOG_ERROR, METRIC_ANOMALY, TRACE_FAILED, TRACE_SLOW, COMMIT, EXCEPTION) and the order they
-   happened in.
+   LOG_ERROR, LOG_NEW, METRIC_ANOMALY, TRACE_FAILED, TRACE_SLOW, COMMIT, EXCEPTION) and the
+   order they happened in. LOG_NEW is the first line or two of an error message the service
+   had not written before: weak alone, a strong lead right after a change.
 2. A chain is a hypothesis. Say "the strongest candidate is" with its score and evidence, never
    "the cause is", unless a verdict accepted it.
 3. Check `similar` before proposing a fix: a mitigation that worked before is the best lead.
@@ -121,7 +122,9 @@ Inside SPARQL, escape a `/` in a prefixed name, and the dots of a version (`id:a
    question; do not invent events.
 8. When the workspace has a `code` source, run `code` after `chains`: it names the lines behind
    the events and the commits that changed them. Report a commit under `touches` as a lead with
-   its revision, file and line. It is still a hypothesis.
+   its revision, file and line. It is still a hypothesis. From a located line, ogrep gives the
+   next step in the code repository: `ogrep --related-tests PATH .` for the tests to run and
+   `ogrep --callers -w NAME .` for the functions that call it (references/investigation.md).
 9. When `before` and `chains` find little, run `suspects`. Say that its list comes from the
    dependency graph and recent commits, not from telemetry.
 10. The graph keeps episodes and pointers, not raw detail. For a config change's old and new

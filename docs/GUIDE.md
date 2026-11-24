@@ -67,7 +67,7 @@ incidents, then add the rest:
 ```toml
 [[source]]
 kind = "catalog"            # git repo with Backstage, Compose, Kubernetes or Prometheus files
-path = "catalog"
+path = "catalog"            # inferred = false keeps only dependencies a file declares
 
 [[source]]
 kind = "incidents"          # JSON: id, title, service, opened, severity, status, mitigation
@@ -146,14 +146,17 @@ ograph suspects INC-5377    # likely causes from dependencies and recent commits
 
 `code` reads the graph first: the lines behind the log bursts and exceptions before the
 incident, and the commits before it. A commit that changed one of those lines' files is listed
-first. Then ogrep ranks the files and the past incident write-ups that match the incident's
+first. A deployment is listed the same way when its version and the one before it are tags or
+commit ids of the repository. Under a log line, `first added` names the commit that first put
+that message in the code, which can be long before the window. Then ogrep ranks the files and the past incident write-ups that match the incident's
 description.
 
 `suspects` needs no telemetry. Use it when `before` and `chains` find little. With a `code`
 source, `chains` adds the same list when it ranks no application.
 
-Run `ogrep index .` in the code repository once to make these lookups fast. ograph does not
-build that index. Without it ogrep scans every file.
+Run `ogrep index .` in the code repository once to make these lookups fast, and
+`ogrep index --history` for the `first added` line. ograph builds neither index. Without the
+first ogrep scans every file.
 
 ## 6. Ask anything else
 

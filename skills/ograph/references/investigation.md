@@ -117,15 +117,35 @@ past write-ups:
   frames of each exception's stack trace, and the commits in the correlation window.
 - A commit followed by `changed <path:line>` changed the file behind one of those events. It is
   the strongest lead to report: give its revision, file and line. It is still a hypothesis.
+- `first added N days before by <revision>` under a log line names the commit that first put
+  that message in the code, however long ago. A message added days before its first burst is a
+  lead the commits of the window cannot show. It needs `ogrep index --history` in the code
+  repository; without it `degraded` says so.
+- `deployments before it` lists a deployment with the files changed since the version the
+  service ran before, when both versions are tags or commit ids of the code repository.
+  `changed <path:line>` means the same as for a commit.
 - The last two sections come from ogrep, which ranks files and past write-ups against the
   incident's title and its top chain. `(unsure)` means the first file does not stand clear of
   the rest. Read a write-up before you suggest its fix.
-- `--json` gives `locations`, `commits` (with `touches`), `files`, `files_confidence`,
-  `writeups` and `degraded`. A reason under `degraded` means ogrep could not answer for a
+- `--json` gives `locations` (a log line may carry `introduced`), `commits` and `deployments`
+  (with `touches`), `files`, `files_confidence`, `writeups` and `degraded`. A reason under `degraded` means ogrep could not answer for a
   repository: say so, do not report the empty list as "nothing found".
 - Commits outside the correlation window are not listed. `suspects --since 7d` reaches further back.
 - `ogrep index .` in the code repository makes these lookups fast. ograph does not build that
   index itself.
+
+From a located line, hand over to ogrep in the code repository (paths there are relative to
+it, so drop the repository's directory from the `path:line`):
+
+```bash
+ogrep --related-tests services/payments/pool.py .   # the tests to run, best first, with why
+ogrep --callers -w acquire .                        # the functions that call it; -w keeps longer names out
+```
+
+- `--related-tests` ranks tests named after the file, tests that use its definitions and tests
+  changed with it. Run the first ones before and after a fix.
+- `--callers` needs the function's name, which the line or `ogrep --cards PATH` shows. Callers
+  say who else a change to that function reaches, below the level of services that `blast` covers.
 
 ## When telemetry says little
 
