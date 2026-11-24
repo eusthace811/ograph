@@ -91,6 +91,16 @@ fn incident_fields(r: &serde_json::Value) -> IncidentRecord {
     (id.unwrap_or_default(), values.into_iter().filter_map(|(p, o)| Some((p, o?))).collect())
 }
 
+/// A monitoring tool's severity label as an `evt:severity` value.
+pub(super) fn severity(label: &str) -> &'static str {
+    match label.to_lowercase().as_str() {
+        "critical" | "page" | "sev1" => "SEV1",
+        "error" | "major" | "sev2" => "SEV2",
+        "warning" | "minor" | "sev3" => "SEV3",
+        _ => "SEV4",
+    }
+}
+
 /// Alertmanager webhook payloads (`{"alerts": [...]}`) or one alert per line.
 pub fn alerts(path: &Path, key: &str) -> anyhow::Result<Batch> {
     let mut b = Batch::new("alerts", key, "alertmanager-v1");
@@ -109,12 +119,7 @@ pub fn alerts(path: &Path, key: &str) -> anyhow::Result<Batch> {
         let Some(t) = ["startsAt", "at", "time"].iter().find_map(|f| a.get(*f).and_then(parse_time)) else { continue };
         let name = str_field(labels, &["alertname", "name"]).unwrap_or("alert");
         let s = known("ev", &format!("alert/{}/{}/{t}", slug(svc), slug(name)));
-        let severity = match str_field(labels, &["severity"]).unwrap_or("").to_lowercase().as_str() {
-            "critical" | "page" | "sev1" => "SEV1",
-            "error" | "major" | "sev2" => "SEV2",
-            "warning" | "minor" | "sev3" => "SEV3",
-            _ => "SEV4",
-        };
+        let severity = severity(str_field(labels, &["severity"]).unwrap_or(""));
         event(&mut b, &s, Event { class: evt::ALERT, on: svc, at: t, signal: "ALERT", severity, value: None }, [(evt::SUMMARY, lit(name))], &ev, &m);
     }
     Ok(b)

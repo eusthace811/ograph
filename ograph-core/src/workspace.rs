@@ -40,8 +40,8 @@ pub const DEFAULT_CONFIG: &str = r#"# ograph configuration. Paths are relative t
 # [[source]]
 # kind = "incidents"      # JSON or JSON lines: id, title, service, opened, severity, status
 # path = "exports/incidents.json"
-# Other kinds: ownership, deployments, config_changes, alerts, logs, metrics, traces,
-# discussions, news. See docs/REFERENCE.md for each format.
+# Other kinds: ownership, docs, deployments, config_changes, code, alerts, logs, metrics,
+# traces, errors, discussions, news. See docs/REFERENCE.md for each format.
 
 [detect]
 metric_z = 5.0
@@ -115,12 +115,31 @@ impl Workspace {
         Some(Llm::new(cfg, self.dir.join("cache").join("llm.jsonl")))
     }
 
+    /// Every configured `code` repository, as an absolute path.
+    pub fn code_repos(&self) -> Vec<PathBuf> {
+        self.config.sources.iter().filter(|s| matches!(s, Source::Code { .. })).map(|s| self.root.join(s.path())).collect()
+    }
+
+    /// The repositories whose operations files and history ogrep can read: every `catalog` and
+    /// `code` source, in configuration order.
+    pub fn service_repos(&self) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = Vec::new();
+        for s in self.config.sources.iter().filter(|s| matches!(s, Source::Catalog { .. } | Source::Code { .. })) {
+            let p = self.root.join(s.path());
+            if !out.contains(&p) {
+                out.push(p);
+            }
+        }
+        out
+    }
+
     /// Runs every source in layer order, then correlation for every incident. Each source file
     /// is one batch through the gateway.
     pub fn harvest(&self, only: Option<&str>, mut progress: impl FnMut(&Outcome, f64)) -> anyhow::Result<Vec<Outcome>> {
         let _write = self.store.write_lock()?;
         let llm = self.llm();
-        let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology };
+        let code = self.code_repos();
+        let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology, code: &code };
         let mut sources = self.config.sources.clone();
         sources.sort();
         let ran: Vec<&Source> = sources.iter().filter(|s| only.is_none_or(|o| o == s.name() || o == kind(s))).collect();
@@ -698,9 +717,30 @@ mod tests {
         let root = fixture("config", &[("config_changes", "config.jsonl", &format!(r#"{{"service":"ledger-db","key":"max_connections","value":"50","at":{}}}"#, T - 60))]);
         assert_eq!(harvest(&root, Some("config_changes")).len(), 1);
         let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
-        for typo in ["[corelation]\n", "[correlation]\nwindw_s = 600\n", "[[sources]]\nkind = \"logs\"\npath = \"x\"\n", "[[source]]\nkind = \"logs\"\npth = \"x\"\npath = \"x\"\n", "[detect]\nmetric_zz = 3\n"] {
+        let typos = [
+            "[corelation]\n",
+            "[correlation]\nwindw_s = 600\n",
+            "[[sources]]\nkind = \"logs\"\npath = \"x\"\n",
+            "[[source]]\nkind = \"logs\"\npth = \"x\"\npath = \"x\"\n",
+            "[detect]\nmetric_zz = 3\n",
+            "[[source]]\nkind = \"cod\"\npath = \"x\"\n",
+            "[[source]]\nkind = \"code\"\npath = \"x\"\nsinse = \"7d\"\n",
+            "[[source]]\nkind = \"errors\"\npath = \"x\"\nsince = \"7d\"\n",
+        ];
+        for typo in typos {
             std::fs::write(root.join(".ograph/config.toml"), format!("{config}{typo}")).unwrap();
             assert!(Workspace::open(&root).is_err(), "accepted {typo:?}");
         }
+    }
+
+    #[test]
+    fn a_code_source_takes_since_and_an_errors_source_only_a_path() {
+        use crate::enrich::Source;
+        let config: super::Config = toml::from_str("[[source]]\nkind = \"errors\"\npath = \"e.jsonl\"\n[[source]]\nkind = \"code\"\npath = \"../shop\"\n[[source]]\nkind = \"code\"\npath = \"lib\"\nsince = \"2026-11-01\"\n").unwrap();
+        assert_eq!(config.sources, [Source::Errors { path: "e.jsonl".into() }, Source::Code { path: "../shop".into(), since: "30d".into() }, Source::Code { path: "lib".into(), since: "2026-11-01".into() }]);
+        assert_eq!(config.sources.iter().map(Source::name).collect::<Vec<_>>(), ["errors", "code", "code"]);
+        let mut order = [Source::Traces { path: "t".into() }, Source::Errors { path: "e".into() }, Source::Alerts { path: "a".into() }, Source::Code { path: "c".into(), since: "30d".into() }, Source::ConfigChanges { path: "g".into() }];
+        order.sort();
+        assert_eq!(order.iter().map(Source::name).collect::<Vec<_>>(), ["config", "code", "alerts", "traces", "errors"]);
     }
 }

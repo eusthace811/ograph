@@ -4,9 +4,11 @@
 //! all of them are one batch, since one incident's fields can come from several files.
 
 pub mod catalog;
+pub mod code;
 pub mod discussions;
 pub mod docs;
 pub mod drain;
+pub mod errors;
 pub mod ogrep;
 pub mod records;
 pub mod signals;
@@ -30,13 +32,27 @@ pub enum Source {
     Docs { path: PathBuf },
     Deployments { path: PathBuf },
     ConfigChanges { path: PathBuf },
+    /// A git repository holding the services' code and their operations files. Commits newer
+    /// than `since` (passed to `ogrep --since` as written) become events, and log lines and
+    /// stack traces are located in it.
+    Code {
+        path: PathBuf,
+        #[serde(default = "default_since")]
+        since: String,
+    },
     Alerts { path: PathBuf },
     Incidents { path: PathBuf },
     Logs { path: PathBuf },
     Metrics { path: PathBuf },
     Traces { path: PathBuf },
+    /// JSON or JSON lines from an error tracker: one exception per record, with its stack trace.
+    Errors { path: PathBuf },
     Discussions { path: PathBuf },
     News { path: PathBuf },
+}
+
+fn default_since() -> String {
+    "30d".into()
 }
 
 impl Source {
@@ -47,11 +63,13 @@ impl Source {
             Source::Docs { .. } => "docs",
             Source::Deployments { .. } => "deployments",
             Source::ConfigChanges { .. } => "config",
+            Source::Code { .. } => "code",
             Source::Alerts { .. } => "alerts",
             Source::Incidents { .. } => "incidents",
             Source::Logs { .. } => "logs",
             Source::Metrics { .. } => "metrics",
             Source::Traces { .. } => "traces",
+            Source::Errors { .. } => "errors",
             Source::Discussions { .. } => "discussions",
             Source::News { .. } => "news",
         }
@@ -64,11 +82,13 @@ impl Source {
             | Source::Docs { path }
             | Source::Deployments { path }
             | Source::ConfigChanges { path }
+            | Source::Code { path, .. }
             | Source::Alerts { path }
             | Source::Incidents { path }
             | Source::Logs { path }
             | Source::Metrics { path }
             | Source::Traces { path }
+            | Source::Errors { path }
             | Source::Discussions { path }
             | Source::News { path } => path,
         }
@@ -103,15 +123,25 @@ pub struct Ctx<'a> {
     pub detect: &'a Detect,
     pub llm: Option<&'a crate::llm::Llm>,
     pub ontology: &'a crate::ontology::Ontology,
+    /// Every configured `code` repository, as an absolute path.
+    pub code: &'a [PathBuf],
 }
 
 /// The files a source's enricher reads: for a catalog, the operations files ogrep reads; for
-/// any other source, the path itself or every regular file below it, sorted.
+/// a code repository, git's log of where HEAD has been, which changes with every commit, pull
+/// and checkout (a whole code tree is too much to watch); for any other source, the path
+/// itself or every regular file below it, sorted.
 pub fn files(root: &Path, source: &Source) -> Vec<PathBuf> {
     match source {
         Source::Catalog { path } => catalog::files(root, path),
+        Source::Code { path, .. } => Some(root.join(path).join(".git/logs/HEAD")).filter(|f| f.is_file()).into_iter().collect(),
         _ => walk(root, source.path()).0,
     }
+}
+
+/// A line of code in `repo` as `path:line`, with the path relative to the workspace root.
+pub fn code_location(root: &Path, repo: &Path, at: &ogrep::CodeRef) -> String {
+    format!("{}:{}", rel(root, &repo.join(&at.path)), at.line)
 }
 
 /// [`files`], and the directories below the source path that could not be listed.
@@ -158,6 +188,7 @@ pub fn rel(root: &Path, p: &Path) -> String {
 pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
     match source {
         Source::Catalog { path } => return vec![catalog::harvest(ctx.root, path)],
+        Source::Code { path, since } => return vec![code::harvest(ctx.root, path, since)],
         Source::Incidents { path } => return vec![incidents(&[path], &[], ctx)],
         _ => {}
     }
@@ -173,14 +204,15 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
     for file in files {
         let key = rel(ctx.root, &file);
         let result = match source {
-            Source::Catalog { .. } | Source::Incidents { .. } => unreachable!("harvested as one batch"),
+            Source::Catalog { .. } | Source::Code { .. } | Source::Incidents { .. } => unreachable!("harvested as one batch"),
+            Source::Errors { .. } => errors::harvest(&file, &key, ctx),
             Source::Ownership { .. } => records::ownership(&file, &key),
             Source::Docs { .. } => docs::harvest(&file, &key),
             Source::Deployments { .. } => records::deployments(&file, &key),
             Source::ConfigChanges { .. } => records::config_changes(&file, &key),
             Source::Alerts { .. } => records::alerts(&file, &key),
             Source::News { .. } => records::news(&file, &key),
-            Source::Logs { .. } => signals::logs(&file, &key, ctx.detect),
+            Source::Logs { .. } => signals::logs(&file, &key, ctx),
             Source::Metrics { .. } => signals::metrics(&file, &key, ctx.detect),
             Source::Traces { .. } => signals::traces(&file, &key, ctx.detect),
             Source::Discussions { .. } => discussions::harvest(&file, &key, ctx),

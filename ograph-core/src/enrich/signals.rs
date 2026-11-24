@@ -6,8 +6,8 @@
 //! label or a known incident time.
 
 use super::drain::Drain;
-use super::{Detect, Event, app, dt, event, json_fields, json_record_texts, parse_time_str, raw_f64, raw_str, raw_time};
-use crate::model::{Batch, EntityRef, Extraction, known, lit, slug};
+use super::{Ctx, Detect, Event, app, code_location, dt, event, json_fields, json_record_texts, ogrep, parse_time_str, raw_f64, raw_str, raw_time};
+use crate::model::{Batch, EntityRef, EvidenceRef, Extraction, known, lit, slug};
 use crate::vocab::{evt, ops};
 use oxrdf::{Literal, NamedNode};
 use rustc_hash::FxHashMap;
@@ -165,14 +165,18 @@ fn error_like() -> &'static regex::Regex {
 }
 
 /// JSON lines `{"ts", "service", "message", "level"?}` or plain text with leading timestamps
-/// (the service is then the file stem).
-pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
+/// (the service is then the file stem). With a `code` source, each burst also gets the line of
+/// code that writes its template.
+pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
+    let d = ctx.detect;
+    let locate = !ctx.code.is_empty();
     let mut b = Batch::new("logs", key, "drain-burst-v1");
     let text = super::read_text(path)?;
     let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    // Per service: one Drain, and per line its (time ms, template index, error-like).
+    // Per service: one Drain, per line its (time ms, template index, error-like), and when
+    // bursts are located in code, the first raw message of each template.
     type Lines = Vec<(i64, usize, bool)>;
-    let mut per: BTreeMap<String, (Drain, Lines)> = BTreeMap::new();
+    let mut per: BTreeMap<String, (Drain, Lines, Vec<String>)> = BTreeMap::new();
     for line in text.lines() {
         let (svc, t, msg, level) = if line.trim_start().starts_with('{') {
             let Ok(f) = json_fields(line, ["ts", "timestamp", "time", "service", "container_name", "app", "message", "msg", "log", "level", "severity"]) else { continue };
@@ -187,9 +191,18 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
         let entry = per.entry(svc).or_default();
         let Some(idx) = entry.0.add(&msg) else { continue };
         entry.1.push((t, idx, errorish));
+        if locate {
+            if entry.2.len() <= idx {
+                entry.2.resize(idx + 1, String::new());
+            }
+            if entry.2[idx].is_empty() {
+                entry.2[idx] = msg;
+            }
+        }
     }
     let m = Extraction::Rule { extractor: "drain-burst".into() };
-    for (svc, (drain, lines)) in per {
+    let mut fired = Vec::new();
+    for (svc, (drain, lines, examples)) in per {
         let Some(t0) = lines.iter().map(|l| l.0).min() else { continue };
         let mut buckets: BTreeMap<usize, BTreeMap<i64, (usize, i64)>> = BTreeMap::new();
         for &(t, idx, errorish) in &lines {
@@ -216,10 +229,76 @@ pub fn logs(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
                 let e = Event { class: evt::LOG_ERROR, on: &svc, at: first, signal: "LOG_ERROR", severity: severity(strength(ratio * 5.0)), value: Some(ratio * 5.0) };
                 let details = [(evt::TEMPLATE, lit(text.chars().take(300).collect::<String>())), (evt::COUNT, lit(Literal::from(count as i64)))];
                 event(&mut b, &s, e, details, &ev, &m);
+                if let Some(example) = examples.get(idx).filter(|x| !x.trim().is_empty()) {
+                    fired.push(Burst { event: s, evidence: ev, template: text.clone(), example: example.clone() });
+                }
             }
         }
     }
+    if !fired.is_empty() {
+        locate_bursts(&mut b, ctx, &fired);
+    }
     Ok(b)
+}
+
+struct Burst {
+    event: EntityRef,
+    evidence: EvidenceRef,
+    template: String,
+    example: String,
+}
+
+/// Adds `evt:codeLocation` to each burst whose message ogrep finds in a code repository: one
+/// example message per template goes to a temporary file, and `ogrep --template-to-code` names
+/// the statement that writes each line. The first repository that locates a line wins.
+fn locate_bursts(b: &mut Batch, ctx: &Ctx<'_>, fired: &[Burst]) {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    // ogrep reports only the first line of a group of lines with one template, so each
+    // template is written once and every burst of it shares the answer.
+    let mut templates: Vec<&str> = Vec::new();
+    let mut lines = String::new();
+    for f in fired {
+        if !templates.contains(&f.template.as_str()) {
+            templates.push(&f.template);
+            lines.extend(f.example.chars().map(|c| if matches!(c, '\n' | '\r') { ' ' } else { c }));
+            lines.push('\n');
+        }
+    }
+    let file = std::env::temp_dir().join(format!("ograph-log-examples-{}-{}.txt", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+    if let Err(e) = std::fs::write(&file, lines) {
+        b.degraded.push(format!("cannot write {}: {e}", file.display()));
+        return;
+    }
+    let mut found: Vec<Option<String>> = vec![None; templates.len()];
+    for repo in ctx.code {
+        if found.iter().all(Option::is_some) {
+            break;
+        }
+        match ogrep::template_to_code(repo, &file) {
+            Ok(hits) => {
+                for (line, at) in hits {
+                    if let Some(slot) = line.checked_sub(1).and_then(|n| found.get_mut(n)).filter(|slot| slot.is_none()) {
+                        *slot = Some(code_location(ctx.root, repo, &at));
+                    }
+                }
+            }
+            Err(e) => {
+                let stop = matches!(e, ogrep::Failure::NotRunnable(_));
+                b.degraded.push(e.to_string());
+                if stop {
+                    break;
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_file(&file);
+    let m = Extraction::Rule { extractor: "ogrep-template-to-code".into() };
+    for f in fired {
+        let n = templates.iter().position(|t| *t == f.template).expect("every fired template is listed");
+        if let Some(at) = &found[n] {
+            b.add(f.event.clone(), evt::CODE_LOCATION, lit(at.as_str()), &f.evidence, &m);
+        }
+    }
 }
 
 /// The first of `fields` that is a string.
