@@ -73,6 +73,15 @@ enum Cmd {
         #[arg(long, default_value_t = 5)]
         top: usize,
     },
+    /// Likely causes from the dependency graph and recent commits, when telemetry says little
+    Suspects {
+        /// An incident, or failing application names separated by commas
+        target: String,
+        /// How far back commits count, as ogrep reads it: 24h, 3d or a date (default: the day
+        /// before the incident, or 24h for application names)
+        #[arg(long)]
+        since: Option<String>,
+    },
     /// News that mentions vendors our applications use (Q4)
     News {
         #[arg(long)]
@@ -136,6 +145,22 @@ fn print<T: serde::Serialize>(json: bool, v: &T, human: impl FnOnce(&T)) {
         println!("{}", serde_json::to_string(v).unwrap());
     } else {
         human(v);
+    }
+}
+
+/// Why ogrep gave less than it could, on standard error so the answer stays what it was.
+fn warn(degraded: &[String]) {
+    for d in degraded {
+        eprintln!("ograph: DEGRADED: {d}");
+    }
+}
+
+fn print_suspects(suspects: &[query::Suspect]) {
+    for s in suspects {
+        println!("  {}. {:<22} score {:.2}  distance {}  explains {}", s.rank, s.app, s.score, s.distance, s.explains.join(", "));
+        for c in &s.changes {
+            println!("     {:.12}  {}  {}  ({})", c.revision, c.at, c.summary, c.files.join(", "));
+        }
     }
 }
 
@@ -242,9 +267,10 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             }
             let i = query::lookup(&snap, &incident)?;
             let mut a = correlate::analyze(&snap, &ids, i, &st)?;
+            let (suspects, degraded) = ws.fallback_suspects(&snap, &a, &incident, &st);
             a.apps.truncate(top);
-            let found = !a.apps.is_empty();
-            print(json, &a, |a| {
+            let found = !a.apps.is_empty() || !suspects.is_empty();
+            let human = |a: &correlate::Analysis| {
                 println!("{} on {} at {}: {} candidate events", ograph_core::vocab::compact(&a.incident), a.app, ograph_core::term::format_millis(a.at_ms), a.candidates);
                 for (k, r) in a.apps.iter().enumerate() {
                     println!("  {}. {:<22} score {:.3}", k + 1, r.app, r.score);
@@ -253,8 +279,25 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                         println!("     {} {:.2}: {} -> incident", ograph_core::vocab::compact(&c.id), c.confidence, path.join(" -> "));
                     }
                 }
-            });
+            };
+            warn(&degraded);
+            if suspects.is_empty() {
+                print(json, &a, human);
+            } else {
+                print(json, &query::Chains { analysis: a, suspects }, |c| {
+                    human(&c.analysis);
+                    println!("no application ranked from telemetry; these come from the dependency graph and recent commits, not from telemetry:");
+                    print_suspects(&c.suspects);
+                });
+            }
             Ok(found)
+        }
+        Cmd::Suspects { target, since } => {
+            let snap = ws.store.snapshot()?;
+            let (suspects, degraded) = ws.suspects(&snap, &target, since.as_deref(), &ws.config.correlation)?;
+            warn(&degraded);
+            print(json, &suspects, |s| print_suspects(s));
+            Ok(!suspects.is_empty())
         }
         Cmd::Similar { incident, top } => {
             let snap = ws.store.snapshot()?;

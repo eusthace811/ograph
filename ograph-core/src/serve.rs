@@ -25,6 +25,8 @@ pub fn tools() -> Value {
          "inputSchema": s(json!({"incident": {"type": "string"}}), &["incident"])},
         {"name": "code", "description": "Where an incident points in the code: the lines behind the events before it, the commits before it and the located lines each one changed, the files its description is about, and past write-ups that resemble it. Needs a code source; ogrep failures are listed under degraded.",
          "inputSchema": s(json!({"incident": {"type": "string"}, "top": {"type": "integer", "description": "how many files and write-ups to list (default 5)"}}), &["incident"])},
+        {"name": "suspects", "description": "Likely causes from the dependency graph and recent commits, for an incident or for failing applications. Use it when before and chains find little: it needs no telemetry, only the repositories ogrep reads. With a code source, chains adds the same list when it ranks no application.",
+         "inputSchema": s(json!({"target": {"type": "string", "description": "an incident, or application names separated by commas"}, "since": {"type": "string", "description": "how far back commits count: 24h, 3d or a date"}}), &["target"])},
         {"name": "why", "description": "Provenance of every fact about a node: harvest graph, source, extractor, model and confidence, and quarantined proposals.",
          "inputSchema": s(json!({"node": {"type": "string"}}), &["node"])},
         {"name": "news", "description": "News that mentions vendors our applications use, with the affected applications and processes.",
@@ -51,9 +53,11 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
                 st.rank = RankMode::Propagation;
             }
             let mut a = correlate::analyze(&snap, &ids, query::lookup(&snap, arg(p, "incident")?)?, &st)?;
+            let (suspects, _) = ws.fallback_suspects(&snap, &a, arg(p, "incident")?, &st);
             a.apps.truncate(5);
-            serde_json::to_value(a)?
+            if suspects.is_empty() { serde_json::to_value(a)? } else { serde_json::to_value(query::Chains { analysis: a, suspects })? }
         }
+        "suspects" => serde_json::to_value(ws.suspects(&snap, arg(p, "target")?, p.get("since").and_then(Value::as_str), &ws.config.correlation)?.0)?,
         "blast" => serde_json::to_value(query::blast(&snap, arg(p, "app")?, 8)?)?,
         "similar" => serde_json::to_value(query::similar(&snap, arg(p, "incident")?, &ws.config.correlation, 5)?)?,
         "code" => serde_json::to_value(ws.code(&snap, arg(p, "incident")?, p.get("top").and_then(Value::as_u64).unwrap_or(5) as usize)?)?,

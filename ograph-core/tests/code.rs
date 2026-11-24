@@ -227,6 +227,82 @@ fn code_adds_the_files_and_write_ups_ogrep_finds_for_the_incident() {
     assert_eq!(top.files.len(), 1);
 }
 
+fn suspects(root: &Path, target: &str, since: Option<&str>) -> (serde_json::Value, Vec<String>) {
+    let ws = Workspace::open(root).unwrap();
+    let (found, degraded) = ws.suspects(&ws.store.snapshot().unwrap(), target, since, &ws.config.correlation).unwrap();
+    (serde_json::to_value(found).unwrap(), degraded)
+}
+
+fn expected_suspects() -> serde_json::Value {
+    let change = serde_json::json!({"revision": SHA, "summary": "payments: shrink ledger pool", "at": ograph_core::term::format_millis((T - 720) * 1000), "files": ["shop/services/payments/pool.py"]});
+    serde_json::json!([
+        {"rank": 1, "app": "payments", "score": 2.73, "distance": 1.0, "explains": ["checkout"], "changes": [change]},
+        {"rank": 2, "app": "checkout", "score": 1.0, "distance": 0.0, "explains": ["checkout"], "changes": []},
+    ])
+}
+
+#[test]
+fn suspects_of_an_incident_are_asked_for_its_application_since_the_day_before() {
+    let incidents = format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T}}},{{"id":"INC-2","service":"payments","opened":{}}},{{"id":"INC-3","service":"ledger-db","opened":{}}}]"#, T + 600, T - 7200);
+    let root = workspace("suspects-incident", CATALOG, &[("incidents.json", &incidents)]);
+    harvest(&root);
+    assert_eq!(suspects(&root, "INC-1", None), (expected_suspects(), vec![]));
+    // INC-2 opened inside the correlation window of INC-1, so its application fails with it;
+    // INC-3 opened two hours earlier.
+    let day_before = ograph_core::term::format_millis((T - 86_400) * 1000)[..10].to_owned();
+    assert_eq!(calls(&root).lines().last(), Some(format!("--suspects checkout,payments --since {day_before} . --json").as_str()));
+}
+
+#[test]
+fn suspects_of_named_applications_look_back_a_day_unless_told() {
+    let root = workspace("suspects-apps", CATALOG, &[("aliases.jsonl", "{\"app\":\"payments\",\"alias\":\"pay\"}\n")]);
+    let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
+    std::fs::write(root.join(".ograph/config.toml"), format!("{config}[[source]]\nkind = \"ownership\"\npath = \"aliases.jsonl\"\n")).unwrap();
+    harvest(&root);
+    assert_eq!(suspects(&root, "checkout, pay", None).0, expected_suspects());
+    assert_eq!(calls(&root).lines().last(), Some("--suspects checkout,payments --since 24h . --json"));
+    suspects(&root, "not-in-the-catalog", Some("3d"));
+    assert_eq!(calls(&root).lines().last(), Some("--suspects not-in-the-catalog --since 3d . --json"));
+}
+
+#[test]
+fn suspects_come_from_the_first_repository_ogrep_answers_for() {
+    let sources = format!("[[source]]\nkind = \"code\"\npath = \"broken\"\n{CATALOG}");
+    let root = workspace("suspects-degraded", &sources, &[("broken/.fail", "")]);
+    harvest(&root);
+    assert_eq!(suspects(&root, "INC-1", None), (expected_suspects(), vec!["broken: ogrep --suspects failed: boom".to_owned()]));
+}
+
+#[test]
+fn chains_falls_back_to_suspects_only_when_nothing_ranks_and_code_is_configured() {
+    let fallback = |root: &Path| {
+        let ws = Workspace::open(root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let ids = ograph_core::correlate::Ids::new(&snap).unwrap();
+        let analysis = ograph_core::correlate::analyze(&snap, &ids, ograph_core::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+        let (found, _) = ws.fallback_suspects(&snap, &analysis, "INC-1", &ws.config.correlation);
+        (analysis.apps.len(), serde_json::to_value(ograph_core::query::Chains { analysis, suspects: found }).unwrap())
+    };
+    // A commit twelve minutes before is a candidate, but alone it is too weak to rank.
+    let quiet = workspace("fallback", &format!("{CATALOG}{CODE}"), &[]);
+    harvest(&quiet);
+    let (ranked, answer) = fallback(&quiet);
+    assert_eq!((ranked, &answer["suspects"], &answer["candidates"]), (0, &expected_suspects(), &serde_json::json!(1)));
+
+    let no_code = workspace("fallback-no-code", CATALOG, &[]);
+    harvest(&no_code);
+    let (ranked, answer) = fallback(&no_code);
+    assert_eq!((ranked, answer.get("suspects")), (0, None));
+    assert_eq!(calls(&no_code), "--entities . --json\n");
+
+    let loud = workspace("fallback-ranked", &format!("{CATALOG}{CODE}{EVERYTHING}"), &[("logs.jsonl", &logs()), ("errors.jsonl", &errors())]);
+    harvest(&loud);
+    let (ranked, answer) = fallback(&loud);
+    assert!(ranked > 0);
+    assert_eq!(answer.get("suspects"), None);
+    assert!(!calls(&loud).contains("--suspects"));
+}
+
 #[test]
 fn code_names_the_repository_ogrep_failed_in_and_keeps_the_graph_half() {
     let sources = format!("{CATALOG}{CODE}[[source]]\nkind = \"code\"\npath = \"broken\"\n{EVERYTHING}");

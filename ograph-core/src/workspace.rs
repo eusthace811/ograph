@@ -141,6 +141,24 @@ impl Workspace {
         Ok(answer)
     }
 
+    /// `ograph suspects`: the failing applications `target` names, then what ogrep ranks as
+    /// their likely causes since `since` (by default the day before an incident, or 24 hours).
+    /// The second value says why ogrep gave nothing.
+    pub fn suspects(&self, snap: &crate::store::Snapshot, target: &str, since: Option<&str>, st: &Settings) -> anyhow::Result<(Vec<crate::query::Suspect>, Vec<String>)> {
+        let failing = crate::query::failing(snap, target, st)?;
+        Ok(crate::query::suspects(&self.root, &self.service_repos(), &failing.apps, since.unwrap_or(&failing.since)))
+    }
+
+    /// What `ograph chains` falls back to when telemetry ranked no application: the suspects
+    /// for the incident. Only with a `code` source, so a workspace without one answers, and
+    /// spawns, as it always did.
+    pub fn fallback_suspects(&self, snap: &crate::store::Snapshot, analysis: &correlate::Analysis, incident: &str, st: &Settings) -> (Vec<crate::query::Suspect>, Vec<String>) {
+        if !analysis.apps.is_empty() || self.code_repos().is_empty() {
+            return (vec![], vec![]);
+        }
+        self.suspects(snap, incident, None, st).unwrap_or_else(|e| (vec![], vec![format!("{e:#}")]))
+    }
+
     /// Runs every source in layer order, then correlation for every incident. Each source file
     /// is one batch through the gateway.
     pub fn harvest(&self, only: Option<&str>, mut progress: impl FnMut(&Outcome, f64)) -> anyhow::Result<Vec<Outcome>> {

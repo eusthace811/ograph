@@ -533,3 +533,101 @@ pub fn code_search(answer: &mut Code, text: &str, root: &Path, repos: &[PathBuf]
     }
     answer.files_confidence = first.and_then(|(_, level)| level);
 }
+
+/// The applications `ograph suspects` asks ogrep about, and how far back it looks by default.
+pub struct Failing {
+    pub apps: Vec<String>,
+    pub since: String,
+}
+
+/// The graph half of `ograph suspects`. An incident fails its own application and those of the
+/// other incidents opened within the correlation window of it, and looks back to the day
+/// before it. Anything else is a comma-separated list of application names, looking back 24
+/// hours; a name the catalog knows by an alias becomes its catalog name.
+pub fn failing(s: &Snapshot, target: &str, st: &Settings) -> anyhow::Result<Failing> {
+    let ids = Ids::new(s).ok();
+    let is_a = |node: Id, class: Option<Id>| ids.as_ref().zip(class).is_some_and(|(ids, c)| s.contains([node, ids.ty, c]).unwrap_or(false));
+    if let (Some(ids), Ok(i)) = (&ids, lookup(s, target))
+        && is_a(i, ids.incident)
+    {
+        let (app, t) = correlate::incident_anchor(s, ids, i)?;
+        let mut others = Vec::new();
+        for other in ids.incident.map(|c| s.subjects(ids.ty, c)).transpose()?.unwrap_or_default() {
+            if let Ok((a, at)) = correlate::incident_anchor(s, ids, other)
+                && a != app
+                && (at - t).abs() <= st.window_s * 1000
+            {
+                others.push(app_name(s, ids, a));
+            }
+        }
+        others.sort();
+        others.dedup();
+        let apps = std::iter::once(app_name(s, ids, app)).chain(others).collect();
+        return Ok(Failing { apps, since: term::format_millis(t - 86_400_000).chars().take(10).collect() });
+    }
+    let application = s.iri(ops::APPLICATION)?;
+    let apps: Vec<String> = target
+        .split(',')
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(|n| match (&ids, lookup(s, n)) {
+            (Some(ids), Ok(a)) if is_a(a, application) => app_name(s, ids, a),
+            _ => n.to_owned(),
+        })
+        .collect();
+    anyhow::ensure!(!apps.is_empty(), "suspects needs an incident or application names");
+    Ok(Failing { apps, since: "24h".into() })
+}
+
+#[derive(Serialize, Clone)]
+pub struct Suspect {
+    pub rank: usize,
+    pub app: String,
+    pub score: f64,
+    /// Dependency hops from the failing applications.
+    pub distance: f64,
+    /// The failing applications this one could explain.
+    pub explains: Vec<String>,
+    pub changes: Vec<SuspectChange>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct SuspectChange {
+    pub revision: String,
+    pub summary: String,
+    pub at: String,
+    pub files: Vec<String>,
+}
+
+/// The ogrep half of `ograph suspects`: likely causes from the dependency graph and the commits
+/// since `since`, from the first of `repos` ogrep answers for. The second value says why the
+/// repositories before it gave nothing.
+pub fn suspects(root: &Path, repos: &[PathBuf], failing: &[String], since: &str) -> (Vec<Suspect>, Vec<String>) {
+    let mut degraded = Vec::new();
+    for repo in repos {
+        match ogrep::suspects(repo, failing, since) {
+            Ok(found) => {
+                let change = |c: ogrep::Commit| SuspectChange { revision: c.sha, summary: c.subject, at: term::format_millis(c.time * 1000), files: c.files.iter().map(|f| rel(root, &repo.join(f))).collect() };
+                let out = found.into_iter().enumerate().map(|(k, x)| Suspect { rank: k + 1, app: x.service, score: round2(x.score), distance: x.distance, explains: x.explains, changes: x.changes.into_iter().map(change).collect() });
+                return (out.collect(), degraded);
+            }
+            Err(e) => {
+                degraded.push(format!("{}: {e}", rel(root, repo)));
+                if matches!(e, ogrep::Failure::NotRunnable(_)) {
+                    break;
+                }
+            }
+        }
+    }
+    (vec![], degraded)
+}
+
+/// What `ograph chains` answers: the analysis and, when telemetry ranked no application, the
+/// suspects the dependency graph and recent commits give.
+#[derive(Serialize)]
+pub struct Chains {
+    #[serde(flatten)]
+    pub analysis: correlate::Analysis,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub suspects: Vec<Suspect>,
+}
