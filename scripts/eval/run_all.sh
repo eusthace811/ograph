@@ -22,6 +22,9 @@ $B/confirm_eval data/rcaeval-cases > $E/confirm.txt
 python3 scripts/eval/similar_eval.py --bin $B/ograph --cases data/rcaeval-cases --out data/rcaeval-merged > $E/similar-eval.txt
 C=data/rcaeval-cases/c-97bf1c72d2
 $B/purekg_bench $C "$(python3 -c "import json;print(json.load(open('$C/incidents.json'))[0]['opened'])")" > $E/purekg.txt
+# The code gates need a clone of a repository with services, code and history, for example
+# git clone https://github.com/open-telemetry/opentelemetry-demo data/opentelemetry-demo
+[ -d data/opentelemetry-demo ] && python3 scripts/eval/code_eval.py --bin $B/ograph --repo data/opentelemetry-demo --work target/code-eval > $E/code.txt
 tail -n 3 $E/*.txt
 # The 10x store run takes about 20 minutes plus compaction:
 # OGRAPH_CACHE_MB=4096 $B/store_bench --scale 10 --no-oxigraph --chunk 5000000 > $E/store-x10.txt

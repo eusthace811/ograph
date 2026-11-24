@@ -259,6 +259,42 @@ Accuracy went from 13 of 16 to 15, 16 and 15 of 16 in three runs. The question t
 
 **Voting did not pay.** Three samples from one model with a majority vote scored 15, 15, 15 at 48 calls instead of 16, because the DNS miss was systematic. Cross-model voting with a second model through pi, 2 models × 2 samples, scored 15 right and 1 abstained at 64 calls. After the DNS fix, both models once agreed on a wrong label. Voting cost a correct label and did not stop a wrong one, so it is not shipped.
 
+## Phase 10: code through ogrep (`code.txt`, `code-regression.txt`)
+
+ograph used one ogrep feature, `--entities`. This phase adds six more: commits as events (`--timeline`), the statement behind a log burst (`--template-to-code`), the frames of a stack trace (`--stack-trace`), past write-ups (`--similar-incidents`), the files an incident's text is about (`--about`), and a ranking from the dependency graph and recent commits when there is no telemetry (`--suspects`). `scripts/eval/code_eval.py` measures each on the OpenTelemetry demo repository at `8f6908eae154`: 34 services, 2,493 commits and 88 log statements in 12 languages. The repository, its commits, its dependency graph and its log statements are real. The incidents and the telemetry are synthetic, each built from one real commit or one real statement, so the right answer is known. Measured on 2026-11-24 with ogrep 0.2.0.
+
+| Question | Result |
+|---|---|
+| A burst of a real log message: does `evt:codeLocation` name the statement? | Right file for 84/88 (0.95), exact line for 83/88 |
+| An error report with a stack trace in the file's language: does it name the line? | Exact line for 86/88 (0.98). The two misses are C# frames (`in path:line 12`), a form ogrep does not read |
+| `ograph code`: is the statement's file among the files to open? | First for 74/88 (0.84), in the first three for 87/88 (0.99) |
+| A real commit to a file, then errors from that file: is the commit shown? | Listed for 24/24, and first with the file it touches for 23/24. Without the code source the graph holds no commit |
+| 36 incidents with no telemetry and 36 write-ups that word each fault differently | Right write-up first for 30/36 (0.83). `ograph similar` has nothing for any of them, since it compares telemetry |
+| 40 incidents with no telemetry at all, the repository as it was at a real commit to the cause | `ograph chains` ranked nothing before. The fallback names the cause first for 34/40 (0.85) and in the first three for 40/40 |
+
+The six misses on write-ups are one fault of the six, whose incident title shares no word with its write-up. Text matching needs shared words.
+
+### What it does not change
+
+- **Existing workspaces.** `scripts/eval/ab_compare.sh` runs the binary from before this phase and the new one over the demo and RCAEval. 12 of 12 outputs are byte-identical: the demo's harvest and eight queries, the 90 per-case rankings (chain AC@1 0.93) and the similar-incident scores (0.92). Query latency is the same within 0.5 ms (23 ms, which is mostly process start).
+- **Ranking with a code source.** Commits join the candidate events of a chain. In 40 cases with a strong fault on one dependency and an unrelated real commit on another four minutes before the incident, the right application stayed first in 40/40, with and without the code source, and no top chain was rooted at the commit.
+
+### What was tried and removed
+
+A scoring rule gave a commit a 0.9 prior on the link to a later event located in a file it changed. On the 24 commit cases it never changed which application ranked first (4/24 with it, without it, and without the code source: the unrelated metric spike on a dependency wins in the other 20). At 0.9 it never rooted the top chain at the commit, because a chain it lengthens scores below the shorter one; at 1.0 it did so in 6/24. The rule is gone. `ograph code` shows the commit and the file instead, and chain scores do not use them.
+
+### Cost
+
+| Workspace (112 log files, 100 metric files, 188 incidents) | Harvest | Distinct triples |
+|---|---|---|
+| Telemetry and catalog only | 3.0 s | 6,688 |
+| With the code and errors sources, commits of the last 30 days (the default) | 3.8 to 4.6 s in two runs | 9,171 |
+| With every commit since 2020 (2,493 commits, 1,925 commit events) | 3.9 to 5.1 s | 35,023 |
+
+`ograph code` takes a median of 67 ms. The first version ran each ogrep call in turn and cost 5.9 s more than the plain harvest. One call for all log files was faster again but found the right file for 75/88 bursts, not 84, because ogrep merges similar messages into one template and answers only for its first line. The harvest now makes one call per service, per stack trace and per log file, on up to eight threads.
+
+Not measured: a Windows run, a repository larger than 654 files, and whether commit events change `ograph similar` on a workspace that has both a code source and accepted verdicts.
+
 ## Why not a pure knowledge graph (`purekg.txt`, `rcaeval-final.txt`)
 
 A pure knowledge graph puts every metric point, log line and span in the graph as a node, so SPARQL can answer everything. I loaded one RCAEval case both ways: 24 minutes of an 11-service system, 96 MiB of raw exports.

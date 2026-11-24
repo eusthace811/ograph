@@ -1,0 +1,62 @@
+repository https://github.com/open-telemetry/opentelemetry-demo.git at 8f6908eae154: 34 services, 2493 commits, 88 unique log statements in 12 languages
+ogrep ogrep 0.2.0; seed 7
+
+## Harvest cost
+
+| workspace | harvest, median of 3 | distinct triples |
+|---|---|---|
+| telemetry and catalog only | 3.01 s | 6688 |
+| with the code and errors sources, commits of the last 30 days (the default) | 4.57 s | 9171 |
+| the same with every commit since 2020 (2493 commits), no ogrep index | 5.12 s | 35023 |
+| the same after `ogrep index .` in the repository | 3.91 s | 35023 |
+
+harvested 364 batches in 5.1 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+`ograph validate` on the workspace with code: 0 violations
+events by signal: {'COMMIT': 1925, 'EXCEPTION': 88, 'INCIDENT': 188, 'LOG_ERROR': 112, 'METRIC_ANOMALY': 100}
+
+## A. Log line to code
+
+88 bursts of real log messages; the detector fired on 88.
+evt:codeLocation names the right file for 84/88 = 0.95, the exact line for 83/88 = 0.94; a location was given for 88, so 4 are wrong files and 0 have none.
+right file by language: .cpp 4/4, .cs 2/2, .ex 8/8, .go 15/15, .java 15/15, .js 2/3, .kt 5/5, .php 2/3, .py 25/26, .rb 1/1, .rs 4/5, .ts 1/1
+
+## B. Stack frame to code
+
+88 error reports; the right file for 86/88 = 0.98, the exact line for 86/88 = 0.98; 2 have no location.
+exact line by language: .cpp 4/4, .cs 0/2, .ex 8/8, .go 15/15, .java 15/15, .js 3/3, .kt 5/5, .php 3/3, .py 26/26, .rb 1/1, .rs 5/5, .ts 1/1
+
+## C. The files to open
+
+`ograph code INCIDENT` for the 88 incidents of A: the statement's file is first in `files` for 74/88 = 0.84, in the first three for 87/88 = 0.99.
+`ograph code` took a median of 68 ms (p90 74 ms), with the ogrep index.
+
+## D. A commit, then errors from the file it changed
+
+24 cases, each a real commit to one service, a burst of a message that file writes 10 minutes later, and an unrelated metric spike on a dependency (20 of them).
+
+| configuration | right application first | top chain is rooted at the commit |
+|---|---|---|
+| no code source | 4/24 = 0.17 | 0/24 = 0.00 |
+| with the code source | 4/24 = 0.17 | 0/24 = 0.00 |
+
+`ograph code` lists the commit for 24/24 and puts it first with the file it touches for 23/24.
+
+## E. A fault on one dependency, an unrelated commit on another
+
+40 cases: a strong latency spike on dependency D, a weaker one on the incident's service, and a real commit to a different dependency four minutes before the incident. The right answer is D.
+
+| configuration | right application first | top chain is rooted at the commit |
+|---|---|---|
+| no code source | 40/40 = 1.00 | 0/40 = 0.00 |
+| with the code source | 40/40 = 1.00 | 0/40 = 0.00 |
+
+## G. Write-ups
+
+36 incidents with no telemetry, and 36 write-ups in the repository (6 services by 6 faults) that describe each fault in other words.
+`ograph code` puts the right write-up first for 30/36 = 0.83, in the first three for 30/36 = 0.83. `ograph similar` returns something for 0/36.
+
+## F. An incident with no telemetry
+
+40 cases: the repository checked out at a real commit to service S, and an incident 30 minutes later on a service that depends on S directly or through one other service. No logs, metrics, traces or alerts.
+`ograph chains` ranked an application from telemetry in 0/40 cases. Its suspects fallback names S first for 34/40 = 0.85, in the first three for 40/40 = 1.00; it returned nothing for 0.
+first by distance: distance 1 22/27, distance 2 12/13
