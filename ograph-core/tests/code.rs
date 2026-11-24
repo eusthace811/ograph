@@ -179,7 +179,63 @@ fn without_a_code_source_nothing_is_looked_up_in_code() {
     assert_eq!(values(&root, "SELECT ?e WHERE { ?e a evt:LogError }").len(), 1);
     assert_eq!(values(&root, "SELECT ?e WHERE { ?e a evt:Exception }").len(), 2);
     assert!(values(&root, "SELECT ?l WHERE { ?e evt:codeLocation ?l }").is_empty());
+    let ws = Workspace::open(&root).unwrap();
+    let answer = ws.code(&ws.store.snapshot().unwrap(), "INC-1", 5).unwrap();
+    assert_eq!(serde_json::to_value(&answer).unwrap(), serde_json::json!({"incident": "id:inc/inc-1", "app": "checkout", "at": ograph_core::term::format_millis(T * 1000), "locations": [], "commits": [], "files": [], "files_confidence": null, "writeups": [], "degraded": []}));
     assert_eq!(calls(&root), "--entities . --json\n");
+}
+
+const EVERYTHING: &str = "[[source]]\nkind = \"logs\"\npath = \"logs.jsonl\"\n[[source]]\nkind = \"errors\"\npath = \"errors.jsonl\"\n";
+
+#[test]
+fn code_lists_the_lines_and_the_commits_behind_an_incident() {
+    let root = workspace("code-query", &format!("{CATALOG}{CODE}{EVERYTHING}"), &[("logs.jsonl", &logs()), ("errors.jsonl", &errors())]);
+    harvest(&root);
+    let ws = Workspace::open(&root).unwrap();
+    let snap = ws.store.snapshot().unwrap();
+    let (answer, text) = ograph_core::query::code(&snap, "INC-1", &ws.config.correlation).unwrap();
+    let pool = "shop/services/payments/pool.py";
+    let locations: Vec<_> = answer.locations.iter().map(|l| (l.app.as_str(), l.signal.as_str(), l.location.as_str(), l.summary.as_deref().unwrap_or(""))).collect();
+    assert_eq!(
+        locations,
+        [
+            ("checkout", "EXCEPTION", "shop/services/checkout/client.py:6", "TimeoutError: pool exhausted"),
+            ("checkout", "EXCEPTION", "shop/services/payments/pool.py:11", "TimeoutError: pool exhausted"),
+            ("payments", "LOG_ERROR", "shop/services/payments/pool.py:11", "ledger-db connection pool exhausted after <*> <*>"),
+        ]
+    );
+    assert_eq!(
+        serde_json::to_value(&answer.commits).unwrap(),
+        serde_json::json!([{"event": "id:ev/commit-payments-98aecc6b2ee7", "app": "payments", "at": ograph_core::term::format_millis((T - 720) * 1000), "minutes_before": 12.0, "revision": SHA, "summary": "payments: shrink ledger pool", "files": [pool], "touches": [format!("{pool}:11")]}])
+    );
+    assert!(answer.files.is_empty() && answer.writeups.is_empty() && answer.degraded.is_empty());
+    assert!(text.starts_with("Checkout failing: ledger-db connection pool exhausted payments "), "{text}");
+    assert!(!text.contains("<*>"), "{text}");
+}
+
+#[test]
+fn code_adds_the_files_and_write_ups_ogrep_finds_for_the_incident() {
+    let root = workspace("code-search", &format!("{CATALOG}{CODE}{EVERYTHING}"), &[("logs.jsonl", &logs()), ("errors.jsonl", &errors())]);
+    harvest(&root);
+    let ws = Workspace::open(&root).unwrap();
+    let answer = serde_json::to_value(ws.code(&ws.store.snapshot().unwrap(), "INC-1", 5).unwrap()).unwrap();
+    assert_eq!(answer["files"], serde_json::json!([{"path": "shop/services/payments/pool.py", "score": 3.65, "line": 11}, {"path": "shop/compose.yml", "score": 1.2, "line": null}]));
+    assert_eq!(answer["files_confidence"], "confident");
+    assert_eq!(answer["writeups"], serde_json::json!([{"path": "shop/docs/postmortems/2026-01-ledger-pool.md", "score": 16.19, "terms": ["exhausted", "pool"]}]));
+    assert_eq!(answer["degraded"], serde_json::json!([]));
+    let top = ws.code(&ws.store.snapshot().unwrap(), "INC-1", 1).unwrap();
+    assert_eq!(top.files.len(), 1);
+}
+
+#[test]
+fn code_names_the_repository_ogrep_failed_in_and_keeps_the_graph_half() {
+    let sources = format!("{CATALOG}{CODE}[[source]]\nkind = \"code\"\npath = \"broken\"\n{EVERYTHING}");
+    let root = workspace("code-degraded", &sources, &[("broken/.fail", ""), ("logs.jsonl", &logs()), ("errors.jsonl", &errors())]);
+    harvest(&root);
+    let ws = Workspace::open(&root).unwrap();
+    let answer = ws.code(&ws.store.snapshot().unwrap(), "INC-1", 5).unwrap();
+    assert_eq!(answer.degraded, ["broken: ogrep --about failed: boom", "broken: ogrep --similar-incidents failed: boom"]);
+    assert_eq!((answer.locations.len(), answer.commits.len(), answer.files.len(), answer.writeups.len()), (3, 1, 2, 1));
 }
 
 #[test]

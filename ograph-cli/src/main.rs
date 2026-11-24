@@ -66,6 +66,13 @@ enum Cmd {
         #[arg(long, default_value_t = 5)]
         top: usize,
     },
+    /// Where an incident points in the code: lines, commits, files and past write-ups
+    Code {
+        incident: String,
+        /// How many files and write-ups to list
+        #[arg(long, default_value_t = 5)]
+        top: usize,
+    },
     /// News that mentions vendors our applications use (Q4)
     News {
         #[arg(long)]
@@ -256,6 +263,43 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             print(json, &v, |v| {
                 for s in v {
                     println!("  {:.3}  {} on {} at {}  causes: [{}]  mitigations: [{}]", s.similarity, s.incident, s.app, s.at, s.cause_apps.join(", "), s.mitigations.join("; "));
+                }
+            });
+            Ok(found)
+        }
+        Cmd::Code { incident, top } => {
+            let snap = ws.store.snapshot()?;
+            let c = ws.code(&snap, &incident, top)?;
+            let found = !(c.locations.is_empty() && c.commits.is_empty() && c.files.is_empty() && c.writeups.is_empty());
+            print(json, &c, |c| {
+                println!("{} on {} at {}", c.incident, c.app, c.at);
+                if !c.locations.is_empty() {
+                    println!("lines behind the events before it:");
+                }
+                for l in &c.locations {
+                    println!("  {:<16} {:<15} {}  {}", l.app, l.signal, l.location, l.summary.as_deref().unwrap_or(""));
+                }
+                if !c.commits.is_empty() {
+                    println!("commits before it:");
+                }
+                for k in &c.commits {
+                    let touches = if k.touches.is_empty() { String::new() } else { format!("  changed {}", k.touches.join(", ")) };
+                    println!("  -{:>5.1} min  {:<16} {:.12}  {}{touches}", k.minutes_before, k.app, k.revision.as_deref().unwrap_or("?"), k.summary.as_deref().unwrap_or(""));
+                }
+                if !c.files.is_empty() {
+                    println!("files its description is about ({}):", c.files_confidence.as_deref().unwrap_or("unranked"));
+                }
+                for f in &c.files {
+                    println!("  {:>6.2}  {}{}", f.score, f.path, f.line.map(|n| format!(":{n}")).unwrap_or_default());
+                }
+                if !c.writeups.is_empty() {
+                    println!("past write-ups:");
+                }
+                for w in &c.writeups {
+                    println!("  {:>6.2}  {}  ({})", w.score, w.path, w.terms.join(", "));
+                }
+                for d in &c.degraded {
+                    println!("DEGRADED: {d}");
                 }
             });
             Ok(found)

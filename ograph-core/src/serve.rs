@@ -23,6 +23,8 @@ pub fn tools() -> Value {
          "inputSchema": s(json!({"app": {"type": "string"}}), &["app"])},
         {"name": "similar", "description": "Past incidents that resemble this one, with their accepted causes and mitigations.",
          "inputSchema": s(json!({"incident": {"type": "string"}}), &["incident"])},
+        {"name": "code", "description": "Where an incident points in the code: the lines behind the events before it, the commits before it and the located lines each one changed, the files its description is about, and past write-ups that resemble it. Needs a code source; ogrep failures are listed under degraded.",
+         "inputSchema": s(json!({"incident": {"type": "string"}, "top": {"type": "integer", "description": "how many files and write-ups to list (default 5)"}}), &["incident"])},
         {"name": "why", "description": "Provenance of every fact about a node: harvest graph, source, extractor, model and confidence, and quarantined proposals.",
          "inputSchema": s(json!({"node": {"type": "string"}}), &["node"])},
         {"name": "news", "description": "News that mentions vendors our applications use, with the affected applications and processes.",
@@ -54,6 +56,7 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
         }
         "blast" => serde_json::to_value(query::blast(&snap, arg(p, "app")?, 8)?)?,
         "similar" => serde_json::to_value(query::similar(&snap, arg(p, "incident")?, &ws.config.correlation, 5)?)?,
+        "code" => serde_json::to_value(ws.code(&snap, arg(p, "incident")?, p.get("top").and_then(Value::as_u64).unwrap_or(5) as usize)?)?,
         "why" => serde_json::to_value(query::why(&snap, arg(p, "node")?)?)?,
         "news" => serde_json::to_value(query::news(&snap, None)?)?,
         "sparql" => {

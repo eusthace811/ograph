@@ -133,6 +133,14 @@ impl Workspace {
         out
     }
 
+    /// `ograph code`: what the graph holds about the code behind an incident, then what ogrep
+    /// finds for the incident's description in the code repositories.
+    pub fn code(&self, snap: &crate::store::Snapshot, incident: &str, top: usize) -> anyhow::Result<crate::query::Code> {
+        let (mut answer, text) = crate::query::code(snap, incident, &self.config.correlation)?;
+        crate::query::code_search(&mut answer, &text, &self.root, &self.code_repos(), top);
+        Ok(answer)
+    }
+
     /// Runs every source in layer order, then correlation for every incident. Each source file
     /// is one batch through the gateway.
     pub fn harvest(&self, only: Option<&str>, mut progress: impl FnMut(&Outcome, f64)) -> anyhow::Result<Vec<Outcome>> {

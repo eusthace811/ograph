@@ -1,13 +1,15 @@
-//! The investigation verbs on native paths: `before`, `blast`, `similar`, `why`, `news`.
+//! The investigation verbs on native paths: `before`, `blast`, `similar`, `why`, `news`, `code`.
 //! SPARQL stays for ad hoc questions; these run on the indexes directly.
 
 use crate::correlate::{self, Ids, Settings, app_name, literal};
+use crate::enrich::{ogrep, rel};
 use crate::store::{GraphSel, Snapshot};
 use crate::term::{self, Id};
 use crate::vocab::{self, disc, evt, harv, inc, ops};
 use oxrdf::Term;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 
 /// Finds a node from an IRI, a prefixed name, an incident id (`INC-5377`), or an app's name or alias.
 pub fn lookup(s: &Snapshot, name: &str) -> anyhow::Result<Id> {
@@ -380,4 +382,154 @@ pub fn duration_s(s: &str) -> anyhow::Result<i64> {
         _ => anyhow::bail!("unknown unit in {s}"),
     };
     n.checked_mul(scale).ok_or_else(|| anyhow::anyhow!("duration {s} is too long"))
+}
+
+#[derive(Serialize)]
+pub struct Code {
+    pub incident: String,
+    pub app: String,
+    pub at: String,
+    /// Candidate events that carry a line of code, newest first.
+    pub locations: Vec<CodeLocation>,
+    /// Candidate commits: those that changed a located file first, then newest first.
+    pub commits: Vec<CodeCommit>,
+    /// The files the incident's description is about, best first.
+    pub files: Vec<CodeFile>,
+    /// `confident` or `unsure`: whether ogrep's first file stands clear of the rest.
+    pub files_confidence: Option<String>,
+    /// Past incident write-ups in the code repositories that share words with this one.
+    pub writeups: Vec<Writeup>,
+    pub degraded: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct CodeLocation {
+    pub event: String,
+    pub app: String,
+    pub signal: String,
+    pub at: String,
+    pub location: String,
+    pub summary: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct CodeCommit {
+    pub event: String,
+    pub app: String,
+    pub at: String,
+    pub minutes_before: f64,
+    pub revision: Option<String>,
+    pub summary: Option<String>,
+    pub files: Vec<String>,
+    /// The locations of this answer in a file the commit changed.
+    pub touches: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct CodeFile {
+    pub path: String,
+    pub score: f64,
+    pub line: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub struct Writeup {
+    pub path: String,
+    pub score: f64,
+    pub terms: Vec<String>,
+}
+
+fn round2(x: f64) -> f64 {
+    (x * 100.0).round() / 100.0
+}
+
+/// The graph half of `ograph code`: where an incident's candidate events point in the code and
+/// which candidate commits changed those files. The second value describes the incident in
+/// words, for [`code_search`]: its title, then the applications and messages along its
+/// top-ranked chain.
+pub fn code(s: &Snapshot, incident: &str, st: &Settings) -> anyhow::Result<(Code, String)> {
+    let ids = Ids::new(s)?;
+    let i = lookup(s, incident)?;
+    let (app, t, cands) = correlate::candidates(s, &ids, i, st)?;
+    let (template, summary, revision, title) = (s.iri(evt::TEMPLATE)?, s.iri(evt::SUMMARY)?, s.iri(evt::REVISION)?, s.iri(inc::TITLE)?);
+    let text = |e: Id, p: Option<Id>| p.and_then(|p| s.object(e, p).ok().flatten()).and_then(|v| literal(s, v));
+    let describe = |e: Id| text(e, template).or_else(|| text(e, summary));
+    let (mut locations, mut commits) = (Vec::new(), Vec::new());
+    for c in cands.iter().rev() {
+        let at = term::format_millis(c.at_ms);
+        let mut found = correlate::texts(s, c.id, ids.code_location)?;
+        found.sort();
+        locations.extend(found.into_iter().map(|location| CodeLocation { event: vocab::compact(&c.iri), app: c.app_name.clone(), signal: c.kind.clone(), at: at.clone(), location, summary: describe(c.id) }));
+        if c.kind == "COMMIT" {
+            let mut files = c.changed.clone();
+            files.sort();
+            commits.push(CodeCommit { event: vocab::compact(&c.iri), app: c.app_name.clone(), at, minutes_before: ((t - c.at_ms) as f64 / 60_000.0 * 10.0).round() / 10.0, revision: text(c.id, revision), summary: describe(c.id), files, touches: vec![] });
+        }
+    }
+    for c in &mut commits {
+        for l in &locations {
+            if c.files.iter().any(|f| f == correlate::location_file(&l.location)) && !c.touches.contains(&l.location) {
+                c.touches.push(l.location.clone());
+            }
+        }
+    }
+    commits.sort_by_key(|c| c.touches.is_empty());
+    let mut words: Vec<String> = text(i, title).into_iter().collect();
+    let analysis = correlate::analyze(s, &ids, i, st)?;
+    if let Some(chain) = analysis.apps.first().and_then(|r| r.chain.as_ref()) {
+        for link in std::iter::once(&chain.root).chain(&chain.links) {
+            words.push(link.app_name.clone());
+            words.extend(describe(link.id));
+        }
+    }
+    let words = words.join(" ").replace("<*>", " ").split_whitespace().collect::<Vec<_>>().join(" ");
+    let answer = Code { incident: vocab::compact(&literal(s, i).unwrap_or_default()), app: app_name(s, &ids, app), at: term::format_millis(t), locations, commits, files: vec![], files_confidence: None, writeups: vec![], degraded: vec![] };
+    Ok((answer, words))
+}
+
+/// The ogrep half of `ograph code`: the files and the past write-ups `text` is about, from
+/// every code repository, merged by score. A repository ogrep cannot answer for is named in
+/// `degraded` and the others still count.
+pub fn code_search(answer: &mut Code, text: &str, root: &Path, repos: &[PathBuf], top: usize) {
+    if text.is_empty() || top == 0 {
+        return;
+    }
+    // The confidence of the repository whose first file ranks first overall.
+    let mut first: Option<(f64, Option<String>)> = None;
+    for repo in repos {
+        let within = |path: &str| rel(root, &repo.join(path));
+        let mut failed = |e: ogrep::Failure| {
+            answer.degraded.push(format!("{}: {e}", rel(root, repo)));
+            matches!(e, ogrep::Failure::NotRunnable(_))
+        };
+        match ogrep::about(repo, text, top) {
+            Ok(about) => {
+                if let Some(f) = about.files.first().filter(|f| first.as_ref().is_none_or(|(score, _)| f.score > *score)) {
+                    first = Some((f.score, about.confidence.clone()));
+                }
+                answer.files.extend(about.files.into_iter().map(|f| CodeFile { path: within(&f.path), score: f.score, line: f.line }));
+            }
+            Err(e) => {
+                if failed(e) {
+                    break;
+                }
+            }
+        }
+        match ogrep::similar_incidents(repo, text) {
+            Ok(found) => answer.writeups.extend(found.into_iter().map(|w| Writeup { path: within(&w.path), score: w.score, terms: w.terms })),
+            Err(e) => {
+                if failed(e) {
+                    break;
+                }
+            }
+        }
+    }
+    answer.files.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.path.cmp(&b.path)));
+    answer.files.truncate(top);
+    answer.writeups.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.path.cmp(&b.path)));
+    answer.writeups.truncate(top);
+    for score in answer.files.iter_mut().map(|f| &mut f.score).chain(answer.writeups.iter_mut().map(|w| &mut w.score)) {
+        *score = round2(*score);
+    }
+    answer.files_confidence = first.and_then(|(_, level)| level);
 }
