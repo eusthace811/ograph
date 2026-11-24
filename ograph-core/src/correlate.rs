@@ -25,6 +25,9 @@ pub struct Settings {
     pub w_time: f64,
     pub w_severity: f64,
     pub known_pair_prior: f64,
+    /// What a link scores from a commit to a later event located in a file the commit changed;
+    /// 0 turns the rule off.
+    pub code_pair_prior: f64,
     pub depth: usize,
     pub max_chains: usize,
     pub rank: RankMode,
@@ -43,7 +46,7 @@ impl Settings {
     /// Scores are probabilities and windows are spans, so out-of-range settings are refused
     /// rather than written as confidences the shapes then quarantine.
     pub fn check(&self) -> anyhow::Result<()> {
-        for (name, v) in [("min_confidence", self.min_confidence), ("w_time", self.w_time), ("w_severity", self.w_severity), ("known_pair_prior", self.known_pair_prior)] {
+        for (name, v) in [("min_confidence", self.min_confidence), ("w_time", self.w_time), ("w_severity", self.w_severity), ("known_pair_prior", self.known_pair_prior), ("code_pair_prior", self.code_pair_prior)] {
             anyhow::ensure!((0.0..=1.0).contains(&v), "correlation setting {name} = {v} must be between 0 and 1");
         }
         anyhow::ensure!(self.w_time + self.w_severity <= 1.0, "correlation settings w_time + w_severity = {} must not exceed 1", self.w_time + self.w_severity);
@@ -74,6 +77,7 @@ impl Default for Settings {
             w_time: 0.6,
             w_severity: 0.4,
             known_pair_prior: 0.9,
+            code_pair_prior: 0.9,
             depth: 4,
             max_chains: 10,
             rank: RankMode::Chain,
@@ -102,6 +106,12 @@ pub struct Signal {
     pub kind: String,
     pub severity: f64,
     pub distance: usize,
+    /// The files a `COMMIT` changed.
+    #[serde(skip)]
+    pub changed: Vec<String>,
+    /// The files of the event's code locations.
+    #[serde(skip)]
+    pub located: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -145,6 +155,8 @@ pub struct Ids {
     pub signal: Option<Id>,
     pub incident: Option<Id>,
     pub name: Option<Id>,
+    pub changed_file: Option<Id>,
+    pub code_location: Option<Id>,
 }
 
 impl Ids {
@@ -161,6 +173,8 @@ impl Ids {
             signal: s.iri(evt::SIGNAL)?,
             incident: s.iri(inc::INCIDENT)?,
             name: s.iri(ops::NAME)?,
+            changed_file: s.iri(evt::CHANGED_FILE)?,
+            code_location: s.iri(evt::CODE_LOCATION)?,
         })
     }
 }
@@ -239,6 +253,17 @@ fn kind_of(s: &Snapshot, ids: &Ids, e: Id) -> String {
     s.object(e, ids.ty).ok().flatten().and_then(|c| literal(s, c)).map(|c| c.rsplit('#').next().unwrap_or("").to_uppercase()).unwrap_or_default()
 }
 
+/// The values of `p` on `e` as text; nothing when the store has never held `p`.
+pub fn texts(s: &Snapshot, e: Id, p: Option<Id>) -> anyhow::Result<Vec<String>> {
+    let Some(p) = p else { return Ok(vec![]) };
+    Ok(s.objects(e, p)?.into_iter().filter_map(|v| literal(s, v)).collect())
+}
+
+/// The file of a `path:line` code location.
+pub fn location_file(location: &str) -> &str {
+    location.rsplit_once(':').map_or(location, |(file, _)| file)
+}
+
 /// The incident's application and time.
 pub fn incident_anchor(s: &Snapshot, ids: &Ids, incident: Id) -> anyhow::Result<(Id, i64)> {
     let app = s.object(incident, ids.on)?.ok_or_else(|| anyhow::anyhow!("incident has no evt:on"))?;
@@ -286,6 +311,8 @@ pub fn candidates(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyho
                 continue;
             }
             let name = names.entry(x).or_insert_with(|| app_name(s, ids, x)).clone();
+            let changed = if kind == "COMMIT" { texts(s, e, ids.changed_file)? } else { vec![] };
+            let located = texts(s, e, ids.code_location)?.iter().map(|l| location_file(l).to_owned()).collect();
             out.push(Signal {
                 id: e,
                 iri: literal(s, e).unwrap_or_default(),
@@ -297,6 +324,8 @@ pub fn candidates(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyho
                 kind,
                 severity: severity_of(s, ids, e),
                 distance: d,
+                changed,
+                located,
             });
         }
     }
@@ -316,11 +345,17 @@ impl Settings {
     /// when the next event (or the incident) arrives is adjacent to it. Measuring from the start
     /// made a cause that began five minutes before the incident and never stopped score below a
     /// one-point blip seconds before it.
-    fn link(&self, a: &Signal, to_kind: &str, to_ms: i64) -> f64 {
+    ///
+    /// A commit that changed the file behind the next event (`to_files`, the files of its code
+    /// locations) is the strongest pair there is, so it carries its own prior.
+    fn link(&self, a: &Signal, to_kind: &str, to_ms: i64, to_files: &[String]) -> f64 {
         let w = (self.window_s * 1000) as f64;
         let gap = (to_ms - a.until_ms.min(to_ms)) as f64;
         if ((to_ms - a.at_ms) as f64) < -1000.0 || gap > w {
             return 0.0;
+        }
+        if self.code_pair_prior > 0.0 && a.kind == "COMMIT" && a.changed.iter().any(|f| to_files.contains(f)) {
+            return self.code_pair_prior;
         }
         if self.known(&a.kind, to_kind) {
             return self.known_pair_prior;
@@ -366,7 +401,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
             }
             let last = &cands[*path.last().unwrap()];
             // An event inside `after_s` closes as if it happened at the incident.
-            let close = st.link(last, "INCIDENT", t.max(last.at_ms)).max(1e-9);
+            let close = st.link(last, "INCIDENT", t.max(last.at_ms), &[]).max(1e-9);
             let conf = ((logsum + close.ln()) / path.len() as f64).exp();
             let gated = close >= st.min_confidence && conf >= st.min_confidence;
             // Equal confidence prefers the longer path: it explains more of the cascade.
@@ -383,7 +418,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
                 if !can_follow(last, next) {
                     continue;
                 }
-                let l = st.link(last, &next.kind, next.at_ms);
+                let l = st.link(last, &next.kind, next.at_ms, &next.located);
                 if l >= st.min_confidence {
                     let mut p = path.clone();
                     p.push(ni);
@@ -453,4 +488,37 @@ fn quantize(x: f64) -> i64 {
 /// Distinct applications a chain passes through.
 fn breadth(c: &Chain) -> usize {
     std::iter::once(&c.root).chain(&c.links).map(|s| s.app).collect::<FxHashSet<_>>().len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn signal(kind: &str, at_ms: i64, changed: &[&str], located: &[&str]) -> Signal {
+        let files = |f: &[&str]| f.iter().map(|x| x.to_string()).collect();
+        Signal { id: 0, iri: String::new(), app: 0, app_iri: String::new(), app_name: "payments".into(), at_ms, until_ms: at_ms, kind: kind.into(), severity: 0.25, distance: 0, changed: files(changed), located: files(located) }
+    }
+
+    #[test]
+    fn a_commit_that_changed_the_file_behind_a_later_event_carries_the_code_prior() {
+        let st = Settings::default();
+        let minutes = |m: i64| m * 60_000;
+        let commit = signal("COMMIT", 0, &["shop/pool.py", "shop/README.md"], &[]);
+        let log = signal("LOG_ERROR", minutes(25), &[], &["shop/pool.py"]);
+        let link = |st: &Settings, a: &Signal, b: &Signal| (st.link(a, &b.kind, b.at_ms, &b.located) * 1e6).round() / 1e6;
+        assert_eq!(link(&st, &commit, &log), 0.9);
+        // Any other pair keeps the generic rule: 0.6 * (1 - 25/30) + 0.4 * 0.25.
+        let elsewhere = signal("LOG_ERROR", minutes(25), &[], &["shop/client.py"]);
+        assert_eq!(link(&st, &commit, &elsewhere), 0.2);
+        let not_a_commit = signal("DEPLOYMENT", 0, &["shop/pool.py"], &[]);
+        assert_eq!(link(&st, &not_a_commit, &signal("METRIC_ANOMALY", minutes(25), &[], &["shop/pool.py"])), 0.2);
+        let off = Settings { code_pair_prior: 0.0, ..Settings::default() };
+        assert_eq!(link(&off, &commit, &log), 0.2);
+        let tuned = Settings { code_pair_prior: 0.7, ..Settings::default() };
+        assert_eq!(link(&tuned, &commit, &log), 0.7);
+        // The window still bounds the pair, and a commit after the event explains nothing.
+        assert_eq!(link(&st, &commit, &signal("LOG_ERROR", minutes(31), &[], &["shop/pool.py"])), 0.0);
+        assert_eq!(link(&st, &signal("COMMIT", minutes(26), &["shop/pool.py"], &[]), &log), 0.0);
+        assert!(Settings { code_pair_prior: 1.5, ..Settings::default() }.check().is_err());
+    }
 }
