@@ -1,0 +1,65 @@
+catalog_eval.py with ogrep 0.2.0
+
+ogrep 0.2.0
+ob: 0 declared dependencies, 16 inferred calls, 0 of them also declared, 16 only inferred
+    only inferred: cartservice -> redis-cart
+    only inferred: checkoutservice -> cartservice
+    only inferred: checkoutservice -> currencyservice
+    only inferred: checkoutservice -> emailservice
+    only inferred: checkoutservice -> paymentservice
+    only inferred: checkoutservice -> productcatalogservice
+    only inferred: checkoutservice -> shippingservice
+    only inferred: frontend -> adservice
+    only inferred: frontend -> cartservice
+    only inferred: frontend -> checkoutservice
+    only inferred: frontend -> currencyservice
+    only inferred: frontend -> productcatalogservice
+    only inferred: frontend -> recommendationservice
+    only inferred: frontend -> shippingservice
+    only inferred: loadgenerator -> frontend
+    only inferred: recommendationservice -> productcatalogservice
+otel2: 70 declared dependencies, 56 inferred calls, 46 of them also declared, 10 only inferred
+    only inferred: agent -> frontend
+    only inferred: email -> flagd
+    only inferred: fraud-detection -> flagd
+    only inferred: frontend-proxy -> firepit
+    only inferred: frontend-proxy -> flagd
+    only inferred: frontend-proxy -> image-provider
+    only inferred: jaeger -> prometheus
+    only inferred: load-generator -> frontend-proxy
+    only inferred: mcp -> otel-collector
+    only inferred: shipping -> quote
+
+RCAEval RE2-OB, chain ranking, 90 cases
+
+| catalog | `ops:dependsOn` in the store of the first case | AC@1 | AC@3 |
+|---|---|---|---|
+| hand-written catalog | 15 | 0.93 (84/90) | 0.99 |
+| manifests, declared only | 9 | 0.32 (29/90) | 0.33 |
+| manifests, with inferred calls | 16 | 0.93 (84/90) | 0.99 |
+
+The store also holds the dependencies the trace enricher infers from parent spans, which is why the second row is not 0.
+events on the applications named frontend*, manifests with inferred calls, all cases: {'frontend': 436, 'frontend-external': 74}
+
+facts about `frontend-external`, the name the telemetry of the Kubernetes Service in front of `frontend` carries, held in quarantine over all cases: hand-written catalog: 666; manifests, declared only: 0; manifests, with inferred calls: 0
+
+hand-written catalog against the manifests with inferred calls: first application differs in 0 cases, the list of five in 49
+the hand-written catalog names the cache `redis`, as the telemetry does, and the manifests name it `redis-cart`; in 49 of those 49 the lists agree once `redis` is taken out
+
+=== the same with ogrep 0.2.0 plus its ops-gaps branch (06867f4), where the Kubernetes Service frontend-external is an alias of frontend ===
+
+RCAEval RE2-OB, chain ranking, 90 cases
+
+| catalog | `ops:dependsOn` in the store of the first case | AC@1 | AC@3 |
+|---|---|---|---|
+| hand-written catalog | 15 | 0.93 (84/90) | 0.99 |
+| manifests, declared only | 9 | 0.32 (29/90) | 0.33 |
+| manifests, with inferred calls | 16 | 0.93 (84/90) | 0.99 |
+
+The store also holds the dependencies the trace enricher infers from parent spans, which is why the second row is not 0.
+events on the applications named frontend*, manifests with inferred calls, all cases: {'frontend': 510}
+
+facts about `frontend-external`, the name the telemetry of the Kubernetes Service in front of `frontend` carries, held in quarantine over all cases: hand-written catalog: 666; manifests, declared only: 0; manifests, with inferred calls: 0
+
+hand-written catalog against the manifests with inferred calls: first application differs in 0 cases, the list of five in 51
+the hand-written catalog names the cache `redis`, as the telemetry does, and the manifests name it `redis-cart`; in 45 of those 51 the lists agree once `redis` is taken out

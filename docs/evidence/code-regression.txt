@@ -20,3 +20,26 @@ latency, median of 150 runs each, the binaries taking turns:
   similar INC-5377   old 23.85 ms   new 23.27 ms
   blast ledger-db    old 23.98 ms   new 23.94 ms
 top-1 similar past incident shares the root cause: 82/89 = 0.92; any of top 3: 0.94; chance about 0.20
+
+=== after Phase 11: ograph at 96840e6 (old) against this branch (new) ===
+
+identical  before_INC-5377.json
+identical  blast_ledger-db.json
+identical  chains_INC-5377.json
+identical  chains_INC-5377_--rank_propagation.json
+identical  news.json
+identical  rcaeval.json
+identical  similar_INC-5377.json
+identical  validate.json
+identical  why_INC-5377.json
+identical  harvest.txt
+identical  rcaeval.txt
+identical  similar.txt
+12 of 12 outputs identical
+| chain | 0.93 | 0.99 | 0.98 |
+top-1 similar past incident shares the root cause: 82/89 = 0.92; any of top 3: 0.94; chance about 0.20
+latency, median of 150 runs each, the binaries taking turns:
+  before INC-5377    old 24.90 ms   new 24.68 ms
+  chains INC-5377    old 23.45 ms   new 23.91 ms
+  similar INC-5377   old 23.95 ms   new 23.87 ms
+  blast ledger-db    old 23.91 ms   new 23.95 ms

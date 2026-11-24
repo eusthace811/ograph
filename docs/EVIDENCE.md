@@ -249,7 +249,7 @@ A new `docs` source reads runbooks. It takes an alias only from a phrase that st
 
 We first also let the model find aliases, with the same quote check. It found no alias that the phrases missed, and it added a false one, `ledger-db -> postgres`, whose quote passed. That path was removed, so no model reads runbooks.
 
-In RCAEval, `frontend-external` stays quarantined as a near match for `frontend`, because no text states it is an alias. The Kubernetes Service selector does state it. Reading that selector belongs in `ogrep --entities`.
+In RCAEval, `frontend-external` stays quarantined as a near match for `frontend`, because no text states it is an alias. The Kubernetes Service selector does state it. Reading that selector belongs in `ogrep --entities`, and Phase 11 measures an ogrep that does.
 
 ### An explicit "unknown" (`llm-gate.txt`)
 
@@ -294,6 +294,71 @@ A scoring rule gave a commit a 0.9 prior on the link to a later event located in
 `ograph code` takes a median of 67 ms. The first version ran each ogrep call in turn and cost 5.9 s more than the plain harvest. One call for all log files was faster again but found the right file for 75/88 bursts, not 84, because ogrep merges similar messages into one template and answers only for its first line. The harvest now makes one call per service, per stack trace and per log file, on up to eight threads.
 
 Not measured: a Windows run, a repository larger than 654 files, and whether commit events change `ograph similar` on a workspace that has both a code source and accepted verdicts.
+
+## Phase 11: more from ogrep (`catalog.txt`, `code-history.txt`, `log-new.txt`, `code-regression.txt`)
+
+Phase 10 ended with a list of what else ogrep could give. This phase builds each item and measures it. Three of them needed changes in ogrep itself, which are on its `ops-gaps` branch (five commits after 0.2.0); every number below says which ogrep it was measured with. Measured on 2026-11-24.
+
+| Addition | Result |
+|---|---|
+| Inferred calls as dependencies (`catalog`, on by default) | On RCAEval, a catalog read from Online Boutique's own Kubernetes manifests scores AC@1 0.32 with declared dependencies only, and 0.93 with the inferred calls, the same as the hand-written catalog |
+| The commit that first added a log message (`ograph code`, `ogrep --introduced`) | The commit `git log -S` gives for 81/88 (0.92), an older commit for 4, none for 3 (rightly for 2). Median age 443 days, so none of them is in the 30-minute window |
+| The first lines of a new error message (`LOG_NEW`) | Synthetic: an event for 88/88 single or double lines the burst rule misses, 0 events on 128 controls. RCAEval: 11 events in 90 cases, 9 on the injected service or a caller of it, and 0 of 90 rankings change |
+| What a deployment changed (`ogrep --timeline X --since P --until V`, newer ogrep) | Changed files for 40/40 deployments between release tags, holding every file `git log P..V` lists for the service. `ograph code` puts the deployment first with the located file for 40/40 |
+| Tests and callers of a located line (skill text only) | `ogrep --related-tests` puts the conventionally named test first for 3/3 (the repository has only three such pairs). `ogrep --callers -w` lists every file with a call for 36/40 functions |
+
+### Inferred calls (`catalog.txt`, `scripts/eval/catalog_eval.py`)
+
+`ogrep --entities` reports two kinds of edge: `depends_on`, which a file declares, and `calls`, which it infers from an environment variable that holds another service's address. ograph took only the first. Kubernetes manifests declare no dependencies, so a catalog read from them had applications and no edges.
+
+RCAEval RE2-OB runs on Online Boutique. Its fixture catalog is a Backstage file written by hand with 15 dependencies. The project's own `release/kubernetes-manifests.yaml` gives 16 inferred calls: the same 15 (it names the cache `redis-cart`, the fixture names it `redis`) and `loadgenerator -> frontend`.
+
+| Catalog | Dependencies it gives | Chain AC@1 | AC@3 |
+|---|---|---|---|
+| Hand-written Backstage file | 15 | 0.93 (84/90) | 0.99 |
+| Manifests, declared only (`inferred = false`) | 0 | 0.32 (29/90) | 0.33 |
+| Manifests, with inferred calls (the default) | 16 | 0.93 (84/90) | 0.99 |
+
+The first application is the same in all 90 cases between the first and the third row. The list of five differs in 49, and in all 49 the lists agree once `redis` is taken out: the telemetry calls the cache `redis`, which the manifests do not name. On the OpenTelemetry demo, 46 of ogrep's 56 inferred calls are also declared in Compose, and 10 are not, among them `shipping -> quote` and `frontend-proxy -> image-provider`. We read those 10 and each is a real address in the service's environment. A call that is also declared is recorded as declared only. `telemetry` and `observes` edges are not taken: every service exports to the collector, which would put it upstream of everything.
+
+### The commit that first added a message (`code-history.txt`, `scripts/eval/code_history_eval.py`)
+
+The commits `ograph code` lists are those in the correlation window. A message can enter the code long before it is first written. For each located log line, `ograph code` now asks `ogrep --introduced` for the commit that first added the longest constant part of its template, among the commits made until the incident.
+
+On the 88 real log statements of the OpenTelemetry demo, each written as a burst within the last week, the answer is the commit `git log -S` gives for the whole statement in 81. In 4 it is an older commit: the constant part was in the code before the statement got its present wording. In 3 there is none. For 2 of those that is right: the statement was added after the incident's time, and git has none either. In the third every constant part of the template is shorter than the 12 characters ograph asks about. The commits are a median of 443 days old. With the lookups `ograph code` takes a median of 137 ms. They need `ogrep index --history`, which took 1.4 s and 99 MB for the 2,493 commits; without it `ograph code` answers as before and `degraded` says how to build it.
+
+### New messages (`log-new.txt`, `scripts/eval/lognew_eval.py`)
+
+The burst rule needs three lines of a template in a minute. One or two first lines of a message a service never wrote were not events. `ogrep --log-templates --new-since` flags such messages, but it reads only plain lines with a leading ISO timestamp and gives no service, so it returned nothing for JSON logs. ograph's own Drain already holds each template's first line, so the rule is there: the first error line of a template absent from the 600 seconds of the service's log before it is an event with signal `LOG_NEW` and the lowest severity, unless a burst of the same template says it already.
+
+- **Synthetic.** 88 logs with forty quiet minutes and then one or two lines of a real message. Without the rule 0 of 88 have any log event and `ograph before` is empty for all 88. With it all 88 have an event, and it points at the right file for 84. 40 logs where the message recurs from the start and 88 bursts give 0 `LOG_NEW` events.
+- **RCAEval.** The 90 cases hold 46 bursts and now 11 new messages, in 7 cases, all after the fault was injected: 5 on the injected service, 4 on a service that calls it, 2 elsewhere. One is `failed to send order confirmation ... code = Unavailable` on checkoutservice, once, when the fault was on emailservice. No ranking changes (0 of 90).
+
+The rule adds visibility, not accuracy: it did not move any ranking here. No causal pair was added for it.
+
+### What a deployment changed (`code-history.txt`)
+
+A deployment record names a version. When that version and the one the service ran before are revisions of a code repository, ograph asks `ogrep --timeline SERVICE --since P --until V` and keeps the files of those commits on the deployment, up to 200. ogrep 0.2.0 read a tag in `--since` as an approximate date (5 commits to checkout since tag 2.0.0, where git lists 102) and had no `--until` there. The `ops-gaps` branch bounds by ancestry: 20 commits for `2.0.0..2.1.0`, the same 20 `git log` lists.
+
+For 40 pairs of consecutive release tags and a service that changed between them, every deployment carries files, and every file `git log P..V -- src/S` lists is among them. 70% of the files it carries are outside `src/S`: ogrep assigns a whole commit to each service it touches, and a dependency update often touches several. With a burst of a message from one changed file ten minutes after the deployment, `ograph code` lists the deployment first with that file under `touches` for 40/40. With ogrep 0.2.0 the deployments keep no files and the harvest line says `DEGRADED` with the reason.
+
+### Gaps closed in ogrep (`ops-gaps` branch)
+
+| Gap | Measured |
+|---|---|
+| `--until` for `--timeline` and `--suspects` | `ograph suspects INC` now passes the time the incident opened. With 0.2.0 it asks again without it and says that later commits count too |
+| `--timeline A,B,C` | The code harvest makes one call for all services, where 0.2.0 needs one per service. On the Phase 10 workspace the harvest took 4.33 s with one call and 4.61 s with 34; Phase 10 measured 3.8 to 4.6 s for the same harvest, so the gain is within the noise |
+| C# stack frames | Stack frames resolve for 88/88 error reports, up from 86/88 |
+| A Kubernetes Service that selects one workload is its alias | With the manifests as the catalog, 0.2.0 makes `frontend-external` a second application, which takes 74 of the 510 events on the frontend over the 90 cases. With the branch all 510 are on `frontend`, and the first application is still the same in 90/90. The hand-written catalog holds the 666 facts of those 74 events in quarantine |
+| A revision in `--since` or `--until` bounds by ancestry | See deployments above |
+
+ogrep's own suite passes with the five commits (1,139 tests) and its `make check` is clean.
+
+### What it does not change
+
+`scripts/eval/ab_compare.sh` with the binary from before Phase 10 and the one after this phase: 12 of 12 outputs byte-identical (the demo's harvest and eight queries, the 90 RCAEval rankings at chain AC@1 0.93, the similar-incident scores at 0.92), and query latency within 0.5 ms (24 ms). A fresh harvest of the largest RCAEval case (17 MB of logs, 81 MB of traces) takes 0.29 s with both. `code-after-phase-11.txt` repeats the Phase 10 evaluation with both ogrep versions. With 0.2.0 its six results are the same. Two things differ: the store holds 10 more triples, the inferred calls of that repository, and `ograph code` takes a median of 80 ms where it took 67 ms. That workspace has no history index, so each call now asks ogrep for the introducing commit and gets a refusal (the cause is inferred, not measured).
+
+Not measured: Windows, a repository with real deployment records (the versions here are release tags), `--related-tests` on a repository with more than three conventionally named tests, and whether `LOG_NEW` events change `ograph similar` scores on workspaces with accepted verdicts. One risk in ogrep's revision rule is inferred, not measured: a value of four or more hexadecimal characters, such as `100d`, is read as a commit when it is a unique abbreviation of one.
 
 ## Why not a pure knowledge graph (`purekg.txt`, `rcaeval-final.txt`)
 

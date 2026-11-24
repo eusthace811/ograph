@@ -1,0 +1,18 @@
+90 cases: 46 log bursts (LOG_ERROR) and 11 new messages (LOG_NEW), in 7 cases.
+    4 on a caller of it, after the injection
+    2 on another service, after the injection
+    5 on the injected service, after the injection
+
+| case | fault on | event on | lines | message |
+|---|---|---|---|---|
+| c-17329102bc | recommendationservice (loss) | recommendationservice | 2 | Transient error StatusCode.DEADLINE_EXCEEDED encountered while exporting traces to <*> ret |
+| c-1f89afb4ec | emailservice (loss) | checkoutservice | 1 | failed to send order confirmation to "someone@example.com": rpc error: code = Unavailable  |
+| c-2e930efa74 | checkoutservice (loss) | checkoutservice | 1 | <*> <*> traces export: context deadline exceeded: rpc error: code = <*> desc = <*> <*> <*> |
+| c-2e930efa74 | checkoutservice (loss) | checkoutservice | 1 | <*> <*> traces export: context deadline exceeded: rpc error: code = Unavailable desc = con |
+| c-3cc10cccb6 | checkoutservice (cpu) | frontend | 1 | failed to retrieve ads |
+| c-870814bb24 | recommendationservice (loss) | recommendationservice | 4 | Transient error StatusCode.DEADLINE_EXCEEDED encountered while exporting traces to <*> ret |
+| c-9fa5601eb7 | recommendationservice (loss) | frontend | 1 | failed to retrieve ads |
+| c-9fa5601eb7 | recommendationservice (loss) | shippingservice | 1 | Tracing enabled, but temporarily unavailable |
+| c-9fa5601eb7 | recommendationservice (loss) | shippingservice | 1 | Stats enabled, but temporarily unavailable |
+| c-b9ecf644af | emailservice (loss) | checkoutservice | 1 | failed to send order confirmation to "someone@example.com": rpc error: code = Unavailable  |
+| c-b9ecf644af | emailservice (loss) | emailservice | 1 | Transient error StatusCode.DEADLINE_EXCEEDED encountered while exporting traces to <*> ret |

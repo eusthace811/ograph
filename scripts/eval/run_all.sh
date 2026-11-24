@@ -25,6 +25,11 @@ $B/purekg_bench $C "$(python3 -c "import json;print(json.load(open('$C/incidents
 # The code gates need a clone of a repository with services, code and history, for example
 # git clone https://github.com/open-telemetry/opentelemetry-demo data/opentelemetry-demo
 [ -d data/opentelemetry-demo ] && python3 scripts/eval/code_eval.py --bin $B/ograph --repo data/opentelemetry-demo --work target/code-eval > $E/code.txt
+[ -d data/opentelemetry-demo ] && python3 scripts/eval/code_history_eval.py --bin $B/ograph --repo data/opentelemetry-demo --work target/code-history-eval > $E/code-history.txt
+python3 scripts/eval/lognew_eval.py --bin $B/ograph --cases data/rcaeval-cases > $E/log-new.txt
+# The catalog gate needs a git repository holding release/kubernetes-manifests.yaml of
+# GoogleCloudPlatform/microservices-demo (git init, add the file, commit).
+[ -d data/online-boutique-manifests ] && python3 scripts/eval/catalog_eval.py --bin $B/ograph --cases data/rcaeval-cases --manifests data/online-boutique-manifests --work target/catalog-eval --edges data/opentelemetry-demo > $E/catalog.txt
 tail -n 3 $E/*.txt
 # The 10x store run takes about 20 minutes plus compaction:
 # OGRAPH_CACHE_MB=4096 $B/store_bench --scale 10 --no-oxigraph --chunk 5000000 > $E/store-x10.txt

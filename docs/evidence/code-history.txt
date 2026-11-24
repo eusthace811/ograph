@@ -1,0 +1,50 @@
+code_history_eval.py with ogrep 0.2.0 plus its ops-gaps branch (06867f4)
+
+repository https://github.com/open-telemetry/opentelemetry-demo.git at 8f6908eae154: 34 services, 88 unique log statements
+ogrep ogrep 0.2.0; seed 7
+
+`ogrep index --history` took 1.3 s and holds 99 MB for 2493 commits (exit 0).
+
+harvest with the new-message detector: 5.48 s; harvested 476 batches in 5.4 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+harvest without the new-message detector: 5.29 s; harvested 476 batches in 5.2 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+`ograph validate`: 0 violations
+
+## H. The commit that first added a message
+
+88 incidents within the last week, each a burst of one real log message; a line of code was located for 88.
+`ograph code` names the commit `git log -S` gives for the whole statement for 81/88 = 0.92. For 4 more it names an older commit: the constant part of the message was in the code before the statement got its present wording. It names none for 3, of which 2 are right: the statement was added after the incident's time, so git has none either. It names a later commit for 0.
+The commits were made a median of 443 days before the incident (shortest 0.1); 85 of 85 are older than the 30-minute window `commits` covers.
+`ograph code` took a median of 137 ms (p90 146 ms) with the history lookups.
+
+## I. A message seen once or twice
+
+88 cases: forty quiet minutes of one service, then one line (half the cases) or two of a real error message it had never written, and an incident two minutes later.
+Without the detector (`log_new_after_s = 0`) 0/88 have any log event and `ograph before` shows an event for 0/88.
+With it, 88/88 = 1.00 have a LOG_NEW event (0 also a burst), `ograph before` shows an event for 88/88, and the event points at the right file for 84/88 = 0.95.
+Controls: 40 logs where the same kind of message recurs every five minutes from the start give 0 LOG_NEW events; the 88 bursts of H, which the burst detector already reports, give 0.
+
+## J. What a deployment changed
+
+40 cases from 28 release tags: service S deployed at tag P, then at the next tag V, where `git log P..V -- src/S` lists files (40 with a file that holds one of the log statements, whose burst follows the deployment by ten minutes).
+The deployment of V carries changed files for 40/40; every file git lists for the service is among them for 40/40 (0 more are cut at the 200-file limit).
+Mean share of git's files that the deployment lists: 1.00. Mean share of its files outside `src/S` (commits that also touched other paths): 0.70.
+`ograph code` lists the deployment for 40/40 of the incidents with a statement and puts it first with the located file among its changes for 40/40.
+
+## K. From a located line to tests and callers
+
+3 source files with a test file named after them by their language's convention: `ogrep --related-tests FILE` puts that test first for 3/3, in the first three for 3/3.
+40 Go and Python functions defined once and called somewhere: `ogrep --callers -w NAME` lists every file a regular expression finds a call in for 36/40.
+
+=== the same with ogrep 0.2.0: J only, the rest is the same ===
+
+harvest with the new-message detector: 5.25 s; harvested 476 batches in 5.2 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+harvest without the new-message detector: 4.97 s; harvested 476 batches in 4.9 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+  harvest/deployments/deployments.jsonl: 560 proposed, 560 accepted, 0 quarantined, +0 -0 quads, DEGRADED: deployments.jsonl: 63 of 63 deployments could not be compared with the version before, so they list no changed files: this ogrep cannot compare two revisions; it needs a release after 0.2.0 (0.00
+`ograph validate`: 0 violations
+## J. What a deployment changed
+
+40 cases from 28 release tags: service S deployed at tag P, then at the next tag V, where `git log P..V -- src/S` lists files (40 with a file that holds one of the log statements, whose burst follows the deployment by ten minutes).
+The deployment of V carries changed files for 0/40; every file git lists for the service is among them for 0/40 (0 more are cut at the 200-file limit).
+`ograph code` lists the deployment for 0/40 of the incidents with a statement and puts it first with the located file among its changes for 0/40.
+
+## K. From a located line to tests and callers
