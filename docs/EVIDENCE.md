@@ -382,6 +382,261 @@ These are the reasons, each measured above:
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.
 
+## Phase 12, lane A1: chain scores and past verdicts
+
+### Why a chain scored what it did (`chain-scores.txt`, `scripts/eval/chain_scores_gate.py`)
+
+Each chain now carries `scores`, how every link scored, and `weakest`, the link to check first. The idea comes from semantica's causal-distance report. The gate, set before the code: the parts must recompute every link score and every chain confidence within 1e-9 on all 90 RCAEval cases, and the rankings must stay byte-identical.
+
+`chain_scores_gate.py` asks `ograph chains --json --top 1000` for each case in both rank modes, with the default weights and with `w_time = 0.5`, `w_severity = 0.3`, `known_pair_prior = 0.8`, then recomputes from the parts. RCAEval has no known pair on a best chain, so the gate also takes the demo, which has 24.
+
+| Check | Result |
+|---|---|
+| Chains and links recomputed | 2,454 chains, 3,533 links |
+| Largest difference between a link score and `w_time * time + w_severity * severity`, or the prior for a known pair | 0 |
+| Largest difference between a chain's confidence and the geometric mean of its link scores | 1.1e-16 |
+| Stored `corr:confidence` against the confidence rounded to the four decimals the graph keeps | 585 chains, difference 0 |
+| Links whose `from`, `to`, `severity` or the chain's `weakest` disagree with the chain | 0 |
+
+The dependency behind a link is `catalog` for 2,194 links, `same_app` for 836 and `indirect` for 503. No link is `trace`: on RCAEval every dependency the spans show is also in the catalog. A unit test covers that value (`a_link_names_where_its_dependency_comes_from`).
+
+Not done: `corr:linkScore` in the graph. A score belongs to a link, and the graph keeps a chain's links as plain `corr:link` events, so storing it needs a node per link. The store cannot tell a declared catalog dependency from one ogrep inferred from configuration, since both are in the catalog graph, so `edge` reports both as `catalog`.
+
+### Accepted causes as a ranking input (`precedent.txt`, `scripts/eval/precedent_eval.py`)
+
+`precedent_weight` adds to a root's score when a similar past incident's accepted cause has the same application and signal. The gain is the weight times the similarity. `chains` consults the three most similar incidents that have an accepted cause and names the one it matched. The idea comes from semantica's decision precedents. The keep rule, set before the run: held-out AC@1 must beat the baseline, with no case made wrong among those whose most similar judged incident has another root.
+
+The eval puts all 90 cases in one store and accepts every incident's true chain. It ranks each incident leave-one-out: the verdicts of all other incidents count, and its own never does. The weight is chosen on rep 1 and reported on reps 2-3.
+
+| Protocol | Weight chosen on rep 1 | Held-out AC@1 at weight 0 | Held-out AC@1 at the chosen weight | Fixed, broken (all 90) | Misleading cases still right |
+|---|---|---|---|---|---|
+| Leave-one-out | 0.01 | 0.933 | 1.000 | 6, 0 | 4 of 4 |
+| Earlier incidents only, as production sees them | 0.01 | 0.933 | 1.000 | 6, 0 | 8 of 8 |
+
+The rule passes. Why so small a weight is enough: the six cases the baseline gets wrong are exact ties at a score of 1.0, which breadth and onset then decide wrongly (measured: `ograph chains --json` on those six cases). Any positive weight breaks such a tie toward the root people accepted before. A larger weight starts to overrule real score gaps: with earlier incidents only, 0.05 breaks one case and 0.3 breaks three, all among the eight misleading ones.
+
+RCAEval repeats every fault three times on the same service, so leave-one-out always has two twins of each incident. Part 2 of the eval removes them, and was added after the first run as a harder test for harm. It accepts verdicts only on the incidents of three fault kinds and ranks the incidents of the other three, both ways round. AC@1 goes from 0.933 to 1.000 at weight 0.01 in both halves, three cases fixed and none broken in each. The misleading cases, 2 and 4, stay right. The first breaks come at 0.5 and at 0.2.
+
+The mark alone, at weight 0, agrees with the label. Leave-one-out, 84 of 90 rank-1 roots carry a precedent and all 84 are the true root, while none of the 6 unmarked ones is. Across faults, 82 of the 83 marked rank-1 roots are the true root.
+
+Verdict: KEEP, with the default left at 0. Two reasons to leave it off until a team turns it on. RCAEval has five root services, so every root has many precedents, and an estate where causes rarely repeat will see few matches. With a weight, a verdict changes the live ranks of similar incidents at once, but their stored `corr:rank` only at the next harvest, so `ograph verdict id:chain/<incident>-<rank>` can then name another chain than the one `chains` prints at that rank. A chain id is not affected.
+
+With verdicts stored and the weight at 0, every ranking equals the ranking without verdicts (`precedent.txt`, line 6).
+
+### Rejections on similar incidents (`ruled-out.txt`, `scripts/eval/ruled_out_eval.py`)
+
+`similar` now lists `ruled_out`: the application, signal and evidence of the roots a verdict rejected on each past incident. Before, it read only accepted causes.
+
+Two more uses of a rejection were built, measured and removed: `ruled_out_weight`, which lowered a root matching a rejection on a similar incident, and a "ruled out" mark on that root in `chains`. The eval rejects the wrong rank-1 chain on the six incidents that have one, then ranks every incident again.
+
+| Weight | AC@1, earlier incidents only | Broken |
+|---|---|---|
+| 0 | 0.933 | 0 |
+| 0.01 | 0.944 | 0 |
+| 0.02 to 0.15 | 0.933 | 1 |
+| 0.2 | 0.911 | 3 |
+| 0.5 | 0.844 | 9 |
+
+Rep 1 does not move at any weight up to 0.2, so the weight it chooses is 0, and the held-out result is the baseline's 0.933. The rule fails. Leave-one-out chooses 0.01 for 0.950 held out, but 0.02 already breaks a case.
+
+The mark is worse than no mark. With earlier incidents only, 11 rank-1 roots match a rejection, and 9 of them are the true root. An (application, signal) pair is too coarse here: nearly every root on RCAEval is a `METRIC_ANOMALY`, so a rejection of cartservice on one incident says little about cartservice on the next. A similarity floor helps: at 0.85, the lowest floor that leaves no mark on a true root in rep 1, reps 2-3 have 3 marked rank-1 roots and 1 of them is the true root. Three cases cannot carry a default.
+
+Verdict: `similar`'s `ruled_out` is kept, as a report of what people recorded. `ruled_out_weight` and the mark are dropped. The code that ran this eval is the commit titled "Experiment: past verdicts as a ranking input in chains", and `ruled_out_eval.py` needs a binary built from it.
+
+### What it does not change
+
+`scripts/eval/chain_scores_evidence.sh` runs `ab_compare.sh` with the binary from before this lane. 9 of 12 outputs are byte-identical, among them the 90 RCAEval rankings (chain AC@1 0.93) and the similar-incident scores (0.92). The three that differ are the demo's two `chains` answers and its `similar` answer, and `scripts/eval/same_but_for.py` shows they are equal once `scores`, `weakest` and `ruled_out` are removed.
+
+Latency was measured while other builds shared the machine, which is why every query takes 80 ms or more where it took 14 ms on a quiet machine. The demo's queries differ by 2 ms or less either way, inside that noise. On the store with 90 incidents and 90 accepted verdicts, `chains` takes a median of 109 ms against 102 ms. The 7 ms is the lookup of the precedent, which computes the signature of every other incident (the cause is inferred from the code, not profiled). A store without verdicts skips it.
+
+Not measured: precedents on a workspace whose causes rarely repeat, a verdict whose root's telemetry is gone as a precedent (a unit test covers `similar` there, none covers `chains`), and `precedent_weight` with `rank = "propagation"`.
+
+## Phase 12, lane A2: verdict history, evidence policy, replay (`verdicts.txt`, `replay-grid.txt`)
+
+**Verdict history.** Judging a chain again used to replace its verdict. Now the chain's graph keeps every verdict, and each earlier one is `rca:supersededBy` the next. The gate is a contract test, `judging_a_chain_again_keeps_every_verdict_and_the_latest_decides`. It accepts a chain, rejects it, re-harvests, and accepts it again. Both events stay in order (`id:verdict/<chain>`, then `-v2`, then `-v3`). `inc:cause` is gone after the reject and back after the second accept, and `ograph why CHAIN` lists the events oldest first, each with the rank the chain had when judged. `similar_reports_only_the_current_verdict` checks that a rejected chain stops giving `similar` a cause. The results are in `verdicts.txt`. Nothing else moved. With the binary from before this lane and the one after, `rcaeval_score.py` gives the same top 5 for all 90 cases in both ranking modes (chain AC@1 0.93, propagation 0.83), and `similar_eval.py` gives the same output (top-1 82/89 = 0.92). The demo harvest quarantines the same 3 facts. Harvest time showed no difference beyond machine noise: four alternating merged harvests took 25.2, 29.8, 25.2 and 15.5 s with nine lanes sharing the machine.
+
+**Evidence policy.** `[verdict] require_evidence`, `evidence_patterns` and `evidence_in_store` are off by default, and a verdict without evidence is still stored as "(none given)" (`without_a_policy_a_verdict_needs_no_evidence`). `the_evidence_policy_refuses_a_verdict_and_says_why` asserts each refusal's full message, and that a refused verdict writes nothing. A pattern that is not a regular expression fails when the workspace opens.
+
+**Replay.** `ograph replay --set k=v` correlates every judged incident twice, under `config.toml` and under the overrides. It counts flips (verdicts that only the overrides contradict) and fixed verdicts (the reverse). The gate is `scripts/eval/replay_gate.py`. It harvests each RCAEval case into its own store, accepts its true chain (90 of 90), and then, at the configured settings and at each of the 206 propagation weight points of `rcaeval_score.py --grid`, runs both the grid's `ograph chains` and `ograph replay`. AC@1 from the replay is the share of verdicts the configured settings agree with, minus flips, plus fixed. It matched the grid's AC@1 at all 207 points, on all 90 cases, and on both splits, with 0 of 18,630 case-points differing. At the configured settings it is 0.9333, and at the shipped propagation weights `(0.4, 0.5, 0.1, 0.0)` it is 0.8333, as `rcaeval-final.txt` reports. Each replay process, which opens the store and correlates one incident twice, took a median of 84 ms on the shared machine (100 ms in an earlier run, on the binary before a label rename, with the same 207/207 result). One replay over the merged 90-verdict store from `similar_eval.py` took 0.08 s in three runs back to back. The slowest of five runs took 0.46 s. That store lists the 6 verdicts the configured settings already contradict. With `--set rank=propagation`, 9 verdicts flip and 1 is fixed, and the command exits 1.
+
+**`rcaeval-grid.txt` is stale.** Its tuning-split numbers come from a correlator older than the "proximity runs from the end of an episode" change. For example, it gives `(0.4, 0.5, 0.1, 0.0)` 0.87, and the current `ograph chains` gives 0.77. So no replay can reproduce that file, because the current ranking does not either. The gate compares the replay with the grid recomputed by the same binary, and `replay-grid.txt` holds every point. The recomputed grid still does not generalize. Its five best tuning points (0.90 on rep 1) score 0.72 to 0.77 on the held-out reps, against 0.87 for the shipped weights.
+
+**Not done.** Chains store `corr:settings`, and a verdict copies the chain's `corr:rank` and `corr:settings` as `rca:rank` and `rca:settings`. Replay uses them only to report how many stored chains predate the current settings. It does not reconstruct old settings from the hash. A workspace whose `.ograph/ontology.ttl` predates this lane quarantines `corr:settings` and refuses verdicts (`rca:supersededBy` is unknown to it) until the ontology is updated, as for any new term.
+
+## Phase 12, lane B: ontology tooling (`time_order.txt`, `ontology_diff.txt`, `ontology_lint.txt`, `coverage_decline.txt`, `lane-b-regression.txt`)
+
+### Time order (`time_order.txt`)
+
+`shapes.ttl` now requires `evt:at <= evt:until` on every node with an end, and `evt:at <= inc:resolvedAt` on every incident with a resolution. A violation quarantines the end time alone. The start is what places the node on the timeline, and the `evt:at` minimum count would reject the whole node if the start were dropped instead.
+
+| Gate | Result |
+|---|---|
+| `gateway_eval`: 3 metric episodes that end before they start, 3 incidents resolved before they opened | 3 of 3 and 3 of 3 end times quarantined, each with its reason; the 6 nodes kept their other facts |
+| `gateway_eval`: 3 ordered episodes and 3 ordered incidents | 6 of 6 end times kept |
+| `shapes_regression.py`: demo and 90 RCAEval cases, harvested under the old and the new `shapes.ttl` | 669 facts quarantined under both; 0 workspaces changed |
+
+On RCAEval the episode shape has metric episodes to check. No RCAEval incident has a resolution time, so only the demo's 3 incidents and the fixtures exercise the incident shape (`ontology_lint.txt`, part 4).
+
+### Ontology diff against stored data (`ontology_diff.txt`, `scripts/eval/ontology_diff_eval.py`)
+
+`ograph ontology diff` used to load the newer ontology with the built-in shapes and never read the store. Now each stored harvest graph goes through the ontology checks and SHACL under both versions, against the rest of the store. The facts that only the newer version rejects are what a re-harvest would quarantine. The gate applies 14 edits of `ograph.ttl` or `shapes.ttl` to the demo. For each edit it compares that prediction with an actual re-harvest under the edited files.
+
+| Gate | Result |
+|---|---|
+| Predicted facts quarantined, per graph, equal the re-harvest's new quarantines | 14 of 14 edits, for example 21 of 21 deployment facts when `evt:Deployment` loses `evt:Event`, and 8 of 8 incident facts when a shape requires `inc:mitigation` |
+| No BREAKING change on a term the store never uses | 0 of 4 edits on unused terms (a class, a property, a superclass edge, a vocabulary) marked BREAKING; each says `(unused)` |
+| A domain or range moved to a superclass | `evt:on` to `og:Thing` reported as widened, nothing quarantined |
+
+### Lints in `ontology check`, shape coverage in `validate` (`ontology_lint.txt`, `scripts/eval/ontology_lint_eval.py`)
+
+| Gate | Result |
+|---|---|
+| On ontology 1.1, the warnings for terms no code writes and event classes no shape requires a time of, against the script's own reading of the enrichers, `ograph.ttl` and `shapes.ttl` | Equal: `evt:E2EFailure`, `evt:Experiment` and the signal values `DEPENDENCY_CHANGE`, `DISCUSSION`, `E2E_FAILURE`, `EXPERIMENT` unwritten; `evt:Experiment` untimed |
+| A sample `proposed.ttl` merged in | 3 of 3 proposed terms flagged as still proposed and unwritten; the 2 properties also flagged for no domain and no range |
+| `sh:targetClass evt:Aletr` in `shapes.ttl` | `check` exits 1 naming `shape:Paged` and `evt:Aletr`; `validate` lists `shape:Paged` among the shapes that matched nothing and still exits 0 |
+
+The four signal values the lint found beyond the two classes had no writer either. `diff_stores.py` ran ontology 1.2, which deletes all six terms, against the 91 stores harvested under 1.1. Every removal was `(unused)` and no stored fact would be quarantined. `ontology check` on 1.2 has no warnings, so any new warning is a regression. On the 91 stores, `shape:Verdict` matches nothing in all of them (no verdicts recorded), and `shape:News`, `shape:Thread` and `shape:IncidentOrder` match nothing in the 90 RCAEval stores, which have no news, chat or resolution times.
+
+### Declined proposals in `ontology coverage` (`coverage_decline.txt`, `scripts/eval/coverage_decline_eval.py`)
+
+The gate as specified is three uncached runs with three demo gaps declined, against three uncached runs without. It is not measured. Every model call returned a usage-limit refusal. The first version of the script passed on those 21 unanswered questions; it now reports `NOT MEASURED` when any question gets no answer. One live run made earlier, on ontology 1.1 before the limit, was replayed from its cache (`--cached`):
+
+| Check | Result |
+|---|---|
+| Declined `ops:KubernetesCluster`, `ops:Revenue`, `ops:Customers` | None in `proposed.ttl`; each reported as declined by `eval`; the same questions' other gaps (`runs`, `lost`, `affectedBy`) still proposed |
+| The 7 other gap questions | 7 of 7 still gaps, the same as without `declined.ttl` |
+| Exit code with undeclined gaps left | 1 |
+
+The replay checks the matching on real model output. It cannot show whether a declined gap stays declined when an uncached run words it differently. That is what the three uncached runs are for. The matching rule handles one kind of change in wording: a different span in the same question ("cluster" against "Kubernetes cluster"). The unit tests cover that rule.
+
+### What it does not change (`lane-b-regression.txt`, `scripts/eval/ab_readonly.py`)
+
+`ab_readonly.py` compares the binary at 25f2bc7 with this lane's binary, both on ontology 1.2. The comparison covers the demo's harvest and eight queries, the 90 RCAEval per-case rankings (chain AC@1 0.93) and the `similar_eval.py` output (top-1 0.92). All are identical except `validate`, whose output is meant to change. `ab_compare.sh` itself writes stores into the eval data directory, so it was not run.
+
+## Phase 12, lane C1: incident field conflicts (`incident-conflicts.txt`, `lane-c1-rcaeval.txt`)
+
+Incident records used to merge silently, the last record winning. The open time anchors the correlation window, so two exports 40 minutes apart changed the candidates and nothing said so. Now a disagreement on the open time, the resolved time, the severity or the service quarantines each value not kept, with its record and the record kept. `[incidents] merge` chooses the record per field, and `last` stays the default. The idea comes from semantica's conflict resolver, which names a strategy per property (`semantica/conflicts/conflict_resolver.py:102-111` lists most-recent and first-seen among them, `:621-648` sets a rule per property).
+
+`scripts/eval/incident_conflicts_eval.py` builds a fixture: INC-1 on checkout opened at T with SEV1 in `incidents/a.json`, and `incidents/b.json` says T+40m and SEV3. The true cause is an alert on ledger-db 10 minutes before T. A decoy alert on payments-api falls inside the window of the later time only.
+
+| Policy | `ograph why INC-1` | Top chain |
+|---|---|---|
+| `last` (default) | open T+40m and SEV3 kept; T and SEV1 quarantined as `incidents/a.json#1 disagrees with incidents/b.json#1 (kept by policy last)` | payments-api (the decoy) |
+| `at = "earliest", severity = "max"` | open T and SEV1 kept; the others quarantined, naming `b.json#1` | ledger-db (the true cause) |
+
+The demo and the 90 RCAEval cases hold one record per incident, so they have 0 conflict entries. The 90 RCAEval rankings are identical to the binary before this lane (`lane-c1-rcaeval.txt`), at chain AC@1 0.93.
+
+The status is not a conflict field. Five behavior tests in `ograph-core/tests/harvest.rs` encode a later export moving an incident from open to resolved, and quarantining that would flag every normal lifecycle. A severity that escalates across exports is flagged, and `severity = "max"` keeps the escalated value.
+
+## Phase 12, lane C1: operator actions from chat (`action-gate.txt`)
+
+Netflix's TIMELINE namespace, what people did, had no class. `evt:OperatorAction` with a closed `evt:actionKind` (ROLLBACK, RESTART, SCALE, FAILOVER, FLAG, CONFIG, DEPLOY) now holds it. A `discussions` source with `actions = true` sends each thread with numbered messages, and the model reports each action with its kind, application, message number and quote. The time is that message's time and the evidence is that message's record; the model never gives a time. Code refuses an action whose message is not in the thread, whose quote is not in that message, whose application the thread does not name, whose clause is a question or holds a proposal, plan or condition word before the action or a negation right before it, or whose quote has no word that states the kind. The gateway then checks the kind and the catalog.
+
+Actions are no root-cause candidates. `before` lists them, and `similar` lists them as mitigations of the incidents they were taken in. An action before an incident opens is mostly a response to its first symptoms, and a rollback or deploy that changed code already has a deployment record. The 90 RCAEval rankings are identical to the binary before this lane (`lane-c1-rcaeval.txt`), and so are the similar-incident scores (0.92).
+
+`scripts/eval/action_gate.py` scores 31 labeled threads in `examples/demo/chat-actions/actions.json` (25 actions; 8 threads only ask, propose or plan). The pass conditions, fixed before any model run: precision at least 0.9 and recall at least 0.8 on (kind, application, time), no action on a proposal-only thread, every time equal to its message's, and no committed action from `bad_model.py`.
+
+| Check | Result |
+|---|---|
+| Broken model, which reports only invented actions | 0 committed; refusals cover every rule: words not in the message, kind outside the vocabulary, unnamed application, missing message, question, proposal, symptom quoted as a restart, low confidence. Audit 0 violations |
+| Existing model gate (`llm_gate.py`) | PASS: 16/16 categories, from the cache, since the prompt without `actions` is byte-identical to the one before |
+| Real model accuracy | Not measured. Every call failed with "the ChatGPT user has reached their Subscription Sharing usage limit" during this lane, so `action-gate.txt` reports 0 committed and FAIL |
+
+Until the accuracy run passes, `actions` is off by default. Rerun `action_gate.py` after a demo harvest once the model answers, and turn it on only if it passes. The labels and the refusal rules were written by the same author, so the rules' recall on real chat is unmeasured even then. One rule changed after a broken-model run, before any real-model run: a kind's cue must start a word, because `kill` matched `OOMKilled`.
+
+## Phase 12, lane C2: similar incidents without telemetry (`similar-writeups.txt`, `similar-writeups-ab.txt`)
+
+Phase 10 left `ograph similar` with nothing to say for an incident that has no telemetry, because its signature was only the applications and signals before the incident. This lane gives every incident a second signature, built from what it states: the application it is on, its stated `fault`, and `inc:faultClass`. `inc:faultClass` is new. It is a closed vocabulary in `ontology.ttl` of 15 fault classes and UNKNOWN, which the model proposes from the incident title when an incidents source sets `classify = true`. As with discussion categories, a class needs a quote from the title, or it becomes UNKNOWN, and the call goes through pi and its cache. An incident with no telemetry is ranked by the stated signature. An incident with telemetry keeps its telemetry matches, and the two rankings are merged by reciprocal rank fusion with k = 60, the rule in semantica's `vector_store/hybrid_search.py` (lines 181 to 219). Equal scores share a rank, so a signature that cannot tell the candidates apart leaves the other's order alone. Measured on 2026-11-25 with ogrep 0.2.0 and `pi:openai/gpt-6-luna`.
+
+The gate was written before the model was run. `scripts/eval/similar_writeups_eval.py` uses code_eval's write-up set (G): six services of the OpenTelemetry demo at `8f6908eae154` by six faults. Each fault gets a past incident titled with its write-up's heading, and a new incident on the same service that words the fault differently, as code_eval's G incidents do. No incident has telemetry. The metric is whether the first answer of `ograph similar` for each new incident is the past incident with the same service and fault. Chance is a uniform pick among the incidents opened before it. The pass condition was top-1 of at least 0.83, the lexical write-up match of Phase 10, and above chance given the application.
+
+| Configuration | Some answer | Top-1 same service and fault | Chance | Chance given the application |
+|---|---|---|---|---|
+| Binary before this lane | 0/36 | 0/36 | 0.019 | 0.123 |
+| Stated signature, no model (the application only) | 36/36 | 0/36 | 0.019 | 0.123 |
+| With `classify = true` | 36/36 | 36/36 (1.00) | 0.019 | 0.123 |
+| The same burst of the same error on every incident's service, no model | 36/36 | 0/36 | 0.019 | 0.123 |
+| That burst, with `classify = true` (fusion) | 36/36 | 36/36 (1.00) | 0.019 | 0.123 |
+
+- **The model's classes.** All 72 titles got the intended class, in each of three runs with an empty cache: 36 write-up headings and 36 new titles, six per fault. That includes the DNS fault, whose new title ("DNS lookups failing, name not resolved") shares no word with its write-up ("resolver returned stale records after a zone change"). It is the only fault whose two titles share no word, so it is the one fault on which Phase 10's lexical match missed 6 of 36.
+- **Without the model the stated signature only narrows to the application.** Ties among one service's incidents fall back to the most recent one, which in this set is always an earlier new incident with another fault. So the 0/36 is a tie broken against the eval, not a ranking. The expected value of a random tie-break is the 0.123 in the last column. Deterministic fields cannot do better here, because a new incident states no fault.
+- **Fusion.** When telemetry cannot tell one service's incidents apart, the fault class picks the right one in 36 of 36 cases. The binary from before this lane gives the same 0/36 as the new one without a model on that workspace.
+- **Would embeddings have been needed?** Not on this set. The closed vocabulary with a model classified 72 of 72 titles correctly and matched 36 of 36. Lexical matching through ogrep got 30 of 36. The vocabulary was written before the run, but by someone who knew the six faults, and each title states its fault plainly. A title that names only a symptom ("checkout errors") gets UNKNOWN by design, and no signature helps there. Embeddings would only be worth measuring for faults that the vocabulary has no class for.
+
+### What it does not change
+
+`scripts/eval/ab_compare.sh` with the binary from before this lane and the new one: 12 of 12 outputs byte-identical. These are the demo's harvest and eight queries, the 90 RCAEval rankings (chain AC@1 0.93) and `similar_eval.py` at 0.92 top-1 (82 of 89). RCAEval's incidents state no fault and are all on `frontend`, so their stated signatures are equal and fusion keeps the telemetry order. Query latency was 103 to 133 ms for both binaries, with old and new within 9 ms of each other in either direction. Other work shared the machine, so this run cannot resolve the 0.5 ms that Phase 10 could (its queries took 23 ms).
+
+### What was tried and removed
+
+The first stated signature also held the applications of an incident's accepted causes. On `similar_eval.py` it raised top-1 from 0.92 to 0.94 (84 of 89), but that gain was a leak. The eval accepts every incident's true chain before it queries, so the query's own verdict picked the past incidents that share its answer. Accepted causes are no longer part of the signature, and the score is 0.92 again.
+
+Not measured: titles that word a fault more vaguely than code_eval's do, a fault outside the vocabulary, a model other than pi's default, and classifying the text of a write-up rather than a title.
+
+## Phase 12, lane D: the lab page (`lab-check.txt`, `lab-browser.txt`)
+
+`ograph lab` now draws, per incident, a timeline with one lane per application, the dependency neighbourhood, and the evidence and verdict of each chain. The SVG is written by ograph, not by a script, so the page reads with scripts off and a test can count its marks.
+
+| Gate | Result |
+|---|---|
+| Every `before` event has exactly one timeline mark, the top chain of `chains` has one arrow per link, and every application in `blast` of the top cause and in `before` is in the neighbourhood. `lab_check.py` takes the expected values from the CLI | 0 failures on the demo (13 events, 8 links, 16 applications) and on 90 merged RCAEval cases (2308 events, 130 links, 760 applications). The behavior test `the_lab_page_marks_every_event_and_link_once_and_draws_every_application` checks the same on a three-alert fixture with literal values |
+| Size: at most 2x the old bytes per incident on the 90-case page (27,120), set before the first measurement | 26,952 bytes per incident (2,425,705 in all, from 1,220,469). The demo went from 13,197 to 38,306 bytes. The first version was 31,559 per incident and failed |
+| Headless Chrome: JavaScript errors, clicks, dark scheme, phone width | 0 errors on both pages. A chain arrow opens its evidence, a neighbourhood click filters the timeline and a second click clears it, the copy button gives the `ograph verdict` line, and at 390 px the page is 390 px wide |
+
+Each part was kept only if it shows an on-call engineer something the rest of the page does not:
+
+- **Timeline: kept.** The old table stopped at 25 events, and 33 of the 90 RCAEval incidents have more (up to 64). Overlapping episodes of one application get their own rows, so no mark hides another.
+- **Replay (range input and play button): dropped.** The x axis already orders events by arrival. Replay would hide events on a page that is read after the fact, and it adds state to a static page.
+- **Chain evidence: kept.** It puts the provenance of each chain event (harvest graph, source, extractor, harvest time, model and confidence when a model proposed the fact) next to the chain, with the current verdict and the command to record one. Per-link score parts are shown when the analysis carries them (`links[].score`, `weakest`), and nothing breaks without them.
+- **Dependency neighbourhood: kept.** It shows applications the timeline has no lane for: silent dependencies and callers of the top cause, a mean of 2.57 per incident on the 90 cases (78 of 90 have one) and 4.75 on the demo.
+
+Not done: a page per incident. The page grows linearly, about 27 KB per incident, so a workspace with thousands of incidents needs a filter on `ograph lab`. The ranking and the correlation are unchanged: this lane does not touch `correlate.rs`, `query.rs` or the CLI.
+
+## Phase 12, lane E: agent surface (`resolve.txt`, `cite-check.txt`, `hook.txt`, `pi-contract.txt`)
+
+### MCP resources, a prompt and read-only hints (`pi-contract.txt`)
+
+`ograph serve --mcp` now declares resources and prompts as well as tools. `scripts/agent/test_pi.mjs` calls every MCP method on the demo and checks literal values: `initialize` capabilities, `tools/list` (12 tools, only `verdict` without `readOnlyHint`), `resources/list`, `resources/templates/list`, `resources/read` for the ontology (byte-equal to `.ograph/ontology.ttl`), the incidents (4, INC-5377 first) and `ograph://incident/INC-5377` (top application ledger-db, chain `inc-5377-a7370ff7d4358525`, blast on ledger-db, INC-4120 similar), an unknown incident, `prompts/list`, `prompts/get` with and without its argument, `ping`, `resolve` and `cite_check` through `tools/call`, and an unknown method. Both parts pass. The pi extension's tool list had not been updated for `code` and `suspects`, so the committed contract test failed before this lane; it now lists all 12.
+
+The `investigate` prompt is built at compile time from `skills/ograph/references/investigation.md`. Each section keeps its rules, drops its example output, names the tool its `ograph VERB` command maps to, and stops at the ogrep hand-over. "What to report" is carried word for word. A unit test checks the tool order (before, chains, similar, blast, code, suspects, news) and the report text against the file. Whether the resources and the prompt help an agent is lane F's measurement. `scripts/agent/mcp_only.sh WORKSPACE INCIDENT` runs pi with MCP tools and resources only and the prompt's text as the task. Its one trial here stopped at the model call: the subscription's usage limit was reached, so no MCP-only answer was recorded.
+
+### `ograph resolve` (`resolve.txt`)
+
+`scripts/eval/resolve_eval.py` labels 228 mentions by a rule fixed before the first run: each catalog name, upper-cased, with `-` and `_` swapped, with one middle letter deleted or two swapped, and with a `-svc` suffix names its application; `-canary`, `-v2`, `legacy-` and a replaced last word (`-eu` to `-uk`) name none. Three catalogs: the demo (10 applications), RCAEval's online-boutique (11) and the gateway gate's six with its four bad names.
+
+| | mentions | name an application | resolved | wrong | recall |
+|---|---|---|---|---|---|
+| demo | 92 | 56 | 56 | 0 | 1.000 |
+| online-boutique | 86 | 53 | 52 | 0 | 0.981 |
+| gateway gate | 50 | 29 | 26 | 0 | 0.897 |
+| all | 228 | 138 | 134 | 0 | 0.971 |
+
+Precision is 1.000. The four misses are short names with `-svc` (`redis-svc`, `cart-svc`, `email-svc` score 0.91 to 0.93) and `currencies-svc` (0.88), which the gateway also quarantines: resolve refuses what a harvest refuses. The gate passes.
+
+### `ograph cite-check` (`cite-check.txt`)
+
+`scripts/eval/cite_eval.py` runs on a copy of the demo. The agent answer in `agent-run.txt` holds 9 citations (2 incidents, 7 application names), all real, and all 9 come back present. A planted answer adds fabricated citations to real ones: random chain digests, incident ids and IRIs no harvest wrote, application near-twins, a real chain cited at the wrong rank, and the 7 chains a narrower window (1800 s to 120 s) stops producing while their events stay.
+
+The first run of the first set missed 3 of 31: `legacy-checkout`, `legacy-payments-api` and `legacy-orders-api` score under 0.80 against their catalog name, so they read as plain words (precision 1.000, recall 0.903, gate FAIL). A name that extends a catalog name with words that are not filler now counts as an unknown application, by the gateway's own sibling rule. A second set, written after that change and before its first run, uses other twin forms (`-staging`, `-blue`, `old-`, `next-`, `-replica`) on other applications and another random seed.
+
+| set | citations | flagged as they should be (stale, unknown) | precision | recall | status exactly right |
+|---|---|---|---|---|---|
+| first, before the change | 51 | 31 (8, 23) | 1.000 | 0.903 | 48 |
+| first | 51 | 31 (8, 23) | 1.000 | 1.000 | 51 |
+| fresh | 64 | 44 (8, 36) | 1.000 | 1.000 | 64 |
+
+The real-answer sample is small: one answer, 9 citations, no chain ids. On `references/investigation.md`, run against the demo, cite-check flagged file names such as `2026-01-ledger-pool.md` as applications; a word joined to a path or a longer identifier no longer counts. That check is not part of the gate.
+
+### Session-start hook (`hook.txt`)
+
+`./x install-hook` adds a Claude Code `SessionStart` hook that runs `ograph status 2>/dev/null || true`. `scripts/eval/hook_eval.py` runs that command with `sh -c`, 20 times per state, on copies of the demo and of one RCAEval case. It is silent with no workspace, with every incident judged after a fresh harvest, and after a re-harvest. It prints one line naming the unjudged incidents, or the file edited after the harvest. All 9 states print what they should.
+
+The first run failed the time limit: medians of 92 to 111 ms and a slowest run of 248 ms. Every read command opened the store for writing, which writes and syncs `store.redb`; its modification time changed on each `ograph status`. On this external disk, with other builds running, that took about 100 ms; a copy on the internal disk took 20 ms. `ograph status` now opens the store read-only and falls back to a normal open when that fails. The store file is no longer touched, medians are 13 to 14 ms and the slowest run is 17.6 ms. The gate passes. The other read commands still open the store for writing.
+
+### What it does not change
+
+`cargo test --workspace` passes. The gateway gate's output is the same as `gateway.txt` except for timings. Correlation, ranking and similarity code did not change, so the RCAEval scores were not rerun.
+
 ## Phase 12, lane F: do agents with ograph name the right root cause (`agent-rca.txt`)
 
 `scripts/eval/agent_rca_eval.py` gives an agent one open incident and asks which application is the root cause. The reply ends with `ROOT: <application>`, and a run passes when that is the labeled root (AC@1). Four arms answer the same incidents:
@@ -505,258 +760,3 @@ No number separates the two builds: every ratio is inside the other build's rang
 - **The time is recording time.** A store that first harvests a year of exports today knows all of it from today.
 - **`serve`, `similar`, `why`, `code`, `news` and `lab` have no `--known-at`.**
 - **Not measured:** a view far back on a large store. Building one reads every graph first written after the time, so its cost grows with what was added since, and it keeps those quads in memory.
-
-## Phase 12, lane A2: verdict history, evidence policy, replay (`verdicts.txt`, `replay-grid.txt`)
-
-**Verdict history.** Judging a chain again used to replace its verdict. Now the chain's graph keeps every verdict, and each earlier one is `rca:supersededBy` the next. The gate is a contract test, `judging_a_chain_again_keeps_every_verdict_and_the_latest_decides`. It accepts a chain, rejects it, re-harvests, and accepts it again. Both events stay in order (`id:verdict/<chain>`, then `-v2`, then `-v3`). `inc:cause` is gone after the reject and back after the second accept, and `ograph why CHAIN` lists the events oldest first, each with the rank the chain had when judged. `similar_reports_only_the_current_verdict` checks that a rejected chain stops giving `similar` a cause. The results are in `verdicts.txt`. Nothing else moved. With the binary from before this lane and the one after, `rcaeval_score.py` gives the same top 5 for all 90 cases in both ranking modes (chain AC@1 0.93, propagation 0.83), and `similar_eval.py` gives the same output (top-1 82/89 = 0.92). The demo harvest quarantines the same 3 facts. Harvest time showed no difference beyond machine noise: four alternating merged harvests took 25.2, 29.8, 25.2 and 15.5 s with nine lanes sharing the machine.
-
-**Evidence policy.** `[verdict] require_evidence`, `evidence_patterns` and `evidence_in_store` are off by default, and a verdict without evidence is still stored as "(none given)" (`without_a_policy_a_verdict_needs_no_evidence`). `the_evidence_policy_refuses_a_verdict_and_says_why` asserts each refusal's full message, and that a refused verdict writes nothing. A pattern that is not a regular expression fails when the workspace opens.
-
-**Replay.** `ograph replay --set k=v` correlates every judged incident twice, under `config.toml` and under the overrides. It counts flips (verdicts that only the overrides contradict) and fixed verdicts (the reverse). The gate is `scripts/eval/replay_gate.py`. It harvests each RCAEval case into its own store, accepts its true chain (90 of 90), and then, at the configured settings and at each of the 206 propagation weight points of `rcaeval_score.py --grid`, runs both the grid's `ograph chains` and `ograph replay`. AC@1 from the replay is the share of verdicts the configured settings agree with, minus flips, plus fixed. It matched the grid's AC@1 at all 207 points, on all 90 cases, and on both splits, with 0 of 18,630 case-points differing. At the configured settings it is 0.9333, and at the shipped propagation weights `(0.4, 0.5, 0.1, 0.0)` it is 0.8333, as `rcaeval-final.txt` reports. Each replay process, which opens the store and correlates one incident twice, took a median of 84 ms on the shared machine (100 ms in an earlier run, on the binary before a label rename, with the same 207/207 result). One replay over the merged 90-verdict store from `similar_eval.py` took 0.08 s in three runs back to back. The slowest of five runs took 0.46 s. That store lists the 6 verdicts the configured settings already contradict. With `--set rank=propagation`, 9 verdicts flip and 1 is fixed, and the command exits 1.
-
-**`rcaeval-grid.txt` is stale.** Its tuning-split numbers come from a correlator older than the "proximity runs from the end of an episode" change. For example, it gives `(0.4, 0.5, 0.1, 0.0)` 0.87, and the current `ograph chains` gives 0.77. So no replay can reproduce that file, because the current ranking does not either. The gate compares the replay with the grid recomputed by the same binary, and `replay-grid.txt` holds every point. The recomputed grid still does not generalize. Its five best tuning points (0.90 on rep 1) score 0.72 to 0.77 on the held-out reps, against 0.87 for the shipped weights.
-
-**Not done.** Chains store `corr:settings`, and a verdict copies the chain's `corr:rank` and `corr:settings` as `rca:rank` and `rca:settings`. Replay uses them only to report how many stored chains predate the current settings. It does not reconstruct old settings from the hash. A workspace whose `.ograph/ontology.ttl` predates this lane quarantines `corr:settings` and refuses verdicts (`rca:supersededBy` is unknown to it) until the ontology is updated, as for any new term.
-
-## Phase 12, lane A1: chain scores and past verdicts
-
-### Why a chain scored what it did (`chain-scores.txt`, `scripts/eval/chain_scores_gate.py`)
-
-Each chain now carries `scores`, how every link scored, and `weakest`, the link to check first. The idea comes from semantica's causal-distance report. The gate, set before the code: the parts must recompute every link score and every chain confidence within 1e-9 on all 90 RCAEval cases, and the rankings must stay byte-identical.
-
-`chain_scores_gate.py` asks `ograph chains --json --top 1000` for each case in both rank modes, with the default weights and with `w_time = 0.5`, `w_severity = 0.3`, `known_pair_prior = 0.8`, then recomputes from the parts. RCAEval has no known pair on a best chain, so the gate also takes the demo, which has 24.
-
-| Check | Result |
-|---|---|
-| Chains and links recomputed | 2,454 chains, 3,533 links |
-| Largest difference between a link score and `w_time * time + w_severity * severity`, or the prior for a known pair | 0 |
-| Largest difference between a chain's confidence and the geometric mean of its link scores | 1.1e-16 |
-| Stored `corr:confidence` against the confidence rounded to the four decimals the graph keeps | 585 chains, difference 0 |
-| Links whose `from`, `to`, `severity` or the chain's `weakest` disagree with the chain | 0 |
-
-The dependency behind a link is `catalog` for 2,194 links, `same_app` for 836 and `indirect` for 503. No link is `trace`: on RCAEval every dependency the spans show is also in the catalog. A unit test covers that value (`a_link_names_where_its_dependency_comes_from`).
-
-Not done: `corr:linkScore` in the graph. A score belongs to a link, and the graph keeps a chain's links as plain `corr:link` events, so storing it needs a node per link. The store cannot tell a declared catalog dependency from one ogrep inferred from configuration, since both are in the catalog graph, so `edge` reports both as `catalog`.
-
-### Accepted causes as a ranking input (`precedent.txt`, `scripts/eval/precedent_eval.py`)
-
-`precedent_weight` adds to a root's score when a similar past incident's accepted cause has the same application and signal. The gain is the weight times the similarity. `chains` consults the three most similar incidents that have an accepted cause and names the one it matched. The idea comes from semantica's decision precedents. The keep rule, set before the run: held-out AC@1 must beat the baseline, with no case made wrong among those whose most similar judged incident has another root.
-
-The eval puts all 90 cases in one store and accepts every incident's true chain. It ranks each incident leave-one-out: the verdicts of all other incidents count, and its own never does. The weight is chosen on rep 1 and reported on reps 2-3.
-
-| Protocol | Weight chosen on rep 1 | Held-out AC@1 at weight 0 | Held-out AC@1 at the chosen weight | Fixed, broken (all 90) | Misleading cases still right |
-|---|---|---|---|---|---|
-| Leave-one-out | 0.01 | 0.933 | 1.000 | 6, 0 | 4 of 4 |
-| Earlier incidents only, as production sees them | 0.01 | 0.933 | 1.000 | 6, 0 | 8 of 8 |
-
-The rule passes. Why so small a weight is enough: the six cases the baseline gets wrong are exact ties at a score of 1.0, which breadth and onset then decide wrongly (measured: `ograph chains --json` on those six cases). Any positive weight breaks such a tie toward the root people accepted before. A larger weight starts to overrule real score gaps: with earlier incidents only, 0.05 breaks one case and 0.3 breaks three, all among the eight misleading ones.
-
-RCAEval repeats every fault three times on the same service, so leave-one-out always has two twins of each incident. Part 2 of the eval removes them, and was added after the first run as a harder test for harm. It accepts verdicts only on the incidents of three fault kinds and ranks the incidents of the other three, both ways round. AC@1 goes from 0.933 to 1.000 at weight 0.01 in both halves, three cases fixed and none broken in each. The misleading cases, 2 and 4, stay right. The first breaks come at 0.5 and at 0.2.
-
-The mark alone, at weight 0, agrees with the label. Leave-one-out, 84 of 90 rank-1 roots carry a precedent and all 84 are the true root, while none of the 6 unmarked ones is. Across faults, 82 of the 83 marked rank-1 roots are the true root.
-
-Verdict: KEEP, with the default left at 0. Two reasons to leave it off until a team turns it on. RCAEval has five root services, so every root has many precedents, and an estate where causes rarely repeat will see few matches. With a weight, a verdict changes the live ranks of similar incidents at once, but their stored `corr:rank` only at the next harvest, so `ograph verdict id:chain/<incident>-<rank>` can then name another chain than the one `chains` prints at that rank. A chain id is not affected.
-
-With verdicts stored and the weight at 0, every ranking equals the ranking without verdicts (`precedent.txt`, line 6).
-
-### Rejections on similar incidents (`ruled-out.txt`, `scripts/eval/ruled_out_eval.py`)
-
-`similar` now lists `ruled_out`: the application, signal and evidence of the roots a verdict rejected on each past incident. Before, it read only accepted causes.
-
-Two more uses of a rejection were built, measured and removed: `ruled_out_weight`, which lowered a root matching a rejection on a similar incident, and a "ruled out" mark on that root in `chains`. The eval rejects the wrong rank-1 chain on the six incidents that have one, then ranks every incident again.
-
-| Weight | AC@1, earlier incidents only | Broken |
-|---|---|---|
-| 0 | 0.933 | 0 |
-| 0.01 | 0.944 | 0 |
-| 0.02 to 0.15 | 0.933 | 1 |
-| 0.2 | 0.911 | 3 |
-| 0.5 | 0.844 | 9 |
-
-Rep 1 does not move at any weight up to 0.2, so the weight it chooses is 0, and the held-out result is the baseline's 0.933. The rule fails. Leave-one-out chooses 0.01 for 0.950 held out, but 0.02 already breaks a case.
-
-The mark is worse than no mark. With earlier incidents only, 11 rank-1 roots match a rejection, and 9 of them are the true root. An (application, signal) pair is too coarse here: nearly every root on RCAEval is a `METRIC_ANOMALY`, so a rejection of cartservice on one incident says little about cartservice on the next. A similarity floor helps: at 0.85, the lowest floor that leaves no mark on a true root in rep 1, reps 2-3 have 3 marked rank-1 roots and 1 of them is the true root. Three cases cannot carry a default.
-
-Verdict: `similar`'s `ruled_out` is kept, as a report of what people recorded. `ruled_out_weight` and the mark are dropped. The code that ran this eval is the commit titled "Experiment: past verdicts as a ranking input in chains", and `ruled_out_eval.py` needs a binary built from it.
-
-### What it does not change
-
-`scripts/eval/chain_scores_evidence.sh` runs `ab_compare.sh` with the binary from before this lane. 9 of 12 outputs are byte-identical, among them the 90 RCAEval rankings (chain AC@1 0.93) and the similar-incident scores (0.92). The three that differ are the demo's two `chains` answers and its `similar` answer, and `scripts/eval/same_but_for.py` shows they are equal once `scores`, `weakest` and `ruled_out` are removed.
-
-Latency was measured while other builds shared the machine, which is why every query takes 80 ms or more where it took 14 ms on a quiet machine. The demo's queries differ by 2 ms or less either way, inside that noise. On the store with 90 incidents and 90 accepted verdicts, `chains` takes a median of 109 ms against 102 ms. The 7 ms is the lookup of the precedent, which computes the signature of every other incident (the cause is inferred from the code, not profiled). A store without verdicts skips it.
-
-Not measured: precedents on a workspace whose causes rarely repeat, a verdict whose root's telemetry is gone as a precedent (a unit test covers `similar` there, none covers `chains`), and `precedent_weight` with `rank = "propagation"`.
-
-## Phase 12, lane C2: similar incidents without telemetry (`similar-writeups.txt`, `similar-writeups-ab.txt`)
-
-Phase 10 left `ograph similar` with nothing to say for an incident that has no telemetry, because its signature was only the applications and signals before the incident. This lane gives every incident a second signature, built from what it states: the application it is on, its stated `fault`, and `inc:faultClass`. `inc:faultClass` is new. It is a closed vocabulary in `ontology.ttl` of 15 fault classes and UNKNOWN, which the model proposes from the incident title when an incidents source sets `classify = true`. As with discussion categories, a class needs a quote from the title, or it becomes UNKNOWN, and the call goes through pi and its cache. An incident with no telemetry is ranked by the stated signature. An incident with telemetry keeps its telemetry matches, and the two rankings are merged by reciprocal rank fusion with k = 60, the rule in semantica's `vector_store/hybrid_search.py` (lines 181 to 219). Equal scores share a rank, so a signature that cannot tell the candidates apart leaves the other's order alone. Measured on 2026-11-25 with ogrep 0.2.0 and `pi:openai/gpt-6-luna`.
-
-The gate was written before the model was run. `scripts/eval/similar_writeups_eval.py` uses code_eval's write-up set (G): six services of the OpenTelemetry demo at `8f6908eae154` by six faults. Each fault gets a past incident titled with its write-up's heading, and a new incident on the same service that words the fault differently, as code_eval's G incidents do. No incident has telemetry. The metric is whether the first answer of `ograph similar` for each new incident is the past incident with the same service and fault. Chance is a uniform pick among the incidents opened before it. The pass condition was top-1 of at least 0.83, the lexical write-up match of Phase 10, and above chance given the application.
-
-| Configuration | Some answer | Top-1 same service and fault | Chance | Chance given the application |
-|---|---|---|---|---|
-| Binary before this lane | 0/36 | 0/36 | 0.019 | 0.123 |
-| Stated signature, no model (the application only) | 36/36 | 0/36 | 0.019 | 0.123 |
-| With `classify = true` | 36/36 | 36/36 (1.00) | 0.019 | 0.123 |
-| The same burst of the same error on every incident's service, no model | 36/36 | 0/36 | 0.019 | 0.123 |
-| That burst, with `classify = true` (fusion) | 36/36 | 36/36 (1.00) | 0.019 | 0.123 |
-
-- **The model's classes.** All 72 titles got the intended class, in each of three runs with an empty cache: 36 write-up headings and 36 new titles, six per fault. That includes the DNS fault, whose new title ("DNS lookups failing, name not resolved") shares no word with its write-up ("resolver returned stale records after a zone change"). It is the only fault whose two titles share no word, so it is the one fault on which Phase 10's lexical match missed 6 of 36.
-- **Without the model the stated signature only narrows to the application.** Ties among one service's incidents fall back to the most recent one, which in this set is always an earlier new incident with another fault. So the 0/36 is a tie broken against the eval, not a ranking. The expected value of a random tie-break is the 0.123 in the last column. Deterministic fields cannot do better here, because a new incident states no fault.
-- **Fusion.** When telemetry cannot tell one service's incidents apart, the fault class picks the right one in 36 of 36 cases. The binary from before this lane gives the same 0/36 as the new one without a model on that workspace.
-- **Would embeddings have been needed?** Not on this set. The closed vocabulary with a model classified 72 of 72 titles correctly and matched 36 of 36. Lexical matching through ogrep got 30 of 36. The vocabulary was written before the run, but by someone who knew the six faults, and each title states its fault plainly. A title that names only a symptom ("checkout errors") gets UNKNOWN by design, and no signature helps there. Embeddings would only be worth measuring for faults that the vocabulary has no class for.
-
-### What it does not change
-
-`scripts/eval/ab_compare.sh` with the binary from before this lane and the new one: 12 of 12 outputs byte-identical. These are the demo's harvest and eight queries, the 90 RCAEval rankings (chain AC@1 0.93) and `similar_eval.py` at 0.92 top-1 (82 of 89). RCAEval's incidents state no fault and are all on `frontend`, so their stated signatures are equal and fusion keeps the telemetry order. Query latency was 103 to 133 ms for both binaries, with old and new within 9 ms of each other in either direction. Other work shared the machine, so this run cannot resolve the 0.5 ms that Phase 10 could (its queries took 23 ms).
-
-### What was tried and removed
-
-The first stated signature also held the applications of an incident's accepted causes. On `similar_eval.py` it raised top-1 from 0.92 to 0.94 (84 of 89), but that gain was a leak. The eval accepts every incident's true chain before it queries, so the query's own verdict picked the past incidents that share its answer. Accepted causes are no longer part of the signature, and the score is 0.92 again.
-
-Not measured: titles that word a fault more vaguely than code_eval's do, a fault outside the vocabulary, a model other than pi's default, and classifying the text of a write-up rather than a title.
-
-## Phase 12, lane C1: incident field conflicts (`incident-conflicts.txt`, `lane-c1-rcaeval.txt`)
-
-Incident records used to merge silently, the last record winning. The open time anchors the correlation window, so two exports 40 minutes apart changed the candidates and nothing said so. Now a disagreement on the open time, the resolved time, the severity or the service quarantines each value not kept, with its record and the record kept. `[incidents] merge` chooses the record per field, and `last` stays the default. The idea comes from semantica's conflict resolver, which names a strategy per property (`semantica/conflicts/conflict_resolver.py:102-111` lists most-recent and first-seen among them, `:621-648` sets a rule per property).
-
-`scripts/eval/incident_conflicts_eval.py` builds a fixture: INC-1 on checkout opened at T with SEV1 in `incidents/a.json`, and `incidents/b.json` says T+40m and SEV3. The true cause is an alert on ledger-db 10 minutes before T. A decoy alert on payments-api falls inside the window of the later time only.
-
-| Policy | `ograph why INC-1` | Top chain |
-|---|---|---|
-| `last` (default) | open T+40m and SEV3 kept; T and SEV1 quarantined as `incidents/a.json#1 disagrees with incidents/b.json#1 (kept by policy last)` | payments-api (the decoy) |
-| `at = "earliest", severity = "max"` | open T and SEV1 kept; the others quarantined, naming `b.json#1` | ledger-db (the true cause) |
-
-The demo and the 90 RCAEval cases hold one record per incident, so they have 0 conflict entries. The 90 RCAEval rankings are identical to the binary before this lane (`lane-c1-rcaeval.txt`), at chain AC@1 0.93.
-
-The status is not a conflict field. Five behavior tests in `ograph-core/tests/harvest.rs` encode a later export moving an incident from open to resolved, and quarantining that would flag every normal lifecycle. A severity that escalates across exports is flagged, and `severity = "max"` keeps the escalated value.
-
-## Phase 12, lane C1: operator actions from chat (`action-gate.txt`)
-
-Netflix's TIMELINE namespace, what people did, had no class. `evt:OperatorAction` with a closed `evt:actionKind` (ROLLBACK, RESTART, SCALE, FAILOVER, FLAG, CONFIG, DEPLOY) now holds it. A `discussions` source with `actions = true` sends each thread with numbered messages, and the model reports each action with its kind, application, message number and quote. The time is that message's time and the evidence is that message's record; the model never gives a time. Code refuses an action whose message is not in the thread, whose quote is not in that message, whose application the thread does not name, whose clause is a question or holds a proposal, plan or condition word before the action or a negation right before it, or whose quote has no word that states the kind. The gateway then checks the kind and the catalog.
-
-Actions are no root-cause candidates. `before` lists them, and `similar` lists them as mitigations of the incidents they were taken in. An action before an incident opens is mostly a response to its first symptoms, and a rollback or deploy that changed code already has a deployment record. The 90 RCAEval rankings are identical to the binary before this lane (`lane-c1-rcaeval.txt`), and so are the similar-incident scores (0.92).
-
-`scripts/eval/action_gate.py` scores 31 labeled threads in `examples/demo/chat-actions/actions.json` (25 actions; 8 threads only ask, propose or plan). The pass conditions, fixed before any model run: precision at least 0.9 and recall at least 0.8 on (kind, application, time), no action on a proposal-only thread, every time equal to its message's, and no committed action from `bad_model.py`.
-
-| Check | Result |
-|---|---|
-| Broken model, which reports only invented actions | 0 committed; refusals cover every rule: words not in the message, kind outside the vocabulary, unnamed application, missing message, question, proposal, symptom quoted as a restart, low confidence. Audit 0 violations |
-| Existing model gate (`llm_gate.py`) | PASS: 16/16 categories, from the cache, since the prompt without `actions` is byte-identical to the one before |
-| Real model accuracy | Not measured. Every call failed with "the ChatGPT user has reached their Subscription Sharing usage limit" during this lane, so `action-gate.txt` reports 0 committed and FAIL |
-
-Until the accuracy run passes, `actions` is off by default. Rerun `action_gate.py` after a demo harvest once the model answers, and turn it on only if it passes. The labels and the refusal rules were written by the same author, so the rules' recall on real chat is unmeasured even then. One rule changed after a broken-model run, before any real-model run: a kind's cue must start a word, because `kill` matched `OOMKilled`.
-
-## Phase 12, lane D: the lab page (`lab-check.txt`, `lab-browser.txt`)
-
-`ograph lab` now draws, per incident, a timeline with one lane per application, the dependency neighbourhood, and the evidence and verdict of each chain. The SVG is written by ograph, not by a script, so the page reads with scripts off and a test can count its marks.
-
-| Gate | Result |
-|---|---|
-| Every `before` event has exactly one timeline mark, the top chain of `chains` has one arrow per link, and every application in `blast` of the top cause and in `before` is in the neighbourhood. `lab_check.py` takes the expected values from the CLI | 0 failures on the demo (13 events, 8 links, 16 applications) and on 90 merged RCAEval cases (2308 events, 130 links, 760 applications). The behavior test `the_lab_page_marks_every_event_and_link_once_and_draws_every_application` checks the same on a three-alert fixture with literal values |
-| Size: at most 2x the old bytes per incident on the 90-case page (27,120), set before the first measurement | 26,952 bytes per incident (2,425,705 in all, from 1,220,469). The demo went from 13,197 to 38,306 bytes. The first version was 31,559 per incident and failed |
-| Headless Chrome: JavaScript errors, clicks, dark scheme, phone width | 0 errors on both pages. A chain arrow opens its evidence, a neighbourhood click filters the timeline and a second click clears it, the copy button gives the `ograph verdict` line, and at 390 px the page is 390 px wide |
-
-Each part was kept only if it shows an on-call engineer something the rest of the page does not:
-
-- **Timeline: kept.** The old table stopped at 25 events, and 33 of the 90 RCAEval incidents have more (up to 64). Overlapping episodes of one application get their own rows, so no mark hides another.
-- **Replay (range input and play button): dropped.** The x axis already orders events by arrival. Replay would hide events on a page that is read after the fact, and it adds state to a static page.
-- **Chain evidence: kept.** It puts the provenance of each chain event (harvest graph, source, extractor, harvest time, model and confidence when a model proposed the fact) next to the chain, with the current verdict and the command to record one. Per-link score parts are shown when the analysis carries them (`links[].score`, `weakest`), and nothing breaks without them.
-- **Dependency neighbourhood: kept.** It shows applications the timeline has no lane for: silent dependencies and callers of the top cause, a mean of 2.57 per incident on the 90 cases (78 of 90 have one) and 4.75 on the demo.
-
-Not done: a page per incident. The page grows linearly, about 27 KB per incident, so a workspace with thousands of incidents needs a filter on `ograph lab`. The ranking and the correlation are unchanged: this lane does not touch `correlate.rs`, `query.rs` or the CLI.
-
-## Phase 12, lane E: agent surface (`resolve.txt`, `cite-check.txt`, `hook.txt`, `pi-contract.txt`)
-
-### MCP resources, a prompt and read-only hints (`pi-contract.txt`)
-
-`ograph serve --mcp` now declares resources and prompts as well as tools. `scripts/agent/test_pi.mjs` calls every MCP method on the demo and checks literal values: `initialize` capabilities, `tools/list` (12 tools, only `verdict` without `readOnlyHint`), `resources/list`, `resources/templates/list`, `resources/read` for the ontology (byte-equal to `.ograph/ontology.ttl`), the incidents (4, INC-5377 first) and `ograph://incident/INC-5377` (top application ledger-db, chain `inc-5377-a7370ff7d4358525`, blast on ledger-db, INC-4120 similar), an unknown incident, `prompts/list`, `prompts/get` with and without its argument, `ping`, `resolve` and `cite_check` through `tools/call`, and an unknown method. Both parts pass. The pi extension's tool list had not been updated for `code` and `suspects`, so the committed contract test failed before this lane; it now lists all 12.
-
-The `investigate` prompt is built at compile time from `skills/ograph/references/investigation.md`. Each section keeps its rules, drops its example output, names the tool its `ograph VERB` command maps to, and stops at the ogrep hand-over. "What to report" is carried word for word. A unit test checks the tool order (before, chains, similar, blast, code, suspects, news) and the report text against the file. Whether the resources and the prompt help an agent is lane F's measurement. `scripts/agent/mcp_only.sh WORKSPACE INCIDENT` runs pi with MCP tools and resources only and the prompt's text as the task. Its one trial here stopped at the model call: the subscription's usage limit was reached, so no MCP-only answer was recorded.
-
-### `ograph resolve` (`resolve.txt`)
-
-`scripts/eval/resolve_eval.py` labels 228 mentions by a rule fixed before the first run: each catalog name, upper-cased, with `-` and `_` swapped, with one middle letter deleted or two swapped, and with a `-svc` suffix names its application; `-canary`, `-v2`, `legacy-` and a replaced last word (`-eu` to `-uk`) name none. Three catalogs: the demo (10 applications), RCAEval's online-boutique (11) and the gateway gate's six with its four bad names.
-
-| | mentions | name an application | resolved | wrong | recall |
-|---|---|---|---|---|---|
-| demo | 92 | 56 | 56 | 0 | 1.000 |
-| online-boutique | 86 | 53 | 52 | 0 | 0.981 |
-| gateway gate | 50 | 29 | 26 | 0 | 0.897 |
-| all | 228 | 138 | 134 | 0 | 0.971 |
-
-Precision is 1.000. The four misses are short names with `-svc` (`redis-svc`, `cart-svc`, `email-svc` score 0.91 to 0.93) and `currencies-svc` (0.88), which the gateway also quarantines: resolve refuses what a harvest refuses. The gate passes.
-
-### `ograph cite-check` (`cite-check.txt`)
-
-`scripts/eval/cite_eval.py` runs on a copy of the demo. The agent answer in `agent-run.txt` holds 9 citations (2 incidents, 7 application names), all real, and all 9 come back present. A planted answer adds fabricated citations to real ones: random chain digests, incident ids and IRIs no harvest wrote, application near-twins, a real chain cited at the wrong rank, and the 7 chains a narrower window (1800 s to 120 s) stops producing while their events stay.
-
-The first run of the first set missed 3 of 31: `legacy-checkout`, `legacy-payments-api` and `legacy-orders-api` score under 0.80 against their catalog name, so they read as plain words (precision 1.000, recall 0.903, gate FAIL). A name that extends a catalog name with words that are not filler now counts as an unknown application, by the gateway's own sibling rule. A second set, written after that change and before its first run, uses other twin forms (`-staging`, `-blue`, `old-`, `next-`, `-replica`) on other applications and another random seed.
-
-| set | citations | flagged as they should be (stale, unknown) | precision | recall | status exactly right |
-|---|---|---|---|---|---|
-| first, before the change | 51 | 31 (8, 23) | 1.000 | 0.903 | 48 |
-| first | 51 | 31 (8, 23) | 1.000 | 1.000 | 51 |
-| fresh | 64 | 44 (8, 36) | 1.000 | 1.000 | 64 |
-
-The real-answer sample is small: one answer, 9 citations, no chain ids. On `references/investigation.md`, run against the demo, cite-check flagged file names such as `2026-01-ledger-pool.md` as applications; a word joined to a path or a longer identifier no longer counts. That check is not part of the gate.
-
-### Session-start hook (`hook.txt`)
-
-`./x install-hook` adds a Claude Code `SessionStart` hook that runs `ograph status 2>/dev/null || true`. `scripts/eval/hook_eval.py` runs that command with `sh -c`, 20 times per state, on copies of the demo and of one RCAEval case. It is silent with no workspace, with every incident judged after a fresh harvest, and after a re-harvest. It prints one line naming the unjudged incidents, or the file edited after the harvest. All 9 states print what they should.
-
-The first run failed the time limit: medians of 92 to 111 ms and a slowest run of 248 ms. Every read command opened the store for writing, which writes and syncs `store.redb`; its modification time changed on each `ograph status`. On this external disk, with other builds running, that took about 100 ms; a copy on the internal disk took 20 ms. `ograph status` now opens the store read-only and falls back to a normal open when that fails. The store file is no longer touched, medians are 13 to 14 ms and the slowest run is 17.6 ms. The gate passes. The other read commands still open the store for writing.
-
-### What it does not change
-
-`cargo test --workspace` passes. The gateway gate's output is the same as `gateway.txt` except for timings. Correlation, ranking and similarity code did not change, so the RCAEval scores were not rerun.
-
-## Phase 12, lane B: ontology tooling (`time_order.txt`, `ontology_diff.txt`, `ontology_lint.txt`, `coverage_decline.txt`, `lane-b-regression.txt`)
-
-### Time order (`time_order.txt`)
-
-`shapes.ttl` now requires `evt:at <= evt:until` on every node with an end, and `evt:at <= inc:resolvedAt` on every incident with a resolution. A violation quarantines the end time alone. The start is what places the node on the timeline, and the `evt:at` minimum count would reject the whole node if the start were dropped instead.
-
-| Gate | Result |
-|---|---|
-| `gateway_eval`: 3 metric episodes that end before they start, 3 incidents resolved before they opened | 3 of 3 and 3 of 3 end times quarantined, each with its reason; the 6 nodes kept their other facts |
-| `gateway_eval`: 3 ordered episodes and 3 ordered incidents | 6 of 6 end times kept |
-| `shapes_regression.py`: demo and 90 RCAEval cases, harvested under the old and the new `shapes.ttl` | 669 facts quarantined under both; 0 workspaces changed |
-
-On RCAEval the episode shape has metric episodes to check. No RCAEval incident has a resolution time, so only the demo's 3 incidents and the fixtures exercise the incident shape (`ontology_lint.txt`, part 4).
-
-### Ontology diff against stored data (`ontology_diff.txt`, `scripts/eval/ontology_diff_eval.py`)
-
-`ograph ontology diff` used to load the newer ontology with the built-in shapes and never read the store. Now each stored harvest graph goes through the ontology checks and SHACL under both versions, against the rest of the store. The facts that only the newer version rejects are what a re-harvest would quarantine. The gate applies 14 edits of `ograph.ttl` or `shapes.ttl` to the demo. For each edit it compares that prediction with an actual re-harvest under the edited files.
-
-| Gate | Result |
-|---|---|
-| Predicted facts quarantined, per graph, equal the re-harvest's new quarantines | 14 of 14 edits, for example 21 of 21 deployment facts when `evt:Deployment` loses `evt:Event`, and 8 of 8 incident facts when a shape requires `inc:mitigation` |
-| No BREAKING change on a term the store never uses | 0 of 4 edits on unused terms (a class, a property, a superclass edge, a vocabulary) marked BREAKING; each says `(unused)` |
-| A domain or range moved to a superclass | `evt:on` to `og:Thing` reported as widened, nothing quarantined |
-
-### Lints in `ontology check`, shape coverage in `validate` (`ontology_lint.txt`, `scripts/eval/ontology_lint_eval.py`)
-
-| Gate | Result |
-|---|---|
-| On ontology 1.1, the warnings for terms no code writes and event classes no shape requires a time of, against the script's own reading of the enrichers, `ograph.ttl` and `shapes.ttl` | Equal: `evt:E2EFailure`, `evt:Experiment` and the signal values `DEPENDENCY_CHANGE`, `DISCUSSION`, `E2E_FAILURE`, `EXPERIMENT` unwritten; `evt:Experiment` untimed |
-| A sample `proposed.ttl` merged in | 3 of 3 proposed terms flagged as still proposed and unwritten; the 2 properties also flagged for no domain and no range |
-| `sh:targetClass evt:Aletr` in `shapes.ttl` | `check` exits 1 naming `shape:Paged` and `evt:Aletr`; `validate` lists `shape:Paged` among the shapes that matched nothing and still exits 0 |
-
-The four signal values the lint found beyond the two classes had no writer either. `diff_stores.py` ran ontology 1.2, which deletes all six terms, against the 91 stores harvested under 1.1. Every removal was `(unused)` and no stored fact would be quarantined. `ontology check` on 1.2 has no warnings, so any new warning is a regression. On the 91 stores, `shape:Verdict` matches nothing in all of them (no verdicts recorded), and `shape:News`, `shape:Thread` and `shape:IncidentOrder` match nothing in the 90 RCAEval stores, which have no news, chat or resolution times.
-
-### Declined proposals in `ontology coverage` (`coverage_decline.txt`, `scripts/eval/coverage_decline_eval.py`)
-
-The gate as specified is three uncached runs with three demo gaps declined, against three uncached runs without. It is not measured. Every model call returned a usage-limit refusal. The first version of the script passed on those 21 unanswered questions; it now reports `NOT MEASURED` when any question gets no answer. One live run made earlier, on ontology 1.1 before the limit, was replayed from its cache (`--cached`):
-
-| Check | Result |
-|---|---|
-| Declined `ops:KubernetesCluster`, `ops:Revenue`, `ops:Customers` | None in `proposed.ttl`; each reported as declined by `eval`; the same questions' other gaps (`runs`, `lost`, `affectedBy`) still proposed |
-| The 7 other gap questions | 7 of 7 still gaps, the same as without `declined.ttl` |
-| Exit code with undeclined gaps left | 1 |
-
-The replay checks the matching on real model output. It cannot show whether a declined gap stays declined when an uncached run words it differently. That is what the three uncached runs are for. The matching rule handles one kind of change in wording: a different span in the same question ("cluster" against "Kubernetes cluster"). The unit tests cover that rule.
-
-### What it does not change (`lane-b-regression.txt`, `scripts/eval/ab_readonly.py`)
-
-`ab_readonly.py` compares the binary at 25f2bc7 with this lane's binary, both on ontology 1.2. The comparison covers the demo's harvest and eight queries, the 90 RCAEval per-case rankings (chain AC@1 0.93) and the `similar_eval.py` output (top-1 0.92). All are identical except `validate`, whose output is meant to change. `ab_compare.sh` itself writes stores into the eval data directory, so it was not run.
