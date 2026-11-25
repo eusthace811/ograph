@@ -381,3 +381,18 @@ These are the reasons, each measured above:
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.
+
+## Phase 12, lane C1: incident field conflicts (`incident-conflicts.txt`, `lane-c1-rcaeval.txt`)
+
+Incident records used to merge silently, the last record winning. The open time anchors the correlation window, so two exports 40 minutes apart changed the candidates and nothing said so. Now a disagreement on the open time, the resolved time, the severity or the service quarantines each value not kept, with its record and the record kept. `[incidents] merge` chooses the record per field, and `last` stays the default. The idea comes from semantica's conflict resolver, which names a strategy per property (`semantica/conflicts/conflict_resolver.py:102-111` lists most-recent and first-seen among them, `:621-648` sets a rule per property).
+
+`scripts/eval/incident_conflicts_eval.py` builds a fixture: INC-1 on checkout opened at T with SEV1 in `incidents/a.json`, and `incidents/b.json` says T+40m and SEV3. The true cause is an alert on ledger-db 10 minutes before T. A decoy alert on payments-api falls inside the window of the later time only.
+
+| Policy | `ograph why INC-1` | Top chain |
+|---|---|---|
+| `last` (default) | open T+40m and SEV3 kept; T and SEV1 quarantined as `incidents/a.json#1 disagrees with incidents/b.json#1 (kept by policy last)` | payments-api (the decoy) |
+| `at = "earliest", severity = "max"` | open T and SEV1 kept; the others quarantined, naming `b.json#1` | ledger-db (the true cause) |
+
+The demo and the 90 RCAEval cases hold one record per incident, so they have 0 conflict entries. The 90 RCAEval rankings are identical to the binary before this lane (`lane-c1-rcaeval.txt`), at chain AC@1 0.93.
+
+The status is not a conflict field. Five behavior tests in `ograph-core/tests/harvest.rs` encode a later export moving an incident from open to resolved, and quarantining that would flag every normal lifecycle. A severity that escalates across exports is flagged, and `severity = "max"` keeps the escalated value.

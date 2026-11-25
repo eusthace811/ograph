@@ -318,7 +318,7 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                 catalog.to_mut().add(class, s, &names.iter().map(String::as_str).collect::<Vec<_>>());
             }
     }
-    let mut rejected = Vec::new();
+    let mut rejected: Vec<Rejection> = batch.withheld.iter().map(|(f, reason)| Rejection { fact: f.describe(), reason: reason.clone() }).collect();
     let mut fuzzy = 0;
     let mut accepted: Vec<Resolved> = Vec::new();
     let mut minted: FxHashSet<(NamedNode, &'static str)> = FxHashSet::default();

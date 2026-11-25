@@ -22,7 +22,14 @@ pub struct Config {
     pub sources: Vec<Source>,
     pub detect: Detect,
     pub correlation: Settings,
+    pub incidents: IncidentsSection,
     pub llm: Option<LlmSection>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct IncidentsSection {
+    pub merge: enrich::records::Merge,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,6 +111,7 @@ impl Workspace {
         anyhow::ensure!(dir.is_dir(), "no .ograph/ in {}; run `ograph init`", root.display());
         let config: Config = toml::from_str(&std::fs::read_to_string(dir.join("config.toml"))?)?;
         config.correlation.check()?;
+        config.incidents.merge.check()?;
         let read = |n: &str, d: &str| std::fs::read_to_string(dir.join(n)).unwrap_or_else(|_| d.to_owned());
         let ontology = Ontology::load(&read("ontology.ttl", crate::ontology::DEFAULT_TTL), &read("shapes.ttl", crate::ontology::DEFAULT_SHAPES))?;
         let store = Store::open(&dir.join("store.redb"))?;
@@ -166,7 +174,7 @@ impl Workspace {
         let _write = self.store.write_lock()?;
         let llm = self.llm();
         let code = self.code_repos();
-        let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology, code: &code };
+        let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology, code: &code, merge: &self.config.incidents.merge };
         let mut sources = self.config.sources.clone();
         sources.sort();
         let ran: Vec<&Source> = sources.iter().filter(|s| only.is_none_or(|o| o == s.name() || o == kind(s))).collect();
@@ -769,5 +777,76 @@ mod tests {
         let mut order = [Source::Traces { path: "t".into() }, Source::Errors { path: "e".into() }, Source::Alerts { path: "a".into() }, Source::Code { path: "c".into(), since: "30d".into() }, Source::ConfigChanges { path: "g".into() }];
         order.sort();
         assert_eq!(order.iter().map(Source::name).collect::<Vec<_>>(), ["config", "code", "alerts", "traces", "errors"]);
+    }
+
+    /// INC-1 opened at `T` with SEV1 in incidents.json; a later export says 40 minutes later and
+    /// SEV3. The cause is an alert on ledger-db 10 minutes before `T`; a decoy alert on
+    /// payments-api falls inside the window of the later time only.
+    fn disagreeing_exports(name: &str, merge: &str) -> (PathBuf, Vec<crate::gateway::Rejection>, String) {
+        let alerts = format!("[{},{}]", alert("ledger-db", "PoolSaturated", T - 600), alert("payments-api", "ErrorRate", T + 1500));
+        let later = format!(r#"[{{"id":"INC-1","service":"checkout","opened":{},"severity":"SEV3","status":"open"}}]"#, T + 2400);
+        let root = fixture(name, &[("alerts", "alerts.json", &alerts), ("incidents", "later.json", &later)]);
+        let cfg = root.join(".ograph/config.toml");
+        std::fs::write(&cfg, std::fs::read_to_string(&cfg).unwrap() + merge).unwrap();
+        let out = harvest(&root, None);
+        let quarantined = out.iter().find(|o| o.graph.contains("/incidents/")).unwrap().quarantined.clone();
+        let ws = Workspace::open(&root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let ids = crate::correlate::Ids::new(&snap).unwrap();
+        let top = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap().apps[0].app.clone();
+        (root, quarantined, top)
+    }
+
+    fn reasons(q: &[crate::gateway::Rejection]) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = q.iter().map(|r| (r.fact.clone(), r.reason.clone())).collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn disagreeing_exports_keep_the_last_value_and_quarantine_the_other() {
+        let (root, q, top) = disagreeing_exports("conflict-last", "");
+        assert_eq!(
+            reasons(&q),
+            [
+                ("id:inc/inc-1 evt:at \"2026-11-22T22:26:40Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime>".to_owned(), "incidents.json#1 disagrees with later.json#1 (kept by policy last)".to_owned()),
+                ("id:inc/inc-1 evt:severity \"SEV1\"".to_owned(), "incidents.json#1 disagrees with later.json#1 (kept by policy last)".to_owned()),
+            ]
+        );
+        assert_eq!(top, "payments-api");
+        let ws = Workspace::open(&root).unwrap();
+        let why = crate::query::why(&ws.store.snapshot().unwrap(), "INC-1").unwrap();
+        let at: Vec<&str> = why.facts.iter().filter(|f| f.predicate == "evt:at").map(|f| f.object.as_str()).collect();
+        assert_eq!(at, ["2026-11-22T23:06:40Z"]);
+        assert_eq!(why.quarantined.len(), 2);
+    }
+
+    #[test]
+    fn the_earliest_open_time_recovers_the_cause_the_later_export_hides() {
+        let (_, q, top) = disagreeing_exports("conflict-earliest", "[incidents]\nmerge = { at = \"earliest\", severity = \"max\" }\n");
+        assert_eq!(
+            reasons(&q),
+            [
+                ("id:inc/inc-1 evt:at \"2026-11-22T23:06:40Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime>".to_owned(), "later.json#1 disagrees with incidents.json#1 (kept by policy earliest)".to_owned()),
+                ("id:inc/inc-1 evt:severity \"SEV3\"".to_owned(), "later.json#1 disagrees with incidents.json#1 (kept by policy max)".to_owned()),
+            ]
+        );
+        assert_eq!(top, "ledger-db");
+    }
+
+    #[test]
+    fn records_that_agree_are_no_conflict() {
+        let same = format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T},"severity":"SEV1","title":"Checkout down"}}]"#);
+        let root = fixture("conflict-none", &[("incidents", "later.json", &same)]);
+        let out = harvest(&root, None);
+        assert_eq!(out.iter().find(|o| o.graph.contains("/incidents/")).unwrap().quarantined.len(), 0);
+    }
+
+    #[test]
+    fn a_pick_that_does_not_fit_its_field_is_refused() {
+        let root = fixture("conflict-badpick", &[]);
+        let cfg = root.join(".ograph/config.toml");
+        std::fs::write(&cfg, std::fs::read_to_string(&cfg).unwrap() + "[incidents]\nmerge = { service = \"earliest\" }\n").unwrap();
+        assert_eq!(Workspace::open(&root).err().unwrap().to_string(), "[incidents] merge: service = \"earliest\" does not apply to service");
     }
 }

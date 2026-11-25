@@ -78,11 +78,14 @@ pub struct Batch {
     pub degraded: Vec<String>,
     /// Files a batch that spans several files read, kept as `harv:file`.
     pub files: Vec<String>,
+    /// Facts the enricher itself refuses, with the reason: the gateway quarantines them
+    /// unchecked, so the refusal is on record.
+    pub withheld: Vec<(ProposedFact, String)>,
 }
 
 impl Batch {
     pub fn new(source: &str, key: &str, extractor: &str) -> Self {
-        Self { source: source.into(), key: key.into(), extractor: extractor.into(), facts: vec![], records: Default::default(), degraded: vec![], files: vec![] }
+        Self { source: source.into(), key: key.into(), extractor: extractor.into(), facts: vec![], records: Default::default(), degraded: vec![], files: vec![], withheld: vec![] }
     }
 
     pub fn graph(&self) -> NamedNode {
@@ -112,6 +115,11 @@ impl Batch {
             evidence: vec![evidence.clone()],
             method: method.clone(),
         });
+    }
+
+    pub fn withhold(&mut self, subject: EntityRef, predicate: &str, object: Object, evidence: &EvidenceRef, method: &Extraction, reason: String) {
+        let fact = ProposedFact { subject, predicate: NamedNode::new_unchecked(predicate), object, evidence: vec![evidence.clone()], method: method.clone() };
+        self.withheld.push((fact, reason));
     }
 }
 

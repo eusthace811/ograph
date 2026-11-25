@@ -1,0 +1,12 @@
+rankings identical on 90 cases: True
+score tables identical: True
+
+All RE2-OB (90 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 0.99 | 0.98 |
+| propagation | 0.83 | 0.94 | 0.94 |
+| zmax | 0.84 | 0.97 | 0.94 |
+| sparql_meanshift | 0.63 | 0.94 | 0.89 |
+

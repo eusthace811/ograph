@@ -1,0 +1,14 @@
+1. policy last: top chain ['payments-api']; ograph why INC-1:
+     evt:at 2026-11-22T23:06:40Z
+     evt:severity SEV3
+     QUARANTINED id:inc/inc-1 evt:at "2026-11-22T22:26:40Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>: incidents/a.json#1 disagrees with incidents/b.json#1 (kept by policy last)
+     QUARANTINED id:inc/inc-1 evt:severity "SEV1": incidents/a.json#1 disagrees with incidents/b.json#1 (kept by policy last)
+1. policy earliest: top chain ['ledger-db']; ograph why INC-1:
+     evt:at 2026-11-22T22:26:40Z
+     evt:severity SEV1
+     QUARANTINED id:inc/inc-1 evt:at "2026-11-22T23:06:40Z"^^<http://www.w3.org/2001/XMLSchema#dateTime>: incidents/b.json#1 disagrees with incidents/a.json#1 (kept by policy earliest)
+     QUARANTINED id:inc/inc-1 evt:severity "SEV3": incidents/b.json#1 disagrees with incidents/a.json#1 (kept by policy max)
+   both values listed with their records under each policy: True
+   true cause ledger-db: last -> ['payments-api'], earliest -> ['ledger-db']; recovered by earliest only: True
+2. conflict entries: demo 0; RCAEval 0 over 90 case stores
+INCIDENT CONFLICT GATE: PASS

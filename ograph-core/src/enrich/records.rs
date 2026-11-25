@@ -6,7 +6,8 @@ use super::{Ctx, Event, EvidenceRef, app, dt, event, json_records, ogrep, parse_
 use crate::model::{Batch, EntityRef, Extraction, Object, entity, known, lit, obj, slug};
 use crate::vocab::{RDF_TYPE, evt, inc, ops};
 use oxrdf::NamedNode;
-use std::collections::HashMap;
+use serde::Deserialize;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 fn class(c: &str) -> Object {
@@ -17,13 +18,88 @@ fn rule(name: &str) -> Extraction {
     Extraction::Rule { extractor: name.into() }
 }
 
+/// How one incident field is chosen when several records state it.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Pick {
+    /// The last record that states it, in file path order and then record order.
+    #[default]
+    Last,
+    First,
+    /// The earliest or latest time (`at`, `resolved`).
+    Earliest,
+    Latest,
+    /// The most or least severe (`severity`).
+    Max,
+    Min,
+}
+
+impl Pick {
+    fn name(self) -> &'static str {
+        match self {
+            Pick::Last => "last",
+            Pick::First => "first",
+            Pick::Earliest => "earliest",
+            Pick::Latest => "latest",
+            Pick::Max => "max",
+            Pick::Min => "min",
+        }
+    }
+}
+
+/// `[incidents] merge`: a [`Pick`] per functional field, and `default` for the rest.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Merge {
+    pub default: Pick,
+    pub at: Option<Pick>,
+    pub resolved: Option<Pick>,
+    pub severity: Option<Pick>,
+    pub service: Option<Pick>,
+}
+
+/// The fields of an incident that hold one value, by config name. Records that disagree on one
+/// of them are a conflict, and the values not kept are quarantined. The status is not one: it
+/// moves from open to resolved, so a later export that states another status updates it.
+const FUNCTIONAL: [(&str, &str); 4] = [("at", evt::AT), ("resolved", inc::RESOLVED_AT), ("severity", evt::SEVERITY), ("service", evt::ON)];
+
+impl Merge {
+    fn pick(&self, field: &str) -> Pick {
+        let set = match field {
+            "at" => self.at,
+            "resolved" => self.resolved,
+            "severity" => self.severity,
+            "service" => self.service,
+            _ => None,
+        };
+        set.unwrap_or(self.default)
+    }
+
+    /// A time pick on a field that is not a time, or a severity pick on one that is not the
+    /// severity, is refused rather than read as `last`.
+    pub fn check(&self) -> anyhow::Result<()> {
+        for (field, _) in FUNCTIONAL {
+            let p = self.pick(field);
+            let fits = match p {
+                Pick::Last | Pick::First => true,
+                Pick::Earliest | Pick::Latest => matches!(field, "at" | "resolved"),
+                Pick::Max | Pick::Min => field == "severity",
+            };
+            anyhow::ensure!(fits, "[incidents] merge: {field} = \"{}\" does not apply to {field}", p.name());
+        }
+        Ok(())
+    }
+}
+
 /// Every incident file of every incident source, as one batch keyed `all`. An incident may
-/// appear in several records and files, each stating some of its fields: a field comes from the
-/// last record that states it, in file path order and then record order, so a later export of
-/// an incident updates it rather than conflicting with it. The fields are merged before the
-/// gateway checks the incident, so one harvest sees all of them. A file that cannot be read
+/// appear in several records and files, each stating some of its fields. By default a field
+/// comes from the last record that states it, in file path order and then record order, so a
+/// later export of an incident updates it; `merge` can choose another record per field. When
+/// records disagree on a functional field, each value not kept goes to the quarantine with the
+/// record that stated it, so `ograph why` shows the disagreement. The fields are merged before
+/// the gateway checks the incident, so one harvest sees all of them. A file that cannot be read
 /// fails the whole batch, which keeps its last good facts.
-pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>) -> Batch {
+pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>, merge: &Merge) -> Batch {
     let mut b = Batch::new("incidents", "all", "incidents-v1");
     let mut parsed = Vec::with_capacity(files.len());
     for (path, key) in files {
@@ -39,14 +115,44 @@ pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>) -> Batc
     let records: Vec<(String, IncidentRecord)> = parsed.iter().flat_map(|(key, rs)| rs.iter().enumerate().map(move |(i, r)| (format!("{key}#{}", i + 1), incident_fields(r)))).collect();
     // Keyed by the node's name, so ids that differ only in case or punctuation are one incident.
     let keys: Vec<String> = records.iter().map(|(_, (id, _))| crate::model::slug(id)).collect();
-    let mut last: HashMap<(&str, &str), usize> = HashMap::new();
+    // Per incident and field, the records that state it, in order.
+    let mut stated: BTreeMap<(&str, &str), Vec<usize>> = BTreeMap::new();
     for (n, (_, (_, values))) in records.iter().enumerate() {
-        last.insert((keys[n].as_str(), "id"), n);
-        for (p, _) in values {
-            last.insert((keys[n].as_str(), *p), n);
+        stated.entry((keys[n].as_str(), "id")).or_default().push(n);
+        for v in values {
+            stated.entry((keys[n].as_str(), v.predicate)).or_default().push(n);
         }
     }
+    let value = |n: usize, p: &str| records[n].1.1.iter().find(|v| v.predicate == p);
     let m = rule("incident-export");
+    let mut kept: HashMap<(&str, &str), usize> = HashMap::new();
+    for (&(key, p), ns) in &stated {
+        let Some((field, _)) = FUNCTIONAL.iter().find(|(_, q)| *q == p) else {
+            kept.insert((key, p), *ns.last().unwrap());
+            continue;
+        };
+        let pick = merge.pick(field);
+        let rank = |n: &usize| value(*n, p).and_then(|v| v.rank);
+        let chosen = match pick {
+            Pick::Last => ns.last(),
+            Pick::First => ns.first(),
+            // Among equal values the last record wins, as with `last`.
+            Pick::Earliest | Pick::Max => ns.iter().rev().filter(|n| rank(n).is_some()).min_by_key(|n| rank(n)),
+            Pick::Latest | Pick::Min => ns.iter().filter(|n| rank(n).is_some()).max_by_key(|n| rank(n)),
+        }
+        .or(ns.last())
+        .copied()
+        .unwrap();
+        kept.insert((key, p), chosen);
+        let winner = &value(chosen, p).unwrap().object;
+        for &n in ns {
+            let loser = value(n, p).unwrap();
+            if loser.object != *winner && !records[n].1.0.is_empty() {
+                let ev = b.record(records[n].0.as_str());
+                b.withhold(known("inc", &records[n].1.0), p, loser.object.clone(), &ev, &m, format!("{} disagrees with {} (kept by policy {})", records[n].0, records[chosen].0, pick.name()));
+            }
+        }
+    }
     for (n, (record, (id, values))) in records.iter().enumerate() {
         if id.is_empty() {
             continue;
@@ -54,12 +160,12 @@ pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>) -> Batc
         let ev = b.record(record.as_str());
         let s = known("inc", id);
         b.add(s.clone(), RDF_TYPE, class(inc::INCIDENT), &ev, &m);
-        if last[&(keys[n].as_str(), "id")] == n {
+        if kept[&(keys[n].as_str(), "id")] == n {
             b.add(s.clone(), inc::ID, lit(id.as_str()), &ev, &m);
         }
-        for (p, o) in values {
-            if last[&(keys[n].as_str(), *p)] == n {
-                b.add(s.clone(), p, o.clone(), &ev, &m);
+        for v in values {
+            if kept[&(keys[n].as_str(), v.predicate)] == n {
+                b.add(s.clone(), v.predicate, v.object.clone(), &ev, &m);
             }
         }
         b.add(s, evt::SIGNAL, lit("INCIDENT"), &ev, &m);
@@ -67,8 +173,16 @@ pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>) -> Batc
     b
 }
 
+/// One field an incident record states. `rank` orders the values a time or severity pick
+/// compares: milliseconds for a time, and 1 (SEV1) to 4 for a severity.
+struct Stated {
+    predicate: &'static str,
+    object: Object,
+    rank: Option<i64>,
+}
+
 /// The id of an incident record (empty when it has none) and the fields it states.
-type IncidentRecord = (String, Vec<(&'static str, Object)>);
+type IncidentRecord = (String, Vec<Stated>);
 
 fn incident_fields(r: &serde_json::Value) -> IncidentRecord {
     let id = ["id", "number", "key"].iter().find_map(|f| match r.get(*f)? {
@@ -76,19 +190,19 @@ fn incident_fields(r: &serde_json::Value) -> IncidentRecord {
         serde_json::Value::Number(n) if n.is_i64() || n.is_u64() => Some(n.to_string()),
         _ => None,
     });
-    let time = |names: &[&str]| names.iter().find_map(|f| r.get(*f).and_then(parse_time)).map(dt);
-    let text = |names: &[&str]| str_field(r, names).map(lit);
+    let time = |names: &[&str]| names.iter().find_map(|f| r.get(*f).and_then(parse_time)).map(|t| (dt(t), Some(t)));
+    let text = |names: &[&str]| str_field(r, names).map(|v| (lit(v), None));
     let values = [
         (inc::TITLE, text(&["title", "summary", "name"])),
-        (evt::ON, str_field(r, &["service", "app", "application"]).map(app)),
+        (evt::ON, str_field(r, &["service", "app", "application"]).map(|v| (app(v), None))),
         (evt::AT, time(&["opened", "opened_at", "created_at", "at"])),
         (inc::RESOLVED_AT, time(&["resolved", "resolved_at"])),
-        (evt::SEVERITY, text(&["severity"])),
+        (evt::SEVERITY, str_field(r, &["severity"]).map(|v| (lit(v), severity(v)[3..].parse().ok()))),
         (inc::STATUS, text(&["status"])),
         (inc::MITIGATION, text(&["mitigation"])),
         (inc::FAULT_TYPE, text(&["fault", "fault_type"])),
     ];
-    (id.unwrap_or_default(), values.into_iter().filter_map(|(p, o)| Some((p, o?))).collect())
+    (id.unwrap_or_default(), values.into_iter().filter_map(|(predicate, v)| v.map(|(object, rank)| Stated { predicate, object, rank })).collect())
 }
 
 /// A monitoring tool's severity label as an `evt:severity` value.

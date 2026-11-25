@@ -138,6 +138,7 @@ pub struct Ctx<'a> {
     pub ontology: &'a crate::ontology::Ontology,
     /// Every configured `code` repository, as an absolute path.
     pub code: &'a [PathBuf],
+    pub merge: &'a records::Merge,
 }
 
 /// The files a source's enricher reads: for a catalog, the operations files ogrep reads; for
@@ -267,7 +268,7 @@ pub fn incidents(paths: &[&Path], held: &[String], ctx: &Ctx<'_>) -> Batch {
     }
     files.sort();
     files.dedup();
-    let mut b = records::incidents(&files.iter().map(|(key, f)| (f.clone(), key.clone())).collect::<Vec<_>>(), degraded);
+    let mut b = records::incidents(&files.iter().map(|(key, f)| (f.clone(), key.clone())).collect::<Vec<_>>(), degraded, ctx.merge);
     b.files = files.into_iter().map(|(key, _)| key).collect();
     b
 }
