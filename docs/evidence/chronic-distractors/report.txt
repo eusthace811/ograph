@@ -1,0 +1,395 @@
+315 runs to do, 0 kept from docs/evidence/chronic-distractors/runs.jsonl
+chains rcaeval/x-6cea1d4b54/INC-7461 run 1: pass records-api 0.0 s 
+mcp    rcaeval/x-c720471363/INC-7972 run 1: fail shipments-pg 11.1 s 
+chains rcaeval/x-c720471363/INC-7972 run 1: pass depot-sync 0.0 s 
+mcp    rcaeval/x-6cea1d4b54/INC-7461 run 1: pass records-api 16.7 s 
+skill  rcaeval/x-c720471363/INC-7972 run 1: fail shipments-pg 20.5 s 
+chains rcaeval/x-06cb8f3df9/INC-8198 run 1: pass notify-hub 0.0 s 
+mcp    rcaeval/x-06cb8f3df9/INC-8198 run 1: pass notify-hub 13.9 s 
+mcp    rcaeval/x-40fcb71db2/INC-8277 run 1: pass event-stream 11.5 s 
+chains rcaeval/x-40fcb71db2/INC-8277 run 1: pass event-stream 0.1 s 
+skill  rcaeval/x-6cea1d4b54/INC-7461 run 1: pass records-api 36.5 s 
+skill  rcaeval/x-06cb8f3df9/INC-8198 run 1: pass notify-hub 22.4 s 
+chains rcaeval/x-2f1b8c9e5b/INC-7898 run 1: pass session-kv 0.0 s 
+skill  rcaeval/x-40fcb71db2/INC-8277 run 1: pass event-stream 21.6 s 
+mcp    rcaeval/x-2f1b8c9e5b/INC-7898 run 1: fail media-meta-db 11.6 s 
+chains rcaeval/x-dd5daaccde/INC-8225 run 1: fail license-check 0.0 s 
+mcp    rcaeval/x-dd5daaccde/INC-8225 run 1: pass origin-store 12.2 s 
+mcp    rcaeval/x-3f7fc080f1/INC-7312 run 1: pass parcel-tracker 18.4 s 
+chains rcaeval/x-3f7fc080f1/INC-7312 run 1: fail dispatch-portal 0.0 s 
+skill  rcaeval/x-dd5daaccde/INC-8225 run 1: pass origin-store 21.2 s 
+skill  rcaeval/x-2f1b8c9e5b/INC-7898 run 1: pass session-kv 30.8 s 
+chains rcaeval/x-d24697ab21/INC-7153 run 1: pass title-index 0.0 s 
+skill  rcaeval/x-3f7fc080f1/INC-7312 run 1: pass parcel-tracker 27.7 s 
+mcp    rcaeval/x-d24697ab21/INC-7153 run 1: pass title-index 14.5 s 
+chains rcaeval/x-761ce7104d/INC-7244 run 1: pass fleet-api 0.0 s 
+mcp    rcaeval/x-761ce7104d/INC-7244 run 1: fail scan-stream 22.5 s 
+mcp    rcaeval/x-25bf48d25b/INC-7667 run 1: pass accounts-pg 11.1 s 
+chains rcaeval/x-25bf48d25b/INC-7667 run 1: pass accounts-pg 0.0 s 
+skill  rcaeval/x-d24697ab21/INC-7153 run 1: pass title-index 32.0 s 
+mcp    rcaeval/x-85f91bb85c/INC-7264 run 1: pass chat-relay 10.9 s 
+chains rcaeval/x-85f91bb85c/INC-7264 run 1: pass chat-relay 0.0 s 
+skill  rcaeval/x-761ce7104d/INC-7244 run 1: pass fleet-api 24.4 s 
+mcp    rcaeval/x-a360d81053/INC-8027 run 1: fail rate-kv 9.8 s 
+chains rcaeval/x-a360d81053/INC-8027 run 1: fail teller-gateway 0.0 s 
+skill  rcaeval/x-25bf48d25b/INC-7667 run 1: pass accounts-pg 21.9 s 
+skill  rcaeval/x-85f91bb85c/INC-7264 run 1: pass chat-relay 19.6 s 
+chains rcaeval/x-8aa1cee0a3/INC-7509 run 1: pass media-meta-db 0.0 s 
+mcp    rcaeval/x-1031f16451/INC-7604 run 1: pass player-db 10.7 s 
+skill  rcaeval/x-8aa1cee0a3/INC-7509 run 1: pass media-meta-db 18.0 s 
+chains rcaeval/x-1031f16451/INC-7604 run 1: pass player-db 0.0 s 
+mcp    rcaeval/x-8aa1cee0a3/INC-7509 run 1: pass media-meta-db 20.0 s 
+skill  rcaeval/x-a360d81053/INC-8027 run 1: fail rate-kv 33.2 s 
+chains rcaeval/x-d9b1001ce7/INC-8045 run 1: fail dispatch-portal 0.0 s 
+mcp    rcaeval/x-d9b1001ce7/INC-8045 run 1: pass route-planner 12.4 s 
+skill  rcaeval/x-1031f16451/INC-7604 run 1: pass player-db 17.7 s 
+chains rcaeval/x-1d71e6308b/INC-7579 run 1: pass license-check 0.0 s 
+mcp    rcaeval/x-1d71e6308b/INC-7579 run 1: pass license-check 12.4 s 
+mcp    rcaeval/x-617d11bc10/INC-7761 run 1: pass fares-db 12.4 s 
+chains rcaeval/x-617d11bc10/INC-7761 run 1: fail seat-map 0.0 s 
+skill  rcaeval/x-d9b1001ce7/INC-8045 run 1: pass route-planner 31.3 s 
+skill  rcaeval/x-1d71e6308b/INC-7579 run 1: pass license-check 23.0 s 
+chains rcaeval/x-daeb5e1dd1/INC-7522 run 1: pass emr-db 0.0 s 
+skill  rcaeval/x-617d11bc10/INC-7761 run 1: pass fares-db 21.5 s 
+mcp    rcaeval/x-daeb5e1dd1/INC-7522 run 1: pass emr-db 10.2 s 
+chains rcaeval/x-7023622d73/INC-7641 run 1: fail parcel-tracker 0.0 s 
+mcp    rcaeval/x-7023622d73/INC-7641 run 1: pass depot-sync 12.3 s 
+mcp    rcaeval/x-7d49a0334a/INC-8086 run 1: pass audit-journal 12.2 s 
+chains rcaeval/x-7d49a0334a/INC-8086 run 1: pass audit-journal 0.0 s 
+skill  rcaeval/x-daeb5e1dd1/INC-7522 run 1: pass emr-db 20.2 s 
+skill  rcaeval/x-7d49a0334a/INC-8086 run 1: pass audit-journal 15.6 s 
+chains rcaeval/x-1875c965b9/INC-7357 run 1: pass account-api 0.0 s 
+skill  rcaeval/x-7023622d73/INC-7641 run 1: pass depot-sync 24.5 s 
+mcp    rcaeval/x-1875c965b9/INC-7357 run 1: pass account-api 15.5 s 
+chains rcaeval/x-83380af210/INC-7947 run 1: fail cheat-guard 0.0 s 
+mcp    rcaeval/x-83380af210/INC-7947 run 1: fail event-stream 13.7 s 
+skill  rcaeval/x-1875c965b9/INC-7357 run 1: pass account-api 25.2 s 
+chains rcaeval/x-249a98cd21/INC-8124 run 1: pass series-db 0.0 s 
+mcp    rcaeval/x-249a98cd21/INC-8124 run 1: pass series-db 10.6 s 
+mcp    rcaeval/x-7225901111/INC-7014 run 1: pass rate-kv 11.5 s 
+chains rcaeval/x-7225901111/INC-7014 run 1: pass rate-kv 0.0 s 
+skill  rcaeval/x-83380af210/INC-7947 run 1: pass match-kv 34.2 s 
+skill  rcaeval/x-7225901111/INC-7014 run 1: pass rate-kv 19.9 s 
+chains rcaeval/x-b0d3bf3af6/INC-7842 run 1: fail booking-web 0.0 s 
+skill  rcaeval/x-249a98cd21/INC-8124 run 1: pass series-db 22.2 s 
+mcp    rcaeval/x-b0d3bf3af6/INC-7842 run 1: fail gds-bridge 15.0 s 
+chains rcaeval/x-e872422f60/INC-7410 run 1: fail booking-web 0.0 s 
+mcp    rcaeval/x-e872422f60/INC-7410 run 1: pass gds-bridge 13.9 s 
+mcp    rcaeval/x-c6646cafa4/INC-7798 run 1: fail mqtt-core 12.8 s 
+chains rcaeval/x-c6646cafa4/INC-7798 run 1: pass rules-engine 0.0 s 
+skill  rcaeval/x-e872422f60/INC-7410 run 1: pass gds-bridge 24.2 s 
+skill  rcaeval/x-b0d3bf3af6/INC-7842 run 1: pass pnr-api 31.6 s 
+chains rcaeval/x-cb536946d6/INC-7853 run 1: pass notify-hub 0.0 s 
+mcp    rcaeval/x-cb536946d6/INC-7853 run 1: fail hl7-bus 22.0 s 
+mcp    rcaeval/x-5f7f600832/INC-7055 run 1: pass firmware-api 10.9 s 
+chains rcaeval/x-5f7f600832/INC-7055 run 1: pass firmware-api 0.0 s 
+skill  rcaeval/x-c6646cafa4/INC-7798 run 1: pass rules-engine 32.9 s 
+mcp    rcaeval/x-d8b0571df1/INC-7703 run 1: pass mqtt-core 12.0 s 
+chains rcaeval/x-d8b0571df1/INC-7703 run 1: pass mqtt-core 0.0 s 
+skill  rcaeval/x-cb536946d6/INC-7853 run 1: pass notify-hub 38.2 s 
+skill  rcaeval/x-5f7f600832/INC-7055 run 1: fail series-db 25.4 s 
+chains rcaeval/x-23220825ed/INC-7377 run 1: fail alarm-api 0.0 s 
+mcp    rcaeval/x-23220825ed/INC-7377 run 1: fail shadow-kv 15.0 s 
+skill  rcaeval/x-d8b0571df1/INC-7703 run 1: pass mqtt-core 23.7 s 
+chains rcaeval/x-54589c712f/INC-7212 run 1: fail lobby-edge 0.0 s 
+mcp    rcaeval/x-ce02d32b58/INC-7121 run 1: pass slots-kv 9.3 s 
+mcp    rcaeval/x-54589c712f/INC-7212 run 1: pass chat-relay 14.4 s 
+chains rcaeval/x-ce02d32b58/INC-7121 run 1: pass slots-kv 0.0 s 
+skill  rcaeval/x-23220825ed/INC-7377 run 1: pass firmware-api 23.1 s 
+mcp    rcaeval/x-d5b42a6d5e/INC-7099 run 1: pass fares-db 10.6 s 
+chains rcaeval/x-d5b42a6d5e/INC-7099 run 1: pass fares-db 0.0 s 
+skill  rcaeval/x-54589c712f/INC-7212 run 1: pass chat-relay 27.4 s 
+skill  rcaeval/x-ce02d32b58/INC-7121 run 1: pass slots-kv 20.8 s 
+chains rcaeval/x-72289808f2/INC-8164 run 1: pass avail-kv 0.0 s 
+mcp    rcaeval/x-72289808f2/INC-8164 run 1: pass avail-kv 11.8 s 
+skill  rcaeval/x-d5b42a6d5e/INC-7099 run 1: pass fares-db 28.0 s 
+chains rcaeval/x-6cea1d4b54/INC-7461 run 2: pass records-api 0.0 s 
+mcp    rcaeval/x-6cea1d4b54/INC-7461 run 2: pass records-api 16.3 s 
+skill  rcaeval/x-72289808f2/INC-8164 run 1: pass avail-kv 22.9 s 
+chains rcaeval/x-c720471363/INC-7972 run 2: pass depot-sync 0.0 s 
+mcp    rcaeval/x-c720471363/INC-7972 run 2: fail shipments-pg 12.3 s 
+mcp    rcaeval/x-06cb8f3df9/INC-8198 run 2: pass notify-hub 12.4 s 
+chains rcaeval/x-06cb8f3df9/INC-8198 run 2: pass notify-hub 0.0 s 
+mcp    rcaeval/x-40fcb71db2/INC-8277 run 2: pass event-stream 10.2 s 
+skill  rcaeval/x-6cea1d4b54/INC-7461 run 2: pass records-api 43.1 s 
+chains rcaeval/x-40fcb71db2/INC-8277 run 2: pass event-stream 0.0 s 
+skill  rcaeval/x-06cb8f3df9/INC-8198 run 2: pass notify-hub 24.3 s 
+skill  rcaeval/x-c720471363/INC-7972 run 2: fail shipments-pg 34.1 s 
+chains rcaeval/x-2f1b8c9e5b/INC-7898 run 2: pass session-kv 0.0 s 
+mcp    rcaeval/x-2f1b8c9e5b/INC-7898 run 2: fail media-meta-db 11.5 s 
+mcp    rcaeval/x-dd5daaccde/INC-8225 run 2: pass origin-store 11.8 s 
+chains rcaeval/x-dd5daaccde/INC-8225 run 2: fail license-check 0.0 s 
+skill  rcaeval/x-40fcb71db2/INC-8277 run 2: pass event-stream 21.0 s 
+skill  rcaeval/x-2f1b8c9e5b/INC-7898 run 2: pass session-kv 21.6 s 
+chains rcaeval/x-3f7fc080f1/INC-7312 run 2: fail dispatch-portal 0.0 s 
+mcp    rcaeval/x-3f7fc080f1/INC-7312 run 2: pass parcel-tracker 13.1 s 
+skill  rcaeval/x-3f7fc080f1/INC-7312 run 2: pass parcel-tracker 18.3 s 
+chains rcaeval/x-d24697ab21/INC-7153 run 2: pass title-index 0.0 s 
+mcp    rcaeval/x-d24697ab21/INC-7153 run 2: pass title-index 11.5 s 
+skill  rcaeval/x-dd5daaccde/INC-8225 run 2: pass origin-store 29.0 s 
+chains rcaeval/x-761ce7104d/INC-7244 run 2: pass fleet-api 0.0 s 
+mcp    rcaeval/x-761ce7104d/INC-7244 run 2: pass fleet-api 14.2 s 
+mcp    rcaeval/x-25bf48d25b/INC-7667 run 2: pass accounts-pg 10.4 s 
+chains rcaeval/x-25bf48d25b/INC-7667 run 2: pass accounts-pg 0.0 s 
+skill  rcaeval/x-d24697ab21/INC-7153 run 2: pass title-index 24.4 s 
+mcp    rcaeval/x-85f91bb85c/INC-7264 run 2: pass chat-relay 10.3 s 
+chains rcaeval/x-85f91bb85c/INC-7264 run 2: pass chat-relay 0.0 s 
+skill  rcaeval/x-761ce7104d/INC-7244 run 2: leak fleet-api 32.3 s bash: climbs out with ..
+mcp    rcaeval/x-a360d81053/INC-8027 run 2: fail rate-kv 11.1 s 
+chains rcaeval/x-a360d81053/INC-8027 run 2: fail teller-gateway 0.0 s 
+skill  rcaeval/x-25bf48d25b/INC-7667 run 2: pass accounts-pg 24.4 s 
+skill  rcaeval/x-85f91bb85c/INC-7264 run 2: pass chat-relay 30.6 s 
+chains rcaeval/x-8aa1cee0a3/INC-7509 run 2: pass media-meta-db 0.0 s 
+mcp    rcaeval/x-8aa1cee0a3/INC-7509 run 2: pass media-meta-db 12.8 s 
+skill  rcaeval/x-8aa1cee0a3/INC-7509 run 2: pass media-meta-db 18.9 s 
+chains rcaeval/x-1031f16451/INC-7604 run 2: pass player-db 0.0 s 
+mcp    rcaeval/x-1031f16451/INC-7604 run 2: pass player-db 11.1 s 
+skill  rcaeval/x-a360d81053/INC-8027 run 2: fail rate-kv 28.9 s 
+chains rcaeval/x-d9b1001ce7/INC-8045 run 2: fail dispatch-portal 0.0 s 
+mcp    rcaeval/x-d9b1001ce7/INC-8045 run 2: pass route-planner 13.9 s 
+skill  rcaeval/x-1031f16451/INC-7604 run 2: pass player-db 22.5 s 
+chains rcaeval/x-1d71e6308b/INC-7579 run 2: pass license-check 0.0 s 
+mcp    rcaeval/x-1d71e6308b/INC-7579 run 2: pass license-check 10.9 s 
+skill  rcaeval/x-d9b1001ce7/INC-8045 run 2: pass route-planner 20.8 s 
+chains rcaeval/x-617d11bc10/INC-7761 run 2: fail seat-map 0.0 s 
+mcp    rcaeval/x-617d11bc10/INC-7761 run 2: pass fares-db 13.5 s 
+skill  rcaeval/x-1d71e6308b/INC-7579 run 2: pass license-check 20.9 s 
+chains rcaeval/x-daeb5e1dd1/INC-7522 run 2: pass emr-db 0.0 s 
+mcp    rcaeval/x-daeb5e1dd1/INC-7522 run 2: pass emr-db 12.3 s 
+skill  rcaeval/x-617d11bc10/INC-7761 run 2: pass fares-db 24.0 s 
+chains rcaeval/x-7023622d73/INC-7641 run 2: fail parcel-tracker 0.0 s 
+mcp    rcaeval/x-7023622d73/INC-7641 run 2: pass depot-sync 11.5 s 
+skill  rcaeval/x-daeb5e1dd1/INC-7522 run 2: pass emr-db 18.7 s 
+chains rcaeval/x-7d49a0334a/INC-8086 run 2: pass audit-journal 0.0 s 
+mcp    rcaeval/x-7d49a0334a/INC-8086 run 2: pass audit-journal 14.7 s 
+skill  rcaeval/x-7023622d73/INC-7641 run 2: pass depot-sync 20.0 s 
+chains rcaeval/x-1875c965b9/INC-7357 run 2: pass account-api 0.0 s 
+mcp    rcaeval/x-1875c965b9/INC-7357 run 2: pass account-api 14.0 s 
+mcp    rcaeval/x-83380af210/INC-7947 run 2: fail event-stream 16.4 s 
+chains rcaeval/x-83380af210/INC-7947 run 2: fail cheat-guard 0.0 s 
+skill  rcaeval/x-1875c965b9/INC-7357 run 2: pass account-api 20.4 s 
+skill  rcaeval/x-7d49a0334a/INC-8086 run 2: pass audit-journal 30.4 s 
+chains rcaeval/x-249a98cd21/INC-8124 run 2: pass series-db 0.0 s 
+skill  rcaeval/x-83380af210/INC-7947 run 2: fail event-stream 21.9 s 
+mcp    rcaeval/x-249a98cd21/INC-8124 run 2: pass series-db 11.6 s 
+chains rcaeval/x-7225901111/INC-7014 run 2: pass rate-kv 0.0 s 
+mcp    rcaeval/x-7225901111/INC-7014 run 2: pass rate-kv 11.8 s 
+skill  rcaeval/x-249a98cd21/INC-8124 run 2: pass series-db 26.3 s 
+chains rcaeval/x-b0d3bf3af6/INC-7842 run 2: fail booking-web 0.0 s 
+skill  rcaeval/x-7225901111/INC-7014 run 2: pass rate-kv 19.2 s 
+mcp    rcaeval/x-b0d3bf3af6/INC-7842 run 2: pass pnr-api 19.5 s 
+chains rcaeval/x-e872422f60/INC-7410 run 2: fail booking-web 0.0 s 
+mcp    rcaeval/x-e872422f60/INC-7410 run 2: pass gds-bridge 13.1 s 
+mcp    rcaeval/x-c6646cafa4/INC-7798 run 2: fail mqtt-core 15.5 s 
+chains rcaeval/x-c6646cafa4/INC-7798 run 2: pass rules-engine 0.0 s 
+skill  rcaeval/x-e872422f60/INC-7410 run 2: pass gds-bridge 20.9 s 
+skill  rcaeval/x-b0d3bf3af6/INC-7842 run 2: pass pnr-api 35.6 s 
+chains rcaeval/x-cb536946d6/INC-7853 run 2: pass notify-hub 0.0 s 
+mcp    rcaeval/x-5f7f600832/INC-7055 run 2: pass firmware-api 10.4 s 
+mcp    rcaeval/x-cb536946d6/INC-7853 run 2: fail hl7-bus 22.6 s 
+chains rcaeval/x-5f7f600832/INC-7055 run 2: pass firmware-api 0.0 s 
+skill  rcaeval/x-c6646cafa4/INC-7798 run 2: pass rules-engine 31.4 s 
+skill  rcaeval/x-cb536946d6/INC-7853 run 2: pass notify-hub 24.4 s 
+chains rcaeval/x-d8b0571df1/INC-7703 run 2: pass mqtt-core 0.0 s 
+mcp    rcaeval/x-d8b0571df1/INC-7703 run 2: pass mqtt-core 10.3 s 
+skill  rcaeval/x-5f7f600832/INC-7055 run 2: pass firmware-api 23.5 s 
+chains rcaeval/x-23220825ed/INC-7377 run 2: fail alarm-api 0.0 s 
+mcp    rcaeval/x-23220825ed/INC-7377 run 2: pass firmware-api 18.8 s 
+skill  rcaeval/x-d8b0571df1/INC-7703 run 2: pass mqtt-core 21.0 s 
+chains rcaeval/x-54589c712f/INC-7212 run 2: fail lobby-edge 0.0 s 
+mcp    rcaeval/x-54589c712f/INC-7212 run 2: pass chat-relay 13.7 s 
+skill  rcaeval/x-23220825ed/INC-7377 run 2: pass firmware-api 20.6 s 
+chains rcaeval/x-ce02d32b58/INC-7121 run 2: pass slots-kv 0.0 s 
+mcp    rcaeval/x-ce02d32b58/INC-7121 run 2: pass slots-kv 11.3 s 
+mcp    rcaeval/x-d5b42a6d5e/INC-7099 run 2: pass fares-db 11.5 s 
+chains rcaeval/x-d5b42a6d5e/INC-7099 run 2: pass fares-db 0.0 s 
+skill  rcaeval/x-54589c712f/INC-7212 run 2: pass chat-relay 20.5 s 
+skill  rcaeval/x-ce02d32b58/INC-7121 run 2: pass slots-kv 16.2 s 
+chains rcaeval/x-72289808f2/INC-8164 run 2: pass avail-kv 0.0 s 
+mcp    rcaeval/x-72289808f2/INC-8164 run 2: pass avail-kv 10.5 s 
+skill  rcaeval/x-d5b42a6d5e/INC-7099 run 2: pass fares-db 17.0 s 
+chains rcaeval/x-6cea1d4b54/INC-7461 run 3: pass records-api 0.0 s 
+mcp    rcaeval/x-c720471363/INC-7972 run 3: fail shipments-pg 10.3 s 
+mcp    rcaeval/x-6cea1d4b54/INC-7461 run 3: pass records-api 18.1 s 
+chains rcaeval/x-c720471363/INC-7972 run 3: pass depot-sync 0.0 s 
+skill  rcaeval/x-72289808f2/INC-8164 run 2: pass avail-kv 26.7 s 
+mcp    rcaeval/x-06cb8f3df9/INC-8198 run 3: pass notify-hub 12.6 s 
+chains rcaeval/x-06cb8f3df9/INC-8198 run 3: pass notify-hub 0.0 s 
+skill  rcaeval/x-6cea1d4b54/INC-7461 run 3: pass records-api 35.1 s 
+mcp    rcaeval/x-40fcb71db2/INC-8277 run 3: pass event-stream 11.4 s 
+chains rcaeval/x-40fcb71db2/INC-8277 run 3: pass event-stream 0.0 s 
+skill  rcaeval/x-c720471363/INC-7972 run 3: pass depot-sync 32.5 s 
+mcp    rcaeval/x-2f1b8c9e5b/INC-7898 run 3: fail media-meta-db 11.1 s 
+chains rcaeval/x-2f1b8c9e5b/INC-7898 run 3: pass session-kv 0.0 s 
+skill  rcaeval/x-06cb8f3df9/INC-8198 run 3: pass notify-hub 30.0 s 
+skill  rcaeval/x-40fcb71db2/INC-8277 run 3: pass event-stream 16.9 s 
+chains rcaeval/x-dd5daaccde/INC-8225 run 3: fail license-check 0.0 s 
+mcp    rcaeval/x-dd5daaccde/INC-8225 run 3: pass origin-store 13.8 s 
+mcp    rcaeval/x-3f7fc080f1/INC-7312 run 3: pass parcel-tracker 15.8 s 
+chains rcaeval/x-3f7fc080f1/INC-7312 run 3: fail dispatch-portal 0.0 s 
+skill  rcaeval/x-dd5daaccde/INC-8225 run 3: pass origin-store 24.6 s 
+skill  rcaeval/x-2f1b8c9e5b/INC-7898 run 3: pass session-kv 31.0 s 
+chains rcaeval/x-d24697ab21/INC-7153 run 3: pass title-index 0.0 s 
+mcp    rcaeval/x-d24697ab21/INC-7153 run 3: pass title-index 10.8 s 
+mcp    rcaeval/x-761ce7104d/INC-7244 run 3: pass fleet-api 13.3 s 
+chains rcaeval/x-761ce7104d/INC-7244 run 3: pass fleet-api 0.0 s 
+skill  rcaeval/x-3f7fc080f1/INC-7312 run 3: pass parcel-tracker 30.4 s 
+skill  rcaeval/x-d24697ab21/INC-7153 run 3: pass title-index 22.0 s 
+chains rcaeval/x-25bf48d25b/INC-7667 run 3: pass accounts-pg 0.0 s 
+mcp    rcaeval/x-25bf48d25b/INC-7667 run 3: pass accounts-pg 12.2 s 
+skill  rcaeval/x-761ce7104d/INC-7244 run 3: pass fleet-api 28.2 s 
+chains rcaeval/x-85f91bb85c/INC-7264 run 3: pass chat-relay 0.0 s 
+mcp    rcaeval/x-85f91bb85c/INC-7264 run 3: pass chat-relay 12.3 s 
+skill  rcaeval/x-25bf48d25b/INC-7667 run 3: pass accounts-pg 24.7 s 
+chains rcaeval/x-a360d81053/INC-8027 run 3: fail teller-gateway 0.0 s 
+mcp    rcaeval/x-a360d81053/INC-8027 run 3: fail rate-kv 11.6 s 
+skill  rcaeval/x-85f91bb85c/INC-7264 run 3: pass chat-relay 19.8 s 
+chains rcaeval/x-8aa1cee0a3/INC-7509 run 3: pass media-meta-db 0.0 s 
+mcp    rcaeval/x-8aa1cee0a3/INC-7509 run 3: pass media-meta-db 13.2 s 
+mcp    rcaeval/x-1031f16451/INC-7604 run 3: pass player-db 9.9 s 
+chains rcaeval/x-1031f16451/INC-7604 run 3: pass player-db 0.0 s 
+skill  rcaeval/x-8aa1cee0a3/INC-7509 run 3: pass media-meta-db 22.1 s 
+mcp    rcaeval/x-d9b1001ce7/INC-8045 run 3: pass route-planner 14.9 s 
+chains rcaeval/x-d9b1001ce7/INC-8045 run 3: fail dispatch-portal 0.0 s 
+skill  rcaeval/x-1031f16451/INC-7604 run 3: pass player-db 20.0 s 
+skill  rcaeval/x-a360d81053/INC-8027 run 3: fail rate-kv 42.2 s 
+chains rcaeval/x-1d71e6308b/INC-7579 run 3: pass license-check 0.0 s 
+mcp    rcaeval/x-1d71e6308b/INC-7579 run 3: pass license-check 12.7 s 
+mcp    rcaeval/x-617d11bc10/INC-7761 run 3: pass fares-db 13.0 s 
+chains rcaeval/x-617d11bc10/INC-7761 run 3: fail seat-map 0.0 s 
+skill  rcaeval/x-1d71e6308b/INC-7579 run 3: pass license-check 18.8 s 
+skill  rcaeval/x-d9b1001ce7/INC-8045 run 3: pass route-planner 32.8 s 
+chains rcaeval/x-daeb5e1dd1/INC-7522 run 3: pass emr-db 0.0 s 
+mcp    rcaeval/x-daeb5e1dd1/INC-7522 run 3: pass emr-db 11.4 s 
+skill  rcaeval/x-617d11bc10/INC-7761 run 3: pass fares-db 27.2 s 
+chains rcaeval/x-7023622d73/INC-7641 run 3: fail parcel-tracker 0.0 s 
+mcp    rcaeval/x-7023622d73/INC-7641 run 3: pass depot-sync 12.9 s 
+skill  rcaeval/x-daeb5e1dd1/INC-7522 run 3: pass emr-db 22.9 s 
+chains rcaeval/x-7d49a0334a/INC-8086 run 3: pass audit-journal 0.0 s 
+skill  rcaeval/x-7023622d73/INC-7641 run 3: pass depot-sync 20.8 s 
+mcp    rcaeval/x-7d49a0334a/INC-8086 run 3: pass audit-journal 14.3 s 
+chains rcaeval/x-1875c965b9/INC-7357 run 3: pass account-api 0.0 s 
+skill  rcaeval/x-7d49a0334a/INC-8086 run 3: pass audit-journal 24.2 s 
+mcp    rcaeval/x-1875c965b9/INC-7357 run 3: fail fraud-score 20.9 s 
+chains rcaeval/x-83380af210/INC-7947 run 3: fail cheat-guard 0.0 s 
+mcp    rcaeval/x-83380af210/INC-7947 run 3: fail event-stream 13.7 s 
+skill  rcaeval/x-1875c965b9/INC-7357 run 3: pass account-api 25.1 s 
+chains rcaeval/x-249a98cd21/INC-8124 run 3: pass series-db 0.0 s 
+mcp    rcaeval/x-249a98cd21/INC-8124 run 3: pass series-db 10.2 s 
+mcp    rcaeval/x-7225901111/INC-7014 run 3: pass rate-kv 12.8 s 
+chains rcaeval/x-7225901111/INC-7014 run 3: pass rate-kv 0.0 s 
+skill  rcaeval/x-83380af210/INC-7947 run 3: pass match-kv 24.0 s 
+skill  rcaeval/x-249a98cd21/INC-8124 run 3: pass series-db 24.4 s 
+chains rcaeval/x-b0d3bf3af6/INC-7842 run 3: fail booking-web 0.0 s 
+skill  rcaeval/x-7225901111/INC-7014 run 3: pass rate-kv 19.9 s 
+mcp    rcaeval/x-b0d3bf3af6/INC-7842 run 3: fail gds-bridge 15.7 s 
+chains rcaeval/x-e872422f60/INC-7410 run 3: fail booking-web 0.0 s 
+mcp    rcaeval/x-e872422f60/INC-7410 run 3: pass gds-bridge 14.9 s 
+skill  rcaeval/x-e872422f60/INC-7410 run 3: pass gds-bridge 21.6 s 
+chains rcaeval/x-c6646cafa4/INC-7798 run 3: pass rules-engine 0.0 s 
+mcp    rcaeval/x-c6646cafa4/INC-7798 run 3: fail mqtt-core 15.9 s 
+skill  rcaeval/x-b0d3bf3af6/INC-7842 run 3: pass pnr-api 35.2 s 
+chains rcaeval/x-cb536946d6/INC-7853 run 3: pass notify-hub 0.0 s 
+mcp    rcaeval/x-5f7f600832/INC-7055 run 3: pass firmware-api 11.4 s 
+mcp    rcaeval/x-cb536946d6/INC-7853 run 3: pass notify-hub 22.5 s 
+chains rcaeval/x-5f7f600832/INC-7055 run 3: pass firmware-api 0.0 s 
+skill  rcaeval/x-c6646cafa4/INC-7798 run 3: pass rules-engine 34.9 s 
+mcp    rcaeval/x-d8b0571df1/INC-7703 run 3: pass mqtt-core 10.8 s 
+chains rcaeval/x-d8b0571df1/INC-7703 run 3: pass mqtt-core 0.0 s 
+skill  rcaeval/x-cb536946d6/INC-7853 run 3: pass notify-hub 33.6 s 
+skill  rcaeval/x-5f7f600832/INC-7055 run 3: pass firmware-api 24.4 s 
+chains rcaeval/x-23220825ed/INC-7377 run 3: fail alarm-api 0.0 s 
+mcp    rcaeval/x-23220825ed/INC-7377 run 3: pass firmware-api 16.1 s 
+skill  rcaeval/x-d8b0571df1/INC-7703 run 3: pass mqtt-core 29.9 s 
+chains rcaeval/x-54589c712f/INC-7212 run 3: fail lobby-edge 0.0 s 
+mcp    rcaeval/x-54589c712f/INC-7212 run 3: pass chat-relay 12.0 s 
+skill  rcaeval/x-23220825ed/INC-7377 run 3: pass firmware-api 25.3 s 
+chains rcaeval/x-ce02d32b58/INC-7121 run 3: pass slots-kv 0.0 s 
+mcp    rcaeval/x-ce02d32b58/INC-7121 run 3: pass slots-kv 11.3 s 
+skill  rcaeval/x-54589c712f/INC-7212 run 3: pass chat-relay 25.4 s 
+chains rcaeval/x-d5b42a6d5e/INC-7099 run 3: pass fares-db 0.0 s 
+mcp    rcaeval/x-d5b42a6d5e/INC-7099 run 3: pass fares-db 13.8 s 
+skill  rcaeval/x-ce02d32b58/INC-7121 run 3: pass slots-kv 20.7 s 
+chains rcaeval/x-72289808f2/INC-8164 run 3: pass avail-kv 0.0 s 
+skill  rcaeval/x-d5b42a6d5e/INC-7099 run 3: pass fares-db 20.4 s 
+mcp    rcaeval/x-72289808f2/INC-8164 run 3: pass avail-kv 10.4 s 
+skill  rcaeval/x-72289808f2/INC-8164 run 3: pass avail-kv 21.3 s 
+315 runs in 1025 s at --parallel 4
+model claude-haiku-5-5 on claude; 35 cases x 3 runs; arms mcp, skill, chains
+
+rcaeval (35 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 83/105 (0.79) | 25 | 5 | 5 | 0 | 104/105 | 7 | 12.4 | 47557 | 0.35 |
+| skill | 97/104 (0.93) | 30 | 3 | 1 | 1 | 35/104 | 7 | 24.1 | 112112 | 0.78 |
+| chains | 72/105 (0.69) | 24 | 0 | 11 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as the runner reports it (pi's list price, or claude's total_cost_usd)
+mcp wrong answers: shipments-pg x3, media-meta-db x3, rate-kv x3, event-stream x3, mqtt-core x3, gds-bridge x2, hl7-bus x2, scan-stream x1, fraud-score x1, shadow-kv x1
+mcp departs from chains rank 1 on 46 of 105 runs: right on 24 of them, and rank 1 was right on 13
+skill wrong answers: rate-kv x3, shipments-pg x2, event-stream x1, series-db x1
+skill departs from chains rank 1 on 36 of 104 runs: right on 29 of them, and rank 1 was right on 3
+chains wrong answers: dispatch-portal x6, booking-web x6, license-check x3, teller-gateway x3, seat-map x3, parcel-tracker x3, cheat-guard x3, alarm-api x3, lobby-edge x3
+mcp against skill: better on 1 cases, worse on 9, equal on 25 (sign test p = 0.021)
+mcp against chains: better on 9 cases, worse on 6, equal on 20 (sign test p = 0.607)
+skill against chains: better on 10 cases, worse on 2, equal on 23 (sign test p = 0.039)
+
+| case | label | mcp | skill | chains |
+|---|---|---|---|---|
+| x-6cea1d4b54 | records-api | stable_pass: records-api, records-api, records-api | stable_pass: records-api, records-api, records-api | stable_pass: records-api, records-api, records-api |
+| x-c720471363 | depot-sync | stable_fail: shipments-pg, shipments-pg, shipments-pg | flaky: shipments-pg, shipments-pg, depot-sync | stable_pass: depot-sync, depot-sync, depot-sync |
+| x-06cb8f3df9 | notify-hub | stable_pass: notify-hub, notify-hub, notify-hub | stable_pass: notify-hub, notify-hub, notify-hub | stable_pass: notify-hub, notify-hub, notify-hub |
+| x-40fcb71db2 | event-stream | stable_pass: event-stream, event-stream, event-stream | stable_pass: event-stream, event-stream, event-stream | stable_pass: event-stream, event-stream, event-stream |
+| x-2f1b8c9e5b | session-kv | stable_fail: media-meta-db, media-meta-db, media-meta-db | stable_pass: session-kv, session-kv, session-kv | stable_pass: session-kv, session-kv, session-kv |
+| x-dd5daaccde | origin-store | stable_pass: origin-store, origin-store, origin-store | stable_pass: origin-store, origin-store, origin-store | stable_fail: license-check, license-check, license-check |
+| x-3f7fc080f1 | parcel-tracker | stable_pass: parcel-tracker, parcel-tracker, parcel-tracker | stable_pass: parcel-tracker, parcel-tracker, parcel-tracker | stable_fail: dispatch-portal, dispatch-portal, dispatch-portal |
+| x-d24697ab21 | title-index | stable_pass: title-index, title-index, title-index | stable_pass: title-index, title-index, title-index | stable_pass: title-index, title-index, title-index |
+| x-761ce7104d | fleet-api | flaky: scan-stream, fleet-api, fleet-api | error: fleet-api, fleet-api, fleet-api | stable_pass: fleet-api, fleet-api, fleet-api |
+| x-25bf48d25b | accounts-pg | stable_pass: accounts-pg, accounts-pg, accounts-pg | stable_pass: accounts-pg, accounts-pg, accounts-pg | stable_pass: accounts-pg, accounts-pg, accounts-pg |
+| x-85f91bb85c | chat-relay | stable_pass: chat-relay, chat-relay, chat-relay | stable_pass: chat-relay, chat-relay, chat-relay | stable_pass: chat-relay, chat-relay, chat-relay |
+| x-a360d81053 | statement-gen | stable_fail: rate-kv, rate-kv, rate-kv | stable_fail: rate-kv, rate-kv, rate-kv | stable_fail: teller-gateway, teller-gateway, teller-gateway |
+| x-8aa1cee0a3 | media-meta-db | stable_pass: media-meta-db, media-meta-db, media-meta-db | stable_pass: media-meta-db, media-meta-db, media-meta-db | stable_pass: media-meta-db, media-meta-db, media-meta-db |
+| x-1031f16451 | player-db | stable_pass: player-db, player-db, player-db | stable_pass: player-db, player-db, player-db | stable_pass: player-db, player-db, player-db |
+| x-d9b1001ce7 | route-planner | stable_pass: route-planner, route-planner, route-planner | stable_pass: route-planner, route-planner, route-planner | stable_fail: dispatch-portal, dispatch-portal, dispatch-portal |
+| x-1d71e6308b | license-check | stable_pass: license-check, license-check, license-check | stable_pass: license-check, license-check, license-check | stable_pass: license-check, license-check, license-check |
+| x-617d11bc10 | fares-db | stable_pass: fares-db, fares-db, fares-db | stable_pass: fares-db, fares-db, fares-db | stable_fail: seat-map, seat-map, seat-map |
+| x-daeb5e1dd1 | emr-db | stable_pass: emr-db, emr-db, emr-db | stable_pass: emr-db, emr-db, emr-db | stable_pass: emr-db, emr-db, emr-db |
+| x-7023622d73 | depot-sync | stable_pass: depot-sync, depot-sync, depot-sync | stable_pass: depot-sync, depot-sync, depot-sync | stable_fail: parcel-tracker, parcel-tracker, parcel-tracker |
+| x-7d49a0334a | audit-journal | stable_pass: audit-journal, audit-journal, audit-journal | stable_pass: audit-journal, audit-journal, audit-journal | stable_pass: audit-journal, audit-journal, audit-journal |
+| x-1875c965b9 | account-api | flaky: account-api, account-api, fraud-score | stable_pass: account-api, account-api, account-api | stable_pass: account-api, account-api, account-api |
+| x-83380af210 | match-kv | stable_fail: event-stream, event-stream, event-stream | flaky: match-kv, event-stream, match-kv | stable_fail: cheat-guard, cheat-guard, cheat-guard |
+| x-249a98cd21 | series-db | stable_pass: series-db, series-db, series-db | stable_pass: series-db, series-db, series-db | stable_pass: series-db, series-db, series-db |
+| x-7225901111 | rate-kv | stable_pass: rate-kv, rate-kv, rate-kv | stable_pass: rate-kv, rate-kv, rate-kv | stable_pass: rate-kv, rate-kv, rate-kv |
+| x-b0d3bf3af6 | pnr-api | flaky: gds-bridge, pnr-api, gds-bridge | stable_pass: pnr-api, pnr-api, pnr-api | stable_fail: booking-web, booking-web, booking-web |
+| x-e872422f60 | gds-bridge | stable_pass: gds-bridge, gds-bridge, gds-bridge | stable_pass: gds-bridge, gds-bridge, gds-bridge | stable_fail: booking-web, booking-web, booking-web |
+| x-c6646cafa4 | rules-engine | stable_fail: mqtt-core, mqtt-core, mqtt-core | stable_pass: rules-engine, rules-engine, rules-engine | stable_pass: rules-engine, rules-engine, rules-engine |
+| x-cb536946d6 | notify-hub | flaky: hl7-bus, hl7-bus, notify-hub | stable_pass: notify-hub, notify-hub, notify-hub | stable_pass: notify-hub, notify-hub, notify-hub |
+| x-5f7f600832 | firmware-api | stable_pass: firmware-api, firmware-api, firmware-api | flaky: series-db, firmware-api, firmware-api | stable_pass: firmware-api, firmware-api, firmware-api |
+| x-d8b0571df1 | mqtt-core | stable_pass: mqtt-core, mqtt-core, mqtt-core | stable_pass: mqtt-core, mqtt-core, mqtt-core | stable_pass: mqtt-core, mqtt-core, mqtt-core |
+| x-23220825ed | firmware-api | flaky: shadow-kv, firmware-api, firmware-api | stable_pass: firmware-api, firmware-api, firmware-api | stable_fail: alarm-api, alarm-api, alarm-api |
+| x-54589c712f | chat-relay | stable_pass: chat-relay, chat-relay, chat-relay | stable_pass: chat-relay, chat-relay, chat-relay | stable_fail: lobby-edge, lobby-edge, lobby-edge |
+| x-ce02d32b58 | slots-kv | stable_pass: slots-kv, slots-kv, slots-kv | stable_pass: slots-kv, slots-kv, slots-kv | stable_pass: slots-kv, slots-kv, slots-kv |
+| x-d5b42a6d5e | fares-db | stable_pass: fares-db, fares-db, fares-db | stable_pass: fares-db, fares-db, fares-db | stable_pass: fares-db, fares-db, fares-db |
+| x-72289808f2 | avail-kv | stable_pass: avail-kv, avail-kv, avail-kv | stable_pass: avail-kv, avail-kv, avail-kv | stable_pass: avail-kv, avail-kv, avail-kv |
+
+leak check: 1 of 315 runs voided; 0 errors
+  leak skill rcaeval/x-761ce7104d/INC-7244 run 2: bash: climbs out with ..
+
+AC@1 over scored runs (fooled: runs that answered the planted distractor's application)
+
+| arm | all | a chronic | b deploy | c alert | d sparse | e precedent | voided |
+|---|---|---|---|---|---|---|---|
+| chains | 72/105 (0.69), fooled 3 | 18/21 (0.86), fooled 0 | 12/21 (0.57), fooled 0 | 15/21 (0.71), fooled 3 | 12/21 (0.57), fooled 0 | 15/21 (0.71), fooled 0 | 0 |
+| mcp | 83/105 (0.79), fooled 22 | 20/21 (0.95), fooled 1 | 19/21 (0.90), fooled 2 | 21/21 (1.00), fooled 0 | 2/21 (0.10), fooled 19 | 21/21 (1.00), fooled 0 | 0 |
+| skill | 97/104 (0.93), fooled 7 | 19/20 (0.95), fooled 1 | 21/21 (1.00), fooled 0 | 21/21 (1.00), fooled 0 | 15/21 (0.71), fooled 6 | 21/21 (1.00), fooled 0 | 1 |
+
+| type | fooled, agent arms | fooled share | max share of one arm |
+|---|---|---|---|
+| a chronic | 2/41 | 0.05 | 0.05 |
+| b deploy | 2/42 | 0.05 | 0.10 |
+| c alert | 0/42 | 0.00 | 0.00 |
+| d sparse | 25/42 | 0.60 | 0.90 |
+| e precedent | 0/42 | 0.00 | 0.00 |
+
+cost by the runner's report: $1.13 over 315 rows

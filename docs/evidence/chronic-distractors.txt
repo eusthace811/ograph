@@ -21,3 +21,17 @@ Reported, not gated: AC@1 per distractor type and arm; how often each arm answer
 distractor; what misled_by.py says for Candidate's misses.
 If 1 fails, lane T's KEEP stands on RCAEval alone, and this result is reported as a limit of the
 marking (for example, a sparse series that fires once is not chronic by design).
+
+RESULT (2026-11-25): PASS. Candidate edc8651, Haiku claude-haiku-5-5, 3 runs, 315 rows, 1 voided
+(a skill run's own `..`), 0 errors, $1.13. Report: docs/evidence/chronic-distractors/report.txt;
+rows: docs/evidence/chronic-distractors/runs.jsonl. Paired per case against lane U's baseline:
+  1. mcp    Parent 0.60  Candidate 0.79   better on 10 cases, worse on 0, sign test p = 0.0020  PASS
+  2. skill  Parent 0.92  Candidate 0.93   better on 3, worse on 3, p = 1.000 (Candidate >= Parent)  PASS
+  3. chains rank 1 identical on all 35 cases                                                    PASS
+Per distractor type, mcp Parent -> Candidate: chronic 0.19 -> 0.95, deploy 0.81 -> 0.90, alert
+1.00 -> 1.00, sparse 0.00 -> 0.10, precedent 1.00 -> 1.00. skill: chronic 0.70 -> 0.95, sparse
+0.90 -> 0.71 (6 of 21 runs fooled), others 1.00 both.
+Limit, as expected before the run: the sparse distractor (a series that saturates severity
+without firing repeatedly) is not marked chronic by design, and still fools mcp on 19 of 21 runs.
+That is the next fix: severity of a sparse series. chains rank 1 is 0.69 on this suite (0.57 on
+deploy and sparse), a ranking weakness the agent gate does not touch.

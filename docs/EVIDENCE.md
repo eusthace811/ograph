@@ -1172,3 +1172,5 @@ On Haiku the MCP agent named redis on 54 of 90 runs: redis's disk series is flat
 | A4 misses recovered | 13 runs against 7 |
 
 Wrong answers naming a chronic application fell from 101 to 15 (mcp) and from 57 to 0 (skill). Cost $2.95 against $2.90 per binary; the lane spent $6.96. Verdict: KEEP.
+
+Lane T, second check on the distractor suite (docs/evidence/chronic-distractors.txt, gate committed before the run): PASS. mcp 0.60 -> 0.79 (better on 10 of 35 cases, worse on 0, p = 0.002), skill 0.92 -> 0.93, chains rank 1 identical. The sparse distractor still fools mcp (0.10): a series that saturates severity without repeating is not chronic, and is the next fix.
