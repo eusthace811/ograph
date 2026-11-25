@@ -1,0 +1,5 @@
+SPARQL suite: reference queries with identical non-empty rows under Parent and Candidate: 22/22
+demo chains rank 1 INC-4120: Parent ledger-db, Candidate ledger-db, same
+demo chains rank 1 INC-4388: Parent checkout, Candidate checkout, same
+demo chains rank 1 INC-4501: Parent search-api, Candidate search-api, same
+demo chains rank 1 INC-5377: Parent ledger-db, Candidate ledger-db, same

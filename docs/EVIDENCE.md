@@ -1119,3 +1119,21 @@ No gate called a model: the refusing `pi` stood first on `PATH`. `cargo test --w
 | `test_pi.mjs` | PASS, prompt 8016 characters | PASS, prompt 8056 characters | `merged-13/pi-contract.txt` |
 
 The `uses` gate counts 106 more facts, in two files. In each, the facts that went equal the facts predicted. `chat-actions/actions.json` goes from 126 to 216 facts and `discussions/ops.json` from 467 to 483: these are the `evt:sourceRecord` facts that threads now carry, one per message. No file of the gate has an incident that another file states, so finding 1 adds no provenance nodes there. The prompt grew 40 characters because of a74561f's edit to `investigation.md`, which came after the merged run of `test_pi.mjs`. These fixes do not touch the prompt.
+
+## Phase 13, lane T: chronic signals (`chronic-signals.txt`, `chronic-signals/`)
+
+On Haiku the MCP agent named redis on 54 of 90 runs: redis's disk series is flat zero with steps, so its first episode in the window scores 1.00 and is the earliest strong event, and it fires again and again before most incidents. ograph now says so in its own output. An event whose series (same application, signal kind and metric or log template) started at least 2 episodes in the correlation window before the incident carries `chronic`, for example `redis diskio fired 4 times in the 30 min before the incident: likely background, not a new fault`, in `before`, on chain events in `chains`, in `why` and in the lab, and the MCP tools pass it on. Only events the view holds count, so `--known-at` applies. Scores and ranks do not change. The gate was committed before the code (9d25ea5).
+
+| Gate | Result |
+|---|---|
+| RCAEval chain AC@1 | 0.93, per-case rankings identical to Parent on 90/90 |
+| `similar_eval.py` | 82/89 = 0.92 |
+| `replay_gate.py` | 0 of 18630 cases disagree |
+| Demo chains rank 1 | identical; no demo event is chronic |
+| SHACL, SPARQL, lab, tests, clippy | 98/98; 22/22 identical; 0 failures, no JS errors; pass; clean |
+| A1 mcp held-out (55 cases x 3, Haiku) | 127/165 (0.77) against 56/165 (0.34); better 36, worse 2, p < 0.0001 |
+| A2 skill held-out + misses | 158/172 (0.92) against 111/175 (0.63) |
+| A3 departures from rank 1 naming the label | 0.20 against 0.04 |
+| A4 misses recovered | 13 runs against 7 |
+
+Wrong answers naming a chronic application fell from 101 to 15 (mcp) and from 57 to 0 (skill). Cost $2.95 against $2.90 per binary; the lane spent $6.96. Verdict: KEEP.

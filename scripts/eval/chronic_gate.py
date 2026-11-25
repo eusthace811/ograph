@@ -56,7 +56,7 @@ _chronic = {}
 def chronic_apps(c):
     """Applications all of whose events in the 30 minutes before the incident are chronic."""
     if c not in _chronic:
-        out = subprocess.run([a.bin, "--json", "before", labels[c]["incident"], "--window", "30m"], cwd=pathlib.Path(a.cases) / c, capture_output=True, text=True)
+        out = subprocess.run([str(pathlib.Path(a.bin).resolve()), "--json", "before", labels[c]["incident"], "--window", "30m"], cwd=pathlib.Path(a.cases) / c, capture_output=True, text=True)
         ev = json.loads(out.stdout)["events"] if out.returncode in (0, 1) and out.stdout.strip() else []
         by = collections.defaultdict(list)
         for e in ev: by[e["app"]].append(bool(e.get("chronic")))
