@@ -14,8 +14,8 @@ Work in this order and cite what each step returned:
 1. `ograph_before {incident}`: the events before the incident on its application and its
    dependencies, newest first. Read the signal types and strengths.
 2. `ograph_chains {incident}`: ranked root-cause candidates, each with its chain of evidence.
-   Rank 1 is the answer to report, and it is a hypothesis: say "the strongest candidate is"
-   with its score and chain id, never "the cause is". Name another application only when you
+   Rank 1 is the answer to report. A chain is a hypothesis: say so in the answer, and write
+   "the strongest candidate is" with its score and chain id, never "the cause is". Name another application only when you
    can quote evidence the ranking does not use: a chat message or operator action, a deployment
    or config change no ranked chain contains, a past write-up, a verdict (`precedent`, or
    `causes` in `ograph_similar`). Being earliest, most severe or upstream is not such evidence:

@@ -90,7 +90,7 @@ and `severity` parts and its `edge`. A low time part, or an `edge` of `trace`, `
 
 When you depart from rank 1, quote the evidence and keep rank 1 in the answer as the
 alternative, with its score and chain id. Either way the cause is a hypothesis until a verdict
-accepts it: write "the strongest candidate is", never "the cause is".
+accepts it. Say so in the answer, and write "the strongest candidate is", never "the cause is".
 
 ## 3. Has this happened before
 
