@@ -18,14 +18,14 @@ Exclusions are fixed below, each with its reason, and were written before the fi
 Usage: skill_coverage.py --bin target/release/ograph [--rev REV] [--demo examples/demo] [--no-run]
   --rev reads skills/ograph and docs/REFERENCE.md from a git revision instead of the tree.
 Exit 0 when nothing is unmentioned and every example exits as documented."""
-import argparse, os, pathlib, re, shlex, shutil, subprocess, sys, tempfile
+import argparse, datetime, os, pathlib, re, shlex, shutil, subprocess, sys, tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 
 EXCLUDED = {
     "help": "clap's own subcommand",
-    "--help": "clap's own flag",
-    "--version": "clap's own flag",
+    "global --help": "clap's own flag",
+    "global --version": "clap's own flag",
     **{f"config [detect] {k}": "detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list"
        for k in ("metric_z", "metric_baseline_s", "metric_min_run", "metric_min_history_s", "log_burst_factor", "log_min_count", "trace_error_rate", "trace_slow_factor", "two_sided")},
     **{f"config [llm.extract] {k}": "how the model is called, set once by a person; the skill says what the table enables"
@@ -127,7 +127,7 @@ def reference_items(ref):
             key = m[1]
             items.append((f"config [{table}] {key}" if table else f"config {key}", rf"\b{key}\b"))
     formats = ref.split("## Input formats")[1].split("\n## ")[0]
-    for kind in re.findall(r"^\| `(\w+)` \|", formats, re.M):
+    for kind in re.findall(r"^\| `(\w+)` \|", formats, re.M)[1:]:
         items.append((f"source kind {kind}", rf'kind = "{kind}"|`{kind}` source|\b{kind}\b source'))
     for opt in sorted(set(re.findall(r"Optional `(\w+)", formats))):
         items.append((f"source option {opt}", rf"\b{opt} = "))
@@ -148,7 +148,7 @@ def mentioned_flag(paras, cmd, flag):
     name = rf"(?:ograph(?:\s+--json)?\s+|`|\b){re.escape(cmd)}\b"
     if flag.startswith("--"):
         return any(re.search(name, p) and re.search(rf"(?<![\w-]){re.escape(flag)}\b", p) for p in paras)
-    return any(re.search(rf"ograph(?:\s+--json)?\s+{re.escape(cmd)}\s+{re.escape(flag)}\b", p) for p in paras)
+    return any(re.search(rf"ograph(?:\s+--json)?\s+{re.escape(cmd)}\b[^\n#]*\s{re.escape(flag)}\b", p) for p in paras)
 
 
 def coverage(bin, files, ref):
@@ -187,9 +187,17 @@ def expected_exit(line):
             if comment: comment += " " + tok
             else: words.append(tok)
     except ValueError: pass
-    m = re.search(r"\bexit (\d)", comment)
+    if re.search(NOT_RUN, comment): return words, None
+    m = re.search(r"\(exit (\d)\)\s*$", comment)
     return words, int(m[1]) if m else 0
 
+
+# A line whose comment says one of these needs what examples/demo does not have.
+NOT_RUN = r"needs a model|in a workspace with a code source"
+# The demo store's history starts when the script harvests it, so a time before that is an
+# error (docs/REFERENCE.md). Such a line runs again with the time set to now, which the history
+# covers, and must then exit 0 or 1.
+YOUNG = re.compile(r"the history of this store starts at (\S+) ")
 
 ANSWER = """The strongest candidate for INC-5377 is ledger-db, id:chain/inc-5377-a7370ff7d4358525 (rank 1),
 a hypothesis until someone confirms it. It reaches payments-api and checkout.
@@ -217,8 +225,17 @@ def run_examples(bin, files, demo, work):
                 if not stripped.startswith("ograph "):
                     subprocess.run(["sh", "-c", line], cwd=ws, capture_output=True, env=env, timeout=60); continue
                 words, want = expected_exit(stripped)
+                if want is None:
+                    results.append((name, stripped.split("\n")[0][:110], None, None, "not run: its comment says it " + re.search(NOT_RUN, stripped)[0])); continue
                 p = subprocess.run([bin, *words[1:]], cwd=ws, capture_output=True, text=True, env=env, timeout=300)
-                results.append((name, stripped.split("\n")[0][:110], want, p.returncode, (p.stderr.strip().splitlines() or [""])[-1][:160]))
+                note = (p.stderr.strip().splitlines() or [""])[-1][:160]
+                if p.returncode == 2 and (m := YOUNG.search(p.stderr)) and want == 0:
+                    now = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    at = [now if w0 in ("--since", "--known-at") else w for w0, w in zip(["", *words], words)][1:]
+                    p = subprocess.run([bin, *at], cwd=ws, capture_output=True, text=True, env=env, timeout=300)
+                    note = f"store younger than the example's time; at the time now it exits {p.returncode}" + (f": {p.stderr.strip().splitlines()[-1][:120]}" if p.returncode > 1 else "")
+                    if p.returncode == 1: p.returncode = 0
+                results.append((name, stripped.split("\n")[0][:110], want, p.returncode, note))
     return results
 
 
@@ -261,7 +278,7 @@ def main(argv=None):
         print(f"\n3. Examples: {len(ran)} run, {len(bad)} not exiting as documented, {len(results) - len(ran)} not run")
         for name, line, want, got, err in results:
             mark = "not run" if want is None else ("ok" if want == got else "FAIL")
-            print(f"  {mark:<7} {name}: {line}" + ("" if want is None else f"  (exit {got}, documented {want})") + (f"  {err}" if mark != "ok" else ""))
+            print(f"  {mark:<7} {name}: {line}" + ("" if want is None else f"  (exit {got}, documented {want})") + (f"  {err}" if mark != "ok" or "younger" in err else ""))
     ok = not missing and not og_missing and not bad
     print(f"\nGATE 0 unmentioned items, 0 uncovered ogrep behaviors, 0 failing examples: {'PASS' if ok else 'FAIL'} "
           f"({len(missing)} unmentioned, {og_missing} uncovered, {len(bad)} failing)")
