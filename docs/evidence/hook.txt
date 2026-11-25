@@ -1,0 +1,15 @@
+## no .ograph/
+  no workspace                               median    5.2 ms  max    7.6 ms  ok  (silent)
+## demo (harvest 1.3 s, store 0.6 MB)
+  harvested, chains unjudged                 median   13.0 ms  max   14.4 ms  ok  ograph: 4 incidents have chains but no verdict (INC-5377, INC-4501, INC-4388, INC-4120).
+  every incident judged                      median   14.0 ms  max   15.8 ms  ok  (silent)
+  alerts.json edited after the harvest       median   13.1 ms  max   15.5 ms  ok  ograph: the graph is stale: 1 source files changed since the harvest at 2026-11-25T00:37:25.742Z (alerts.json); run `ograph harvest`.
+  harvested again                            median   13.4 ms  max   17.6 ms  ok  (silent)
+## rcaeval case (harvest 1.4 s, store 0.6 MB)
+  harvested, chains unjudged                 median   12.9 ms  max   14.8 ms  ok  ograph: 1 incidents have chains but no verdict (INC-011F3B).
+  every incident judged                      median   13.0 ms  max   15.2 ms  ok  (silent)
+  logs.jsonl edited after the harvest        median   13.0 ms  max   16.0 ms  ok  ograph: the graph is stale: 1 source files changed since the harvest at 2026-11-25T00:37:30.691Z (logs.jsonl); run `ograph harvest`.
+  harvested again                            median   13.3 ms  max   15.2 ms  ok  (silent)
+
+slowest run 17.6 ms (gate: under 200 ms)
+HOOK GATE: PASS

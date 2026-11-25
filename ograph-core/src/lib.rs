@@ -15,3 +15,5 @@ pub mod workspace;
 pub mod export;
 pub mod serve;
 pub mod lab;
+pub mod cite;
+pub mod status;

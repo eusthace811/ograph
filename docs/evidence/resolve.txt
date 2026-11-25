@@ -1,0 +1,14 @@
+## demo: 10 applications, 92 mentions (56 name an application)
+resolved 56, right 56, wrong 0; recall 1.000
+## rcaeval online-boutique: 11 applications, 86 mentions (53 name an application)
+resolved 52, right 52, wrong 0; recall 0.981
+  missed redis-svc (ambiguous: only fuzzily matches id:app/redis (0.925, under 0.93))
+## gateway gate: 6 applications, 50 mentions (29 name an application)
+resolved 26, right 26, wrong 0; recall 0.897
+  missed cart-svc (ambiguous: only fuzzily matches id:app/cart (0.914, under 0.93))
+  missed email-svc (ambiguous: only fuzzily matches id:app/email (0.925, under 0.93))
+  missed currencies-svc (ambiguous: only fuzzily matches id:app/currency (0.883, under 0.93))
+
+all: 228 mentions, 138 name an application, resolved 134, wrong 0
+precision 1.000  recall 0.971
+RESOLVE GATE: PASS

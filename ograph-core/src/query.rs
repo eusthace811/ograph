@@ -1168,6 +1168,83 @@ pub struct Chains {
     pub suspects: Vec<Suspect>,
 }
 
+/// At most this many mentions per `resolve` call, so an agent names what it needs, not a list.
+pub const MAX_MENTIONS: usize = 5;
+
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MentionStatus {
+    Resolved,
+    Ambiguous,
+    Unresolved,
+}
+
+#[derive(Serialize)]
+pub struct Mention {
+    pub mention: String,
+    pub status: MentionStatus,
+    /// The application, only when `status` is resolved.
+    pub app: Option<String>,
+    pub name: Option<String>,
+    pub rationale: String,
+    pub candidates: Vec<Candidate>,
+}
+
+#[derive(Serialize)]
+pub struct Candidate {
+    pub app: String,
+    pub name: String,
+    pub score: f64,
+}
+
+#[derive(Serialize)]
+pub struct Resolved {
+    pub results: Vec<Mention>,
+    /// Mentions past the first [`MAX_MENTIONS`], not looked at.
+    pub skipped: Vec<String>,
+}
+
+/// Application names, aliases or IRIs to catalog applications, by the gateway's own rules: a
+/// name the gateway would accept resolves, one it would quarantine as ambiguous or missing does
+/// not, so an answer never names an application a harvest would refuse.
+pub fn resolve(s: &Snapshot, mentions: &[String]) -> anyhow::Result<Resolved> {
+    let catalog = crate::gateway::Catalog::from_snapshot(s, None)?;
+    let ids = Ids::new(s)?;
+    let named = |n: &oxrdf::NamedNode| -> anyhow::Result<(String, String)> {
+        let name = s.iri(n.as_str())?.map(|i| app_name(s, &ids, i)).unwrap_or_default();
+        Ok((vocab::compact(n.as_str()), name))
+    };
+    let mentions: Vec<&String> = mentions.iter().filter(|m| !m.trim().is_empty()).collect();
+    let mut results = Vec::new();
+    for m in mentions.iter().take(MAX_MENTIONS) {
+        let m = m.trim();
+        let iri = crate::workspace::resolve_iri(m);
+        let r = if iri.starts_with(vocab::DATA) {
+            let n = oxrdf::NamedNode::new_unchecked(&iri);
+            let found = match (s.iri(&iri)?, s.iri(ops::APPLICATION)?) {
+                (Some(i), Some(c)) => s.object(i, ids.ty)? == Some(c),
+                _ => false,
+            };
+            crate::gateway::Match {
+                resolution: if found { crate::gateway::Resolution::Exact(n.clone()) } else { crate::gateway::Resolution::Missing },
+                why: if found { "an application IRI in the catalog".into() } else { "an IRI that is not a catalog application".into() },
+                candidates: if found { vec![(n, 1.0)] } else { vec![] },
+            }
+        } else {
+            catalog.explain(ops::APPLICATION, m)
+        };
+        let (status, app) = match &r.resolution {
+            crate::gateway::Resolution::Exact(n) | crate::gateway::Resolution::Fuzzy(n, _) => (MentionStatus::Resolved, Some(n)),
+            crate::gateway::Resolution::Ambiguous(..) => (MentionStatus::Ambiguous, None),
+            crate::gateway::Resolution::Missing => (MentionStatus::Unresolved, None),
+        };
+        let app = app.map(named).transpose()?;
+        let candidates = r.candidates.iter().map(|(n, score)| named(n).map(|(app, name)| Candidate { app, name, score: (score * 1000.0).round() / 1000.0 })).collect::<anyhow::Result<_>>()?;
+        results.push(Mention { mention: m.to_owned(), status, name: app.as_ref().map(|a| a.1.clone()), app: app.map(|a| a.0), rationale: r.why, candidates });
+    }
+    Ok(Resolved { results, skipped: mentions.iter().skip(MAX_MENTIONS).map(|m| m.trim().to_owned()).collect() })
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use crate::correlate::{PastRoot, Settings};

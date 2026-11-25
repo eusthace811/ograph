@@ -7,6 +7,7 @@ spikes/redb-quadstore/data/store.redb
 **/.ograph/store.redb
 **/.ograph/store.lock
 **/.ograph/lab.html
+**/.ograph/harvested
 docs/*.pdf
 examples/demo/catalog/
 spikes/*/target/

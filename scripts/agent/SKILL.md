@@ -27,5 +27,10 @@ Work in this order and cite what each step returned:
    (`VALUES ?type { evt:Alert evt:Deployment ... } ?e a ?type`); the error for
    `?e a evt:Event` lists them.
 
+8. `ograph_resolve {mentions}` before you name an application no tool answer showed you.
+   `ambiguous` and `unresolved` names are not applications.
+9. `ograph_cite_check {text}` on your draft answer. Fix or drop every `stale` or `unknown`
+   citation before you answer.
+
 Only call `ograph_verdict` after a person confirms the cause, and pass their evidence.
 Never present a chain as a conclusion without that verdict.
