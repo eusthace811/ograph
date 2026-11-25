@@ -1,4 +1,4 @@
-harvested 90 cases and accepted the true chain of 90 in 24 s; failures: {}
+harvested 90 cases and accepted the true chain of 90 in 6 s; failures: {}
 configured (chain ranking): all grid AC@1 0.9333 replay 0.9333 (0 flips, 0 fixed of 90); tuning (rep 1) grid AC@1 0.9333 replay 0.9333 (0 flips, 0 fixed of 30); held out (reps 2-3) grid AC@1 0.9333 replay 0.9333 (0 flips, 0 fixed of 60)
 propagation (0.0, 0.0, 0.4, 0.6): all grid AC@1 0.0111 replay 0.0111 (83 flips, 0 fixed of 90); tuning (rep 1) grid AC@1 0.0000 replay 0.0000 (28 flips, 0 fixed of 30); held out (reps 2-3) grid AC@1 0.0167 replay 0.0167 (55 flips, 0 fixed of 60)
 propagation (0.0, 0.0, 0.5, 0.5): all grid AC@1 0.0111 replay 0.0111 (83 flips, 0 fixed of 90); tuning (rep 1) grid AC@1 0.0000 replay 0.0000 (28 flips, 0 fixed of 30); held out (reps 2-3) grid AC@1 0.0167 replay 0.0167 (55 flips, 0 fixed of 60)
@@ -214,5 +214,5 @@ top 5 propagation weights on the tuning split (grid AC@1 = replay AC@1):
   propagation (0.5, 0.4, 0.0, 0.1): 0.90 = 0.90
   propagation (0.6, 0.3, 0.0, 0.1): 0.90 = 0.90
 settings points: 207; points where grid and replay AC@1 agree on every split: 207/207; cases that disagree: 0 of 18630
-18630 replay runs (one verdict each) in 1013 s wall for both commands with 4 jobs; replay per run: median 84 ms, max 5858 ms
+18630 replay runs (one verdict each) in 467 s wall for both commands with 5 jobs; replay per run: median 65 ms, max 1262 ms
 PASS

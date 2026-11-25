@@ -775,7 +775,7 @@ The lanes were merged in the order F, G, A2, A1, C2, C1, D, E, B, and every dete
 | SPARQL correctness | 0 mismatches over 41 queries | 0 mismatches over 41 queries | `merged/store-x1.txt` |
 | A1 `chain_scores_gate.py` | 2454 chains, 3533 links, 0 failures | the same numbers, PASS | `merged/chain-scores-gate.txt` |
 | A1 `precedent_eval.py` | AC@1 0.933 with no verdicts; marks on 41 of 45 rank-1 roots | identical apart from timings | `precedent.txt` |
-| A2 `replay_gate.py` | grid and replay agree at every point | see below | `merged/replay-grid.txt` |
+| A2 `replay_gate.py` | grid and replay agree at every setting of the grid | identical apart from timings: 18630 replay runs, PASS | `replay-grid.txt` |
 | B shapes regression, `diff_stores.py` | 0 of 91 workspaces changed | 0 of 91 changed, 0 facts would be quarantined | `merged/time_order.txt` |
 | B `ontology_diff_eval.py` | 14 mutations, 0 mismatched | 14 mutations, 0 mismatched | `merged/ontology_diff.txt` |
 | B `ontology_lint_eval.py` | PASS | PASS; `ontology check` on ontology 1.3 gives 0 problems, 0 warnings | `merged/ontology_lint.txt` |
