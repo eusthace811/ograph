@@ -629,7 +629,7 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, _d
     // Per-fact provenance for model-proposed facts: model, prompt hash and confidence.
     for (t, i) in &accepted {
         let Some(ProposedFact { method: Extraction::Llm { model, prompt_hash, confidence }, evidence, .. }) = batch.facts.get(*i) else { continue };
-        let node = NamedNode::new_unchecked(format!("{}fact/{}", vocab::DATA, &hex::encode(sha2_hash(&t.to_string()))[..20]));
+        let node = fact_node(t);
         let f = |p: &str, o: Term| Triple::new(node.clone(), NamedNode::new_unchecked(p), o);
         triples.push(f(RDF_TYPE, NamedNode::new_unchecked(harv::LLM_FACT).into()));
         triples.push(f(harv::FACT, s(&t.to_string())));
@@ -689,6 +689,11 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, _d
         Ok((r1 + r2, a1 + a2))
     })?;
     Ok(outcome(removed, added))
+}
+
+/// The node that holds a model-proposed fact's provenance.
+pub fn fact_node(t: &Triple) -> NamedNode {
+    NamedNode::new_unchecked(format!("{}fact/{}", vocab::DATA, &hex::encode(sha2_hash(&t.to_string()))[..20]))
 }
 
 /// Whether the store already holds exactly these triples in `graph` and `qgraph`, apart from the
@@ -757,20 +762,7 @@ pub fn impact(snap: &Snapshot, current: &Ontology, newer: &Ontology) -> anyhow::
         if !g.as_str().starts_with(&harvest) {
             continue;
         }
-        let mut triples = Vec::new();
-        for q in snap.quads([None; 3], GraphSel::Named(gid)) {
-            let q = q?;
-            if let (Some(s), Term::NamedNode(p)) = (shacl::as_subject(&snap.term(q[0])?), snap.term(q[1])?) {
-                triples.push(Triple::new(s, p, snap.term(q[2])?));
-            }
-        }
-        // The gateway writes a graph's own record and the provenance of model facts after its checks.
-        let bookkeeping: FxHashSet<oxrdf::NamedOrBlankNode> = triples
-            .iter()
-            .filter(|t| t.predicate.as_str() == RDF_TYPE && matches!(&t.object, Term::NamedNode(c) if c.as_str() == harv::HARVEST || c.as_str() == harv::LLM_FACT))
-            .map(|t| t.subject.clone())
-            .collect();
-        triples.retain(|t| !bookkeeping.contains(&t.subject));
+        let triples = stored(snap, gid)?;
         let before: FxHashSet<Triple> = recheck(snap, current, gid, &triples).into_iter().map(|(t, _)| t).collect();
         let mut reasons: FxHashMap<String, usize> = FxHashMap::default();
         let mut facts = 0;
@@ -788,6 +780,31 @@ pub fn impact(snap: &Snapshot, current: &Ontology, newer: &Ontology) -> anyhow::
         }
     }
     Ok(out)
+}
+
+/// The facts a graph holds as its batch proposed them: the gateway writes a graph's own record
+/// and the provenance of model facts after its checks.
+fn stored(snap: &Snapshot, gid: Id) -> anyhow::Result<Vec<Triple>> {
+    let mut triples = Vec::new();
+    for q in snap.quads([None; 3], GraphSel::Named(gid)) {
+        let q = q?;
+        if let (Some(s), Term::NamedNode(p)) = (shacl::as_subject(&snap.term(q[0])?), snap.term(q[1])?) {
+            triples.push(Triple::new(s, p, snap.term(q[2])?));
+        }
+    }
+    let bookkeeping: FxHashSet<oxrdf::NamedOrBlankNode> = triples
+        .iter()
+        .filter(|t| t.predicate.as_str() == RDF_TYPE && matches!(&t.object, Term::NamedNode(c) if c.as_str() == harv::HARVEST || c.as_str() == harv::LLM_FACT))
+        .map(|t| t.subject.clone())
+        .collect();
+    triples.retain(|t| !bookkeeping.contains(&t.subject));
+    Ok(triples)
+}
+
+/// The facts of `graph` that a harvest of its source over `snap` would quarantine, with the
+/// reason, by the checks that depend on the rest of the store.
+pub fn rejected_again(snap: &Snapshot, ont: &Ontology, graph: Id) -> anyhow::Result<Vec<(Triple, String)>> {
+    Ok(recheck(snap, ont, graph, &stored(snap, graph)?))
 }
 
 fn recheck(snap: &Snapshot, ont: &Ontology, graph: Id, triples: &[Triple]) -> Vec<(Triple, String)> {

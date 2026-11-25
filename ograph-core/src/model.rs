@@ -138,7 +138,7 @@ pub fn slug(s: &str) -> String {
 
 /// A relative path as an IRI path, percent-encoding everything but unreserved characters and
 /// `/`. Unlike [`slug`] it is injective, so two source files never share a graph.
-fn path_iri(s: &str) -> String {
+pub fn path_iri(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'~' | b'/') {

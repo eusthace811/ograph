@@ -101,6 +101,10 @@ enum Cmd {
     },
     /// Provenance of every fact about a node; for a chain, also every verdict on it
     Why { node: String },
+    /// What depends on a source file, directory or record (`FILE#n`): its facts, the events
+    /// and incidents only it states, the chains that would change without it, their verdicts,
+    /// and its quarantined proposals
+    Uses { source: String },
     /// Correlate every judged incident again and list the verdicts the result would contradict;
     /// exits 1 when any would flip, so it can gate a config.toml change
     Replay {
@@ -276,7 +280,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         Some(r) => r,
         None => workspace::find(&cwd).ok_or_else(|| anyhow::anyhow!("no .ograph/ here or above; run `ograph init`"))?,
     };
-    let ws = if matches!(cli.cmd, Cmd::Status) { Workspace::open_reading(&root)? } else { Workspace::open(&root)? };
+    let ws = if matches!(cli.cmd, Cmd::Status | Cmd::Uses { .. }) { Workspace::open_reading(&root)? } else { Workspace::open(&root)? };
     let json = cli.json;
     match cli.cmd {
         Cmd::Init => unreachable!(),
@@ -486,6 +490,37 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 }
             });
             Ok(!p.facts.is_empty())
+        }
+        Cmd::Uses { source } => {
+            let u = query::uses(&ws.store, &ws.ontology, &ws.config.correlation, &query::source_key(&ws.root, &cwd, &source))?;
+            print(json, &u, |u| {
+                let only = u.facts.iter().filter(|f| f.also_in.is_empty()).count();
+                println!("{}: {} facts ({only} stated nowhere else), {} events and incidents, {} chains change, {} verdicts, {} quarantined", u.source, u.facts.len(), u.events.len(), u.chains.len(), u.verdicts.len(), u.quarantined.len());
+                if let Some(n) = &u.naming {
+                    println!("note: this is a {n} source; every other file's application names are checked against it, so without it facts elsewhere can change too");
+                }
+                for g in &u.graphs {
+                    println!("  in {g}: {} facts", u.facts.iter().filter(|f| &f.graph == g).count());
+                }
+                if !u.shared.is_empty() {
+                    println!("  also stated by other files, so they stay: {}", u.shared.join(", "));
+                }
+                for e in &u.events {
+                    println!("  event {}  {:<16} {:<15} {}  ({})", e.at.as_deref().unwrap_or("?"), e.app.as_deref().unwrap_or("?"), e.signal, e.node, e.record.as_deref().unwrap_or("?"));
+                }
+                for c in &u.chains {
+                    let rank = |r: Option<usize>| r.map_or("-".to_owned(), |r| r.to_string());
+                    let uses = if c.uses.is_empty() { String::new() } else { format!("  uses {}", c.uses.join(", ")) };
+                    println!("  chain {:<8} {:<10} rank {} -> {}  {}{uses}", c.change, c.incident, rank(c.rank), rank(c.rank_after), c.chain);
+                }
+                for v in &u.verdicts {
+                    println!("  verdict {} by {} at {} on {} ({})", v.state, v.by, v.at, v.chain, v.incident);
+                }
+                for q in &u.quarantined {
+                    println!("  QUARANTINED {}: {}", q.fact, q.reason);
+                }
+            });
+            Ok(!u.facts.is_empty() || u.naming.is_some())
         }
         Cmd::Replay { set } => {
             let snap = ws.store.snapshot()?;

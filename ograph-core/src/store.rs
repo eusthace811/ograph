@@ -613,7 +613,7 @@ impl Snapshot {
     /// This view as the store was at `t_ms`: without what was recorded after it, with what was
     /// removed after it. It costs one pass over the history and over the graphs born since, and
     /// keeps both in memory. Only what the history still holds comes back.
-    pub fn known_at(mut self, t_ms: i64) -> Result<Self> {
+    pub fn known_at(self, t_ms: i64) -> Result<Self> {
         let spog = |k: [Id; 4]| [k[1], k[2], k[3], k[0]];
         let mut hidden: FxHashMap<[Id; 4], i64> = FxHashMap::default();
         for r in self.added.iter()? {
@@ -631,10 +631,6 @@ impl Snapshot {
                 }
             }
         }
-        let mut hidden_per_triple: FxHashMap<[Id; 3], u32> = FxHashMap::default();
-        for q in hidden.keys() {
-            *hidden_per_triple.entry([q[0], q[1], q[2]]).or_default() += 1;
-        }
         let mut restored: FxHashMap<[Id; 4], i64> = FxHashMap::default();
         for r in self.history.iter()? {
             let (k, removed) = r?;
@@ -644,6 +640,19 @@ impl Snapshot {
             if added as i64 <= t_ms && t_ms < removed.value() && (hidden.contains_key(&[s, p, o, g]) || self.named[0].get([g, s, p, o])?.is_none()) {
                 restored.insert([s, p, o, g], removed.value());
             }
+        }
+        self.apply(hidden, restored)
+    }
+
+    /// This view without `quads` (`[s, p, o, g]`), as if no graph had stated them.
+    pub fn without(self, quads: impl IntoIterator<Item = [Id; 4]>) -> Result<Self> {
+        self.apply(quads.into_iter().map(|q| (q, 0)).collect(), FxHashMap::default())
+    }
+
+    fn apply(mut self, hidden: FxHashMap<[Id; 4], i64>, restored: FxHashMap<[Id; 4], i64>) -> Result<Self> {
+        let mut hidden_per_triple: FxHashMap<[Id; 3], u32> = FxHashMap::default();
+        for q in hidden.keys() {
+            *hidden_per_triple.entry([q[0], q[1], q[2]]).or_default() += 1;
         }
         let mut per_graph: FxHashMap<Id, i64> = FxHashMap::default();
         for r in self.graphs.iter()? {

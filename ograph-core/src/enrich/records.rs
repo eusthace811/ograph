@@ -185,6 +185,7 @@ pub fn incidents(files: &[(PathBuf, String, bool)], mut degraded: Vec<String>, c
                 b.add(s.clone(), v.predicate, v.object.clone(), &ev, &m);
             }
         }
+        b.add(s.clone(), evt::SOURCE_RECORD, lit(record.as_str()), &ev, &m);
         b.add(s, evt::SIGNAL, lit("INCIDENT"), &ev, &m);
     }
     fault_classes(&mut b, ctx, titles);

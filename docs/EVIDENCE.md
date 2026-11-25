@@ -853,3 +853,35 @@ Out of scope, stated before the run:
 - Facts of an incident that records in another file also state. Without the file, a field may take another record's value rather than go. These triples are left out of both sets and counted.
 
 Pass: precision and recall 1.000 on facts, chains and verdicts over the in-scope files. Also: `uses` time per file on the 90-case merged store, `cargo test --workspace` passes, and RCAEval chain AC@1 0.93 and `similar_eval.py` 82/89 = 0.92 unchanged (`--out` under `target/`).
+
+### Results
+
+**Gate: PASS** (`uses.txt`). Over the 25 in-scope trials (11 demo files, 14 RCAEval files), precision and recall are 1.000 in every category:
+
+| Category | Correct / measured / predicted |
+|---|---|
+| Facts | 1773 / 1773 / 1773 |
+| Chains gone or relinked | 95 / 95 / 95 |
+| Verdicts on them | 19 / 19 / 19 |
+| New chains | 9 / 9 / 9 |
+| Rank moves | 3 / 3 / 3 |
+| Quarantine entries | 20 / 20 / 20 |
+
+No sampled incident was stated in two files, so the shared-incident exclusion left out 0 triples; `uses_lists_what_a_file_feeds_and_the_chains_and_verdicts_that_rest_on_it` covers that case. Of the naming sources, `ownership.jsonl` and the catalog file were exact. Each runbook missed the facts of an alert in another file whose application it had named by alias (`pay-gw`, `finder`): facts recall 0.659 (27 of 41), precision 1.000. That is the out-of-scope cascade, and `uses` marks such a file with `naming`.
+
+Three RCAEval trace files changed chains through no event of their own: 2 relinked, 3 new and 2 moved. Following links to the file's events alone would have missed these. Ranking again over the store without the file's facts found them.
+
+`uses` on the 90-case merged store from `similar_eval.py`, 12 files: median 0.26 s, max 0.61 s. Most of that time ranks all 90 incidents twice.
+
+**What changed during the gate.** These were fixes to the measurement and to the command, made before the passing run. No prediction was tuned against a held-out file.
+
+- **Deleting the file.** The first run deleted only the file, and nothing was removed. A harvest keeps the last facts of a configured path it cannot read, or of a directory that now lists nothing, as it would for an unmounted share. The gate now also removes the `[[source]]` entry when that entry names the file, or names a directory the file was the last one in. `docs/REFERENCE.md` gives the same instruction to users.
+- **The graph node.** The chain dump counted the correlation graph's own node as a chain. It now counts only chains.
+- **Facts of other files.** On the demo with the model's answers, removing `incidents.json` also removed 16 facts of `chat-actions`: the `evt:during` link of operator actions, and their model provenance. SHACL quarantines an `evt:during` whose incident is gone at the next harvest of that file. `uses` now runs the gateway's checks again on every other graph that names a node that goes, over a view of the store without the file's facts, and lists what they would reject, with `because`. `uses_names_the_facts_of_other_files_that_would_lose_what_they_point_at` checks this against a real re-harvest.
+- **The model.** A thread whose answer is not JSON is not cached, so every harvest asks the model again. The trials now use a stub model that answers no JSON, with the answers the demo's cache holds. This costs nothing, and the harvests before and after see the same answers.
+
+**Not measured.** I could not measure the operator-action cascade on the demo with live model answers. The passing run uses the cached answers, which hold no actions. A run with the model (`--model`) stopped when pi reported the subscription's usage limit. The unit test above covers that case with a stand-in model.
+
+**No regression.** `rcaeval_score.py` on the 90 cases gives chain AC@1 0.93 with per-case rankings identical to `integrate-phase-12`. `similar_eval.py --out target/rcaeval-merged` gives 82/89 = 0.92. Apart from timings, both outputs are identical to `rcaeval-final.txt` and `similar-eval.txt`. `incident_conflicts_eval.py`, `known_at_gate.py`, `hook_eval.py` and the pi and MCP contract pass. `cargo test --workspace` passes 90 + 20 + 12, and clippy with `--all-targets` reports nothing. Each incident now carries one `evt:sourceRecord` per record that states it, so an incident batch proposes one more fact per record: `a_withheld_value_counts_as_proposed` now expects 12 proposed and 11 accepted.
+
+**Verdict: KEEP.** `ograph uses PATH[#n]` (text and `--json`) and the MCP and JSON-RPC tool `uses {source}` ship on by default.

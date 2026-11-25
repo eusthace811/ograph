@@ -29,6 +29,8 @@ pub fn tools() -> Value {
          "inputSchema": s(json!({"target": {"type": "string", "description": "an incident, or application names separated by commas"}, "since": {"type": "string", "description": "how far back commits count: 24h, 3d or a date"}}), &["target"])},
         {"name": "why", "description": "Provenance of every fact about a node: harvest graph, source, extractor, model and confidence, and quarantined proposals.",
          "inputSchema": s(json!({"node": {"type": "string"}}), &["node"])},
+        {"name": "uses", "description": "What depends on a source file, a directory of them or one record (FILE#n), for when a source turns out to be wrong: its facts and the other sources that also state each one, the events and incidents only it states, the chains that would go, be relinked, move or enter without it (with incident and rank), the current verdicts on chains that would go or be relinked, and its quarantined proposals. Paths are relative to the workspace root.",
+         "inputSchema": s(json!({"source": {"type": "string"}}), &["source"])},
         {"name": "news", "description": "News that mentions vendors our applications use, with the affected applications and processes.",
          "inputSchema": s(json!({"since": {"type": "string", "description": "only the last DURATION, like 7d (default: all of it)"}}), &[])},
         {"name": "sparql", "description": "Run a read-only SPARQL query. Prefixes ops: evt: inc: disc: corr: rca: harv: id: g: rdf: rdfs: xsd: are predeclared; the default graph is the union of all harvests. A class or property the ontology does not declare is rejected with the nearest declared name.",
@@ -181,6 +183,10 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
         "similar" => serde_json::to_value(query::similar(&snap, arg(p, "incident")?, &ws.config.correlation, 5)?)?,
         "code" => serde_json::to_value(ws.code(&snap, arg(p, "incident")?, p.get("top").and_then(Value::as_u64).unwrap_or(5) as usize)?)?,
         "why" => serde_json::to_value(query::why(&snap, arg(p, "node")?)?)?,
+        "uses" => {
+            let root = std::env::current_dir()?.join(&ws.root);
+            serde_json::to_value(query::uses(&ws.store, &ws.ontology, &ws.config.correlation, &query::source_key(&root, &root, arg(p, "source")?))?)?
+        }
         "news" => {
             let since = p.get("since").and_then(Value::as_str).map(|d| query::duration_s(d).map(|d| crate::workspace::now_ms() - d * 1000)).transpose()?;
             serde_json::to_value(query::news(&snap, since)?)?
@@ -347,7 +353,7 @@ mod tests {
         let hints: Vec<(String, bool)> = tools().as_array().unwrap().iter().map(|t| (t["name"].as_str().unwrap().to_owned(), t["annotations"]["readOnlyHint"].as_bool().unwrap())).collect();
         let writers: Vec<&str> = hints.iter().filter(|h| !h.1).map(|h| h.0.as_str()).collect();
         assert_eq!(writers, ["verdict"]);
-        assert_eq!(hints.len(), 12);
+        assert_eq!(hints.len(), 13);
     }
 
     #[test]
