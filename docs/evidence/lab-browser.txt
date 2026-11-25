@@ -1,0 +1,38 @@
+# ograph lab in a real browser: scripts/eval/lab_browser.mjs (headless Chrome over the DevTools
+# protocol, node 25, no packages), run on 2026-11-25 on lane-d-lab, on the pages lab-check.txt
+# checks. It loads the page from file://, counts exceptions, console errors and log errors, clicks
+# the first chain arrow, an application in the neighbourhood (twice) and a "copy as reject"
+# button, switches to the dark scheme, then sets a 390 px phone viewport. In headless Chrome the
+# clipboard call fails, so the copy shows the fallback: the command text is rewritten and selected.
+# Screenshots (not checked in): target/shots/{demo,merged}-{arrow,filter,dark,phone}.png.
+
+{
+ "page": "target/lab-demo-after.html",
+ "load_ms": 19,
+ "sections": 4,
+ "marks": 13,
+ "arrows": 8,
+ "nodes": 26,
+ "arrow_click": "opened c3-0-1",
+ "filter_click": "filtered to ledger-db: 1 of 3 lanes shown (ledger-db)",
+ "filter_clear": "0 lanes dimmed after a second click",
+ "copy_click": "ograph verdict id:chain/inc-5377-a7370ff7d4358525 reject --evidence TICKET --by \"$USER\"",
+ "dark_bg": "rgb(22, 22, 21)",
+ "phone_scroll": "390 page width at a 390 px viewport",
+ "js_errors": []
+}
+{
+ "page": "target/lab-merged-after.html",
+ "load_ms": 83,
+ "sections": 90,
+ "marks": 2308,
+ "arrows": 130,
+ "nodes": 990,
+ "arrow_click": "opened c47-0",
+ "filter_click": "filtered to redis: 1 of 8 lanes shown (redis)",
+ "filter_clear": "0 lanes dimmed after a second click",
+ "copy_click": "ograph verdict id:chain/inc-90376d-2ef4e7b5ba5c4dea reject --evidence TICKET --by \"$USER\"",
+ "dark_bg": "rgb(22, 22, 21)",
+ "phone_scroll": "390 page width at a 390 px viewport",
+ "js_errors": []
+}

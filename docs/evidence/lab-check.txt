@@ -1,0 +1,28 @@
+# ograph lab page gate: scripts/eval/lab_check.py, run on 2026-11-25 on lane-d-lab (base 25f2bc7).
+# Workspaces: examples/demo copied to target/lab-demo (generate.py, then harvest), and the 90 RCAEval
+# cases merged by `scripts/eval/similar_eval.py --out target/rcaeval-merged`, which accepts the true
+# chain of 90 of 90 incidents as a verdict, so every inspector shows a verdict.
+#
+# Size before, `ograph lab` at 25f2bc7 on the same workspaces:
+#   demo:   13197 bytes, 4 incidents
+#   merged: 1220469 bytes, 90 incidents, 13560 bytes per incident
+# Budget, written down before the new page was first measured: at most 2x the old bytes per
+# incident on the 90-case page, 27120 bytes. First measurement 31559, then 27341 and 26811 after
+# cutting duplication (shared evidence blocks, compact event ids, one command line per chain,
+# whole-pixel coordinates); final 26952 after rows for overlapping episodes.
+# Writing the 90-case page takes 1.41 s (one run, release build).
+
+target/lab-demo-after.html: 38306 bytes, 4 incidents, 9576 bytes per incident
+checked 13 before events, 8 top-chain links and 16 blast and before applications
+0 failures
+target/lab-merged-after.html: 2425705 bytes, 90 incidents, 26952 bytes per incident
+checked 2308 before events, 130 top-chain links and 760 blast and before applications
+0 failures
+
+# Where the bytes go on the 90-case page, per incident: timeline 7410, chain evidence 7650,
+# events table 5757, neighbourhood 3287, the rest (ranking, similar, headings) about 2800.
+# What the neighbourhood shows that the timeline does not: applications with no lane (silent
+# dependencies and callers of the top cause), mean 2.57 and max 5 per incident on the 90 cases
+# (78 of 90 have at least one), mean 4.75 on the demo's 4 incidents.
+# What the timeline shows that the old page did not: the old "before" table stopped at 25 rows;
+# 33 of the 90 RCAEval incidents have more (up to 64), and the timeline draws all 2308 events.
