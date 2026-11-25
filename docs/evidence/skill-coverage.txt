@@ -1,6 +1,6 @@
 Phase 13 lane S, items S2 and S3: does the skill cover what an agent can use, and do its examples run?
 Script: scripts/eval/skill_coverage.py (exclusions fixed in commit f84b3c7, before its first run).
-Binary: target/release/ograph built from lane-s-skill. Demo: a fresh copy of examples/demo after `python3 generate.py`.
+Binary: target/eval-bin/ograph, a copy of target/release/ograph built at 34f7625 (no Rust changed after it). Demo: a fresh copy of examples/demo after `python3 generate.py`.
 
 Runner fixes after the first baseline run, none of which changes what counts as covered:
 exclusion keys of clap's own flags carry their "global" prefix; the input-format table's header
