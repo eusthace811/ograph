@@ -35,6 +35,8 @@ ograph news                        # 4. news touching the vendors our applicatio
 ograph code INC-5377               # with a code source: the lines, commits and files behind it
 ograph suspects INC-5377           # likely causes from dependencies and recent commits
 ograph why id:inc/inc-4120         # provenance of every fact about a node
+ograph changes --since 2d          # what the sources state differently now than two days ago
+ograph chains INC-5377 --known-at 2d   # the answer the store gave then; also on before, blast, sparql
 ograph verdict id:chain/inc-4120-1 accept --evidence PM-4120 --by oncall   # the chain ranked 1 now
 ograph sparql 'SELECT ?app WHERE { ?app ops:dependsOn+ id:app\/ledger-db }'
 ograph lab                         # one HTML page over the whole graph

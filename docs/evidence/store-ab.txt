@@ -1,0 +1,68 @@
+store_bench --scale 1, 5 runs per build, the builds taking turns; median (min to max)
+
+| | old | new | new / old |
+|---|---|---|---|
+| load (s) | 13.300 (13.100 to 17.100) | 13.600 (13.300 to 14.900) | 1.02 |
+| on disk after compaction (MiB) | 658.400 (658.400 to 658.400) | 658.400 (658.400 to 658.400) | 1.00 |
+| open (ms) | 3.546 (2.598 to 3.858) | 4.309 (3.275 to 17.836) | 1.22 |
+| W1 SPARQL p50 (ms) | 13.582 (11.370 to 14.609) | 11.491 (10.299 to 13.481) | 0.85 |
+| W1 native p50 (ms) | 10.193 (8.487 to 14.661) | 10.099 (7.911 to 13.780) | 0.99 |
+| W2 SPARQL p50 (ms) | 0.172 (0.164 to 0.173) | 0.174 (0.167 to 0.189) | 1.01 |
+| W2 native p50 (ms) | 0.004 (0.004 to 0.004) | 0.004 (0.003 to 0.004) | 1.00 |
+| W3 SPARQL p50 (ms) | 18.775 (18.070 to 20.199) | 19.463 (18.314 to 19.981) | 1.04 |
+| W3 native p50 (ms) | 16.630 (16.444 to 17.575) | 16.436 (15.617 to 16.853) | 0.99 |
+| re-harvest, unchanged (ms) | 69.912 (69.120 to 74.131) | 69.410 (67.507 to 81.243) | 0.99 |
+| re-harvest, 3,276 changed (ms) | 479.846 (462.159 to 482.845) | 477.205 (423.595 to 510.320) | 0.99 |
+| re-harvest back (ms) | 467.435 (457.283 to 517.093) | 468.618 (457.109 to 516.828) | 1.00 |
+| mismatches | 0.000 (0.000 to 0.000) | 0.000 (0.000 to 0.000) | nan |
+
+last run of the new build:
+
+generated 3520099 quads in 679.582 ms (scale 1, 30 days of history)
+compaction: 1088.0 MiB -> 658.4 MiB in 3201.362 ms
+
+| load (s) | quads/s | on disk (MiB) | bytes/quad | open (ms) | union triples |
+|---|---|---|---|---|---|
+| 13.3 | 264307 | 658.4 | 196 | 8.790 | 3520099 |
+
+| table | entries | stored MiB | overhead MiB |
+|---|---|---|---|
+| id2term | 1120065 | 42.6 | 5.1 |
+| hash2id | 1120065 | 25.6 | 11.2 |
+| time | 1100000 | 16.8 | 7.9 |
+| app_time | 1100000 | 25.2 | 11.9 |
+| graphs | 32 | 0.0 | 0.0 |
+| born | 32 | 0.0 | 0.0 |
+| added | 0 | 0.0 | 0.0 |
+| history | 0 | 0.0 | 0.0 |
+| uspo | 3520099 | 94.0 | 2.4 |
+| upos | 3520099 | 94.0 | 2.4 |
+| uosp | 3520099 | 94.0 | 2.4 |
+| gspo | 3520099 | 107.4 | 3.9 |
+| spog | 3520099 | 107.4 | 3.9 |
+
+oxigraph in-memory load: 2375.123 ms
+
+correctness: 0 mismatches over 41 queries (against Oxigraph and native)
+
+| workload | rows | SPARQL p50 (ms) | SPARQL max (ms) | native p50 (ms) | native max (ms) | Oxigraph p50 (ms) |
+|---|---|---|---|---|---|---|
+| W1 Bedrock incidents in us-east-1 | 1938 | 12.746 | 12.746 | 10.031 | 10.031 | 9.421 |
+| W2 10 min before incident (20) | 76 | 0.174 | 0.637 | 0.004 | 0.004 | 0.110 |
+| W3 blast radius, hub app | 19999 | 19.655 | 19.655 | 16.550 | 16.550 | 142.637 |
+| W3 blast radius (20 apps) | 42185 | 0.015 | 19.374 | 0.005 | 16.145 | 0.016 |
+
+re-harvest of one day graph (98268 quads), unchanged: removed 0, added 0 in 70.171 ms
+re-harvest with changed timestamps: removed 3276, added 3276 in 463.355 ms
+re-harvest back to the original: removed 3276, added 3276 in 464.383 ms
+
+history after the two replaces: 6552 rows in `history` (480 KiB), 3276 in `added` (136 KiB)
+view of the store between them: built in 4.574 ms, hides 3276 quads, restores 3276; 0 mismatches over 44 answers (native and SPARQL on the view against the native answers saved then)
+
+| workload on the view | native p50 (ms) | SPARQL p50 (ms) |
+|---|---|---|
+| W1 | 12.858 | 14.858 |
+| W2, one incident | 0.154 | 0.208 |
+| W3 blast radius, hub app | 17.711 | 17.770 |
+after the replaces: W2 native rows 76, SPARQL rows 76 (must equal the W2 rows above)
+

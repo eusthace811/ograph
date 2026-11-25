@@ -1,0 +1,34 @@
+The checks of scripts/eval/ab_compare.sh between the build before lane G (old) and the build after (new),
+run on copies of the RCAEval cases and of the demo so that nothing is written under data/.
+
+RCAEval, scripts/eval/rcaeval_score.py with each build:
+
+cases: 90 old, 90 new; per-case rankings identical: True
+harvest per case, median s: old 2.18, new 2.17
+score tables identical: True
+
+All RE2-OB (90 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 0.99 | 0.98 |
+| propagation | 0.83 | 0.94 | 0.94 |
+| zmax | 0.84 | 0.97 | 0.94 |
+| sparql_meanshift | 0.63 | 0.94 | 0.89 |
+
+store bytes after a first harvest, sum over cases: old 48672768, new 50139136 (+16293 per case); median old 552960, new 561152
+
+Demo (examples/demo, generate.py, harvest, eight queries with --json):
+
+old: model cache unchanged (no model call)
+new: model cache unchanged (no model call)
+identical  before_INC-5377.json (2171 bytes)
+identical  blast_ledger-db.json (300 bytes)
+identical  chains_INC-5377.json (2512 bytes)
+identical  chains_INC-5377_--rank_propagation.json (2527 bytes)
+identical  harvest.txt (1443 bytes)
+identical  news.json (410 bytes)
+identical  similar_INC-5377.json (219 bytes)
+identical  validate.json (3 bytes)
+identical  why_INC-5377.json (1491 bytes)
+9 of 9 demo outputs identical between the build before this lane and the build after

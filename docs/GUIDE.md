@@ -205,7 +205,8 @@ confirms):
 
 ```bash
 ograph stats                    # store size and contents
-ograph compact                  # shrink the store file
+ograph compact                  # drop history older than history_days, shrink the store file
+ograph changes --since 7d       # what the sources state differently now than a week ago
 ograph export --out all.trig    # every graph as TriG, for archive or another triple store
 ograph ontology check           # after upgrading ograph
 ograph ontology diff new.ttl    # before changing the ontology; BREAKING lines need care

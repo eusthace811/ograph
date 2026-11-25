@@ -381,3 +381,64 @@ These are the reasons, each measured above:
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.
+
+## Phase 12, lane G: what ograph knew at a time (`known-at.txt`, `known-at-unchanged.txt`, `store-ab.txt`)
+
+A harvest used to overwrite: `replace_graph` wrote the difference and the removed quads were gone, so nobody could ask what `chains` answered last week, or what the catalog said when an incident opened. semantica keeps `recorded_at` and `superseded_at` on every fact and recomputes a closure for a `known_at` time (`semantica/kg/temporal_model.py:28-66`, `semantica/reasoning/temporal_truth_maintenance.py:154-168`). ograph takes the recording-time half of that and stores it only for what changes.
+
+**Verdict: KEEP.** The gates below passed, and nothing that existed got slower beyond noise. The valid-time half is not built, because ogrep cannot date a dependency line (see the end of this section).
+
+### What was built
+
+- **Three tables.** `born` holds, per graph, when its present quads began. `added` holds a present quad written to a graph that already existed. `history` holds a removed quad with the time it was added and the time it was removed. A first harvest writes one `born` row per graph and nothing else, so the history grows with what changes.
+- **`Snapshot::known_at(t)`.** It reads `added`, `history` and every graph born after `t`, then answers every read (`quads`, `objects`, `subjects`, `contains`, `events_on`, `graphs`) as the store would have at `t`. Live rows and restored rows merge in key order, so a pattern's first match is the one the store gave then. The native paths and the SPARQL view read through it unchanged.
+- **Commands.** `--known-at T` on `chains`, `before`, `blast` and `sparql`; `ograph changes --since T`; `history_days` (default 90), applied by `ograph compact`.
+- **Limits stated in the output.** Standard error says how many quads the view hides and restores and when the history starts. A time before that is an error. The view sees only episodes a harvest recorded and the history still holds, so a root whose telemetry left the sources is a candidate again in a view of a time when the store held it, and only there.
+
+### Gates, written before the code
+
+| Gate | Pass condition | Result |
+|---|---|---|
+| Scripted sequence: catalog v1, an incident, then catalog v2 with one new dependency and one changed ownership fact | Each of 10 commands (`chains`, `before`, `blast`, `sparql`, human and JSON) prints something else now, and with `--known-at t1` prints what it printed at t1, byte for byte and with the same exit code | 10 of 10 |
+| | `changes --since t1` lists exactly the two changes | 2 listed: `+ id:app/checkout ops:dependsOn id:app/fraud-api` and `~ id:app/ledger-db ops:supports id:process/settlement (was id:process/billing)` |
+| No-op harvest | The store file grows by 0 bytes | 0, 0, 0 bytes over three harvests; 0 bytes on each of 90 RCAEval cases |
+| Retention | `compact` with `history_days = 0` leaves no history, and t1 is then refused | 17 rows dropped, 0 left, exit 2 |
+| RCAEval, 90 cases: harvest, save `chains` in both rank modes, empty the metrics and traces files, harvest again | `chains --known-at t1` equals the saved output | 90 of 90 equal, while 90 of 90 differ now |
+| Current answers | RCAEval per-case rankings identical between the build before this lane and the build after | identical on 90 cases; chain AC@1 0.93, AC@3 0.99 |
+| | The demo's harvest and eight queries, byte for byte | 9 of 9 identical, with no model call |
+| SPARQL correctness | 0 mismatches over 41 queries against Oxigraph and the native paths | 0 in each of 5 runs |
+| Store latency | W1, W2 and W3 not worse beyond run-to-run noise | see the table below |
+
+ograph has no owner fact that a source writes (`ops:ownedBy` is declared but no enricher emits it), so the "owner change" of the scripted sequence is the ownership file moving `ledger-db` from one business process to another.
+
+### Cost
+
+`store_ab.py` runs the store bench of the build before this lane and the build after in turns, five runs each, on a machine that other work kept busy (load average 2.8 to 3.7 on 12 cores). The bench files were on the internal disk, because one run on the repository's disk stalled for 7 minutes at 1% CPU under the other work. Median, with the range in parentheses:
+
+| | old | new | new / old |
+|---|---|---|---|
+| load (s) | 13.300 (13.100 to 17.100) | 13.600 (13.300 to 14.900) | 1.02 |
+| on disk after compaction (MiB) | 658.400 (658.400 to 658.400) | 658.400 (658.400 to 658.400) | 1.00 |
+| open (ms) | 3.546 (2.598 to 3.858) | 4.309 (3.275 to 17.836) | 1.22 |
+| W1 SPARQL p50 (ms) | 13.582 (11.370 to 14.609) | 11.491 (10.299 to 13.481) | 0.85 |
+| W1 native p50 (ms) | 10.193 (8.487 to 14.661) | 10.099 (7.911 to 13.780) | 0.99 |
+| W2 SPARQL p50 (ms) | 0.172 (0.164 to 0.173) | 0.174 (0.167 to 0.189) | 1.01 |
+| W2 native p50 (ms) | 0.004 (0.004 to 0.004) | 0.004 (0.003 to 0.004) | 1.00 |
+| W3 SPARQL p50 (ms) | 18.775 (18.070 to 20.199) | 19.463 (18.314 to 19.981) | 1.04 |
+| W3 native p50 (ms) | 16.630 (16.444 to 17.575) | 16.436 (15.617 to 16.853) | 0.99 |
+| re-harvest, unchanged (ms) | 69.912 (69.120 to 74.131) | 69.410 (67.507 to 81.243) | 0.99 |
+| re-harvest, 3,276 changed (ms) | 479.846 (462.159 to 482.845) | 477.205 (423.595 to 510.320) | 0.99 |
+| re-harvest back (ms) | 467.435 (457.283 to 517.093) | 468.618 (457.109 to 516.828) | 1.00 |
+
+No number separates the two builds: every ratio is inside the other build's range. The re-harvest that replaces 3,276 quads takes the same 0.48 s although the new build also writes 3,276 `history` rows and 3,276 `added` rows, because one durable commit bounds it (the same replace took 0.16 s on the other disk). `open` has overlapping ranges, 2.6 to 3.9 ms against 3.3 to 17.8 ms; a snapshot now opens four more tables, and five runs do not show whether that costs anything.
+
+- **Size.** A new store is larger by the three empty tables: 16,293 bytes per RCAEval case, summed over 90 first harvests (50.1 MiB against 48.7 MiB of 552 KiB files that hold about 440 quads each). At 3.52 M quads the compacted file is the same 658.4 MiB, 196 bytes per quad.
+- **Growth per real re-harvest.** The bench replaces 3,276 of a day graph's 98,268 quads and then puts them back. That leaves 6,552 rows in `history` (480 KiB, 75 bytes per row) and 3,276 in `added` (136 KiB, 42 bytes per row): about 115 bytes for each replaced quad, against 196 bytes for a quad the store holds. On RCAEval, emptying two source files leaves a median of 338 rows and 28,672 bytes in the history tables. The file itself moves in allocator pages: +32,768 bytes for the 17 rows of the scripted sequence.
+- **Reading a view.** Built in 4.6 ms for 3,276 hidden and 3,276 restored quads at 3.52 M quads, with 0 mismatches over 44 answers against the answers saved when the store held that state. W1 and W3 on the view cost what they cost live. W2 takes 0.15 ms natively against 0.003 ms live, because the time index describes the store now and a view finds an application's events without it. One `chains --json` process took a median of 86 ms with `--known-at` and 90 ms without on 20 RCAEval cases, the two taking turns: process start dominates both.
+
+### What it does not do
+
+- **Valid time on dependency edges is not built.** The request was to withhold a dependency from correlation when the catalog gained it after the incident. `--known-at` covers the case where ograph harvested before the incident. For a first harvest after the incident, ograph would need the date of each dependency line, and ogrep does not give it: `ogrep --entities . --json` (0.2.0 and 0.3.0) returns each edge with `from`, `to`, `relation`, `provenance`, `text` and `evidence {file, line}` and no commit or date, and `ogrep --entities . --at REV` answers `--at cannot be combined with --entities`. `ogrep --introduced PATTERN` dates a text, not a line: `- fraud-api` under one service is the same text as under another. ograph would use either of these if ogrep had them: entities at a revision, or the commit that introduced each edge.
+- **The time is recording time.** A store that first harvests a year of exports today knows all of it from today.
+- **`serve`, `similar`, `why`, `code`, `news` and `lab` have no `--known-at`.**
+- **Not measured:** a view far back on a large store. Building one reads every graph first written after the time, so its cost grows with what was added since, and it keeps those quads in memory.

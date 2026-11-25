@@ -11,12 +11,13 @@ Part 1, a scripted sequence in --work (its own git repository, so ogrep reads it
   `--known-at t1`; `changes --since t1` lists exactly those two changes; the unchanged harvests
   grow the store file by 0 bytes; a time before the store existed is refused.
 
-Part 2, with --cases (a copy of the RCAEval cases that this script may write to):
+Part 2, with --cases (a copy of the RCAEval cases that this script may write to; --cases-from
+SRC first builds it as links to the files of SRC, which stays untouched):
   for each case, harvest, save `chains` in both rank modes, empty the metrics and traces files,
   harvest again, and compare `chains --known-at t1` with what was saved.
 
 Usage: known_at_gate.py --bin target/release/ograph --work target/known-at-gate
-       [--cases DIR] [--limit N] [--jobs 3]
+       [--cases DIR [--cases-from SRC]] [--limit N] [--jobs 3]
 """
 import argparse, concurrent.futures as cf, datetime, json, pathlib, shutil, statistics, subprocess, time
 
@@ -57,7 +58,9 @@ def alert(app, name, at):
 
 def history_rows(binp, w):
     stats = json.loads(run(binp, w, "stats", "--json")[1])[1]
-    return {name: n for name, n, _, _ in stats if name in ("born", "added", "history")}
+    rows = {name: n for name, n, _, _ in stats if name in ("born", "added", "history")}
+    rows["table bytes"] = sum(stored + over for name, _, stored, over in stats if name in ("born", "added", "history"))
+    return rows
 
 def scripted(binp, w):
     shutil.rmtree(w, ignore_errors=True); w.mkdir(parents=True)
@@ -102,7 +105,7 @@ def scripted(binp, w):
     print("\nharvest of v2:\n" + "".join("  " + l.split(" (")[0] + "\n" for l in out.splitlines()[:-1]), end="")
     after = store.stat().st_size
     rows = history_rows(binp, w)
-    print(f"store after v2: {after} bytes ({after - sizes[-1]:+d}); history rows {rows}")
+    print(f"store after v2: {after} bytes ({after - sizes[-1]:+d}, in pages of the file's allocator); history rows {rows}")
 
     print(f"\n| command | now differs from t1 | --known-at t1 equals t1 |\n|---|---|---|")
     for c, (rc0, out0) in zip(commands, saved):
@@ -153,16 +156,38 @@ def one_case(binp, d, incident):
     quads = next(n for name, n, _, _ in quads if name == "gspo")
     for name in ("metrics.csv", "traces.jsonl"):
         f = d / name
+        if not f.exists():
+            continue
         head = f.open().readline() if name.endswith(".csv") else ""
         f.unlink(); f.write_text(head)
     assert run(binp, d, "harvest")[0] == 0
     size2 = store.stat().st_size
     rows = history_rows(binp, d)
     now = [run(binp, d, *c)[:2] for c in modes]
-    t = time.perf_counter()
     then = [run(binp, d, *c, "--known-at", t1)[:2] for c in modes]
     return {"equal": then == saved, "differs": now != saved, "idle": idle, "quads": quads, "history": rows["history"] + rows["added"],
-            "growth": size2 - size1, "size": size1, "known_at_ms": (time.perf_counter() - t) * 500}
+            "table": rows["table bytes"], "growth": size2 - size1, "size": size1, "dir": d, "chains": modes[0], "t1": t1}
+
+def latency(binp, res, runs=5):
+    """One process per call, the two forms taking turns, after the harvests are over."""
+    ms = {"now": [], "known-at": []}
+    for r in res:
+        for i in range(runs):
+            for k in (("now", "known-at") if i % 2 == 0 else ("known-at", "now")):
+                t = time.perf_counter()
+                run(binp, r["dir"], *r["chains"], *(["--known-at", r["t1"]] if k == "known-at" else []))
+                ms[k].append((time.perf_counter() - t) * 1000)
+    return {k: (statistics.median(v), min(v), max(v)) for k, v in ms.items()}
+
+def mirror(src, dst):
+    shutil.rmtree(dst, ignore_errors=True); dst.mkdir(parents=True)
+    shutil.copy(src / "labels.json", dst / "labels.json")
+    for case in json.loads((src / "labels.json").read_text()):
+        (dst / case / ".ograph").mkdir(parents=True)
+        shutil.copy(src / case / ".ograph/config.toml", dst / case / ".ograph/config.toml")
+        for f in (src / case).iterdir():
+            if f.name != ".ograph":
+                (dst / case / f.name).symlink_to(f)
 
 def cases(binp, root, limit, jobs):
     labels = json.loads((root / "labels.json").read_text())
@@ -175,17 +200,22 @@ def cases(binp, root, limit, jobs):
     print(f"  chains --known-at t1 equal to the chains saved at t1, both rank modes: {equal} of {len(res)}")
     print(f"  chains now differ from t1: {differs} of {len(res)}")
     print(f"  store growth of a harvest of the same files: max {max(r['idle'] for r in res)} bytes")
-    print(f"  medians per case: {med('quads'):.0f} quads and {med('size'):.0f} store bytes at t1; the re-harvest removed quads into {med('history'):.0f} history rows and grew the file by {med('growth'):+.0f} bytes")
-    print(f"  chains --known-at t1, median per call: {med('known_at_ms'):.1f} ms")
+    print(f"  medians per case: {med('quads'):.0f} quads in a {med('size'):.0f}-byte store file at t1; after the re-harvest {med('history'):.0f} rows in `added` and `history`, {med('table'):.0f} bytes in the history tables, file size {med('growth'):+.0f} bytes")
+    lat = latency(binp, res[:20])
+    print(f"  one `chains --json` process on each of {min(len(res), 20)} cases, 5 runs each, the two forms taking turns; median (min to max) ms:")
+    for k, (m, lo, hi) in lat.items():
+        print(f"    {k:<9} {m:.1f} ({lo:.1f} to {hi:.1f})")
     return equal == len(res) and max(r["idle"] for r in res) == 0
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bin", required=True); ap.add_argument("--work", required=True)
-    ap.add_argument("--cases"); ap.add_argument("--limit", type=int, default=1000); ap.add_argument("--jobs", type=int, default=3)
+    ap.add_argument("--cases"); ap.add_argument("--cases-from"); ap.add_argument("--limit", type=int, default=1000); ap.add_argument("--jobs", type=int, default=3)
     a = ap.parse_args()
     binp = str(pathlib.Path(a.bin).resolve())
     ok = scripted(binp, pathlib.Path(a.work).resolve())
+    if a.cases_from:
+        mirror(pathlib.Path(a.cases_from).resolve(), pathlib.Path(a.cases).resolve())
     if a.cases:
         ok &= cases(binp, pathlib.Path(a.cases).resolve(), a.limit, a.jobs)
     print("\nGATE " + ("PASSED" if ok else "FAILED"))
