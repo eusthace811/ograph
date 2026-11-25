@@ -1,0 +1,23 @@
+Phase 13 lane T, second check: the chronic marking on the distractor suite (lane U), written
+before the run (2026-11-25).
+
+Why. Lane T was designed and tuned on the RCAEval seen sample and the demo and passed its gate
+on RCAEval held-out. The distractor suite (lane-u-bench 4cc24ae, examples/distractors,
+generate.py default seed, SHA256SUMS) was built in parallel without sight of lane T, with other
+topologies and names. It is a check lane T could not have tuned on.
+
+Parent: lane U's committed baseline, docs/evidence/distractor-haiku/ on lane-u-bench (binary
+74b3696, Haiku claude-haiku-5-5 in Claude Code, 3 runs, arms mcp, skill, raw, chains). It is not
+rerun. Its binary is Lane T's Parent.
+Candidate: lane-t-chronic edc8651 (target/lane-t/ograph-candidate-edc8651), same suite, model,
+runner, prompt and 3 runs, arms mcp, skill and chains (raw does not use ograph).
+
+Pass, all of:
+  1. mcp AC@1 Candidate > Parent over the 35 cases, paired per case on mean pass rate over runs,
+     exact two-sided sign test p < 0.05.
+  2. skill AC@1 Candidate >= Parent.
+  3. chains rank 1 identical on every case (lane T does not change ranking).
+Reported, not gated: AC@1 per distractor type and arm; how often each arm answers the planted
+distractor; what misled_by.py says for Candidate's misses.
+If 1 fails, lane T's KEEP stands on RCAEval alone, and this result is reported as a limit of the
+marking (for example, a sparse series that fires once is not chronic by design).

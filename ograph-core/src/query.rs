@@ -97,14 +97,23 @@ pub struct BeforeEvent {
     pub severity: f64,
     pub event: String,
     pub source_record: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chronic: Option<String>,
 }
 
-/// Q1: which recent events could explain this incident.
-pub fn before(s: &Snapshot, incident: &str, window_s: i64, depth: usize) -> anyhow::Result<Before> {
+/// What a chronic mark says of the lookback before an incident.
+pub fn chronic_span(lookback_s: i64) -> String {
+    format!("in the {} min before the incident", lookback_s / 60)
+}
+
+/// Q1: which recent events could explain this incident. Events whose series fired again and
+/// again in the `lookback_s` before it (the correlation window) are marked chronic.
+pub fn before(s: &Snapshot, incident: &str, window_s: i64, depth: usize, lookback_s: i64) -> anyhow::Result<Before> {
     let ids = Ids::new(s)?;
     let i = lookup(s, incident)?;
     let st = Settings { window_s, depth, ..Settings::default() };
-    let (app, t, cands) = correlate::candidates(s, &ids, i, &st)?;
+    let (app, t, mut cands) = correlate::candidates(s, &ids, i, &st)?;
+    correlate::mark_chronic(s, &ids, t - lookback_s * 1000, t, &chronic_span(lookback_s), cands.iter_mut())?;
     let src = s.iri(evt::SOURCE_RECORD)?;
     let mut scope: Vec<(String, usize)> = correlate::downstream(s, &ids, app, depth, Some(t))?.into_iter().map(|(a, d)| (app_name(s, &ids, a), d)).collect();
     scope.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
@@ -126,6 +135,7 @@ pub fn before(s: &Snapshot, incident: &str, window_s: i64, depth: usize) -> anyh
                 severity: (c.severity * 100.0).round() / 100.0,
                 event: vocab::compact(&c.iri),
                 source_record: src.and_then(|p| s.object(c.id, p).ok().flatten()).and_then(|v| literal(s, v)),
+                chronic: c.chronic.clone(),
             })
             .collect(),
     })
@@ -459,8 +469,14 @@ pub fn past(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<Vec
 
 /// `ograph chains`: the chains of an incident, ranked and marked with the causes people accepted
 /// on the incidents most like it.
+/// Chain events whose series fired again and again in the window before the incident are
+/// marked chronic; the ranking does not change.
 pub fn chains(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<correlate::Analysis> {
-    correlate::analyze(s, ids, i, st, &past(s, ids, i, st)?)
+    let mut a = correlate::analyze(s, ids, i, st, &past(s, ids, i, st)?)?;
+    let t = a.at_ms;
+    let sigs = a.apps.iter_mut().filter_map(|r| r.chain.as_mut()).flat_map(|c| std::iter::once(&mut c.root).chain(c.links.iter_mut()));
+    correlate::mark_chronic(s, ids, t - st.window_s * 1000, t, &chronic_span(st.window_s), sigs)?;
+    Ok(a)
 }
 
 #[derive(Serialize)]
@@ -470,6 +486,9 @@ pub struct Provenance {
     pub quarantined: Vec<(String, String)>,
     /// For a chain, every verdict on it, oldest first; the last is the current one.
     pub verdicts: Vec<VerdictEvent>,
+    /// For a detected event, set when its series fired again and again within the lookback of it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chronic: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -842,7 +861,7 @@ pub fn rank_shift(s: &Snapshot, t_ms: i64, incident: &str, st: &Settings, top: u
 
 /// Provenance of every fact about a node: which harvest graphs assert it, their source,
 /// extractor and time, model provenance for model-proposed facts, and quarantined proposals.
-pub fn why(s: &Snapshot, node: &str) -> anyhow::Result<Provenance> {
+pub fn why(s: &Snapshot, node: &str, lookback_s: Option<i64>) -> anyhow::Result<Provenance> {
     let n = lookup_in(s, node, true)?;
     let me = literal(s, n).unwrap_or_default();
     let mut cache = FxHashMap::default();
@@ -888,7 +907,16 @@ pub fn why(s: &Snapshot, node: &str) -> anyhow::Result<Provenance> {
         }
     }
     let verdicts = verdicts(s, n)?.into_iter().map(|v| verdict_event(s, v)).collect::<anyhow::Result<_>>()?;
-    Ok(Provenance { node: vocab::compact(&me), facts, quarantined, verdicts })
+    let mut chronic = None;
+    if let Some(lookback_s) = lookback_s
+        && let Ok(ids) = Ids::new(s)
+        && let Some(mut sig) = correlate::event_signal(s, &ids, n)?
+    {
+        let at = sig.at_ms;
+        correlate::mark_chronic(s, &ids, at - lookback_s * 1000, at + lookback_s * 1000, &format!("within {} min of it", lookback_s / 60), [&mut sig])?;
+        chronic = sig.chronic;
+    }
+    Ok(Provenance { node: vocab::compact(&me), facts, quarantined, verdicts, chronic })
 }
 
 /// `text` names `node` as a whole term, so `id:app/cart` is not found in `id:app/cartservice`.

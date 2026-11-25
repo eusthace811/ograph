@@ -133,7 +133,7 @@ fn main() -> anyhow::Result<()> {
     let inc_id = std::fs::read_to_string(case.join("incidents.json"))?;
     let inc: serde_json::Value = serde_json::from_str(&inc_id)?;
     let t = Instant::now();
-    let before = ograph_core::query::before(&hsnap, inc[0]["id"].as_str().unwrap(), 600, 4)?;
+    let before = ograph_core::query::before(&hsnap, inc[0]["id"].as_str().unwrap(), 600, 4, 1800)?;
     let before_ms = t.elapsed().as_secs_f64() * 1e3;
     let before_bytes = serde_json::to_string(&before.events)?.len();
     let raw_bytes: u64 = ["metrics.csv", "logs.jsonl", "traces.jsonl"].iter().filter_map(|f| std::fs::metadata(case.join(f)).ok()).map(|m| m.len()).sum();

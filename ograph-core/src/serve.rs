@@ -15,9 +15,9 @@ use std::time::{Duration, SystemTime};
 pub fn tools() -> Value {
     let s = |props: Value, req: &[&str]| json!({"type": "object", "properties": props, "required": req});
     let mut tools = json!([
-        {"name": "before", "description": "Events in the window before an incident on its application and the applications it depends on, newest first, with their signal type and strength. Start every investigation here.",
+        {"name": "before", "description": "Events in the window before an incident on its application and the applications it depends on, newest first, with their signal type and strength. `chronic` on an event means its series (same application, signal and metric or log template) fired again and again in the correlation window before the incident: background noise, whatever its strength. Start every investigation here.",
          "inputSchema": s(json!({"incident": {"type": "string", "description": "incident id like INC-5377 or an IRI"}, "window": {"type": "string", "description": "like 10m (the default) or 2h"}}), &["incident"])},
-        {"name": "chains", "description": "Correlation chains and ranked root-cause applications for an incident. Each chain is a hypothesis with its evidence, not a conclusion. `scores` says how each link scored (time proximity, severity, known pair, where the dependency comes from) and `weakest` names the link to check first. `precedent` on an application means its root has the application and signal of the accepted cause of a similar past incident.",
+        {"name": "chains", "description": "Correlation chains and ranked root-cause applications for an incident. Each chain is a hypothesis with its evidence, not a conclusion. `scores` says how each link scored (time proximity, severity, known pair, where the dependency comes from) and `weakest` names the link to check first. `precedent` on an application means its root has the application and signal of the accepted cause of a similar past incident. `chronic` on a chain event means its series fired again and again before the incident: background, not a new fault.",
          "inputSchema": s(json!({"incident": {"type": "string"}, "rank": {"type": "string", "enum": ["chain", "propagation"]}}), &["incident"])},
         {"name": "blast", "description": "Applications that depend on an application, by distance, the business processes they support, and open incidents among them.",
          "inputSchema": s(json!({"app": {"type": "string"}}), &["app"])},
@@ -27,7 +27,7 @@ pub fn tools() -> Value {
          "inputSchema": s(json!({"incident": {"type": "string"}, "top": {"type": "integer", "description": "how many files and write-ups to list (default 5)"}}), &["incident"])},
         {"name": "suspects", "description": "Likely causes from the dependency graph and recent commits, for an incident or for failing applications. Use it when before and chains find little: it needs no telemetry, only the repositories ogrep reads. With a code source, chains adds the same list when it ranks no application.",
          "inputSchema": s(json!({"target": {"type": "string", "description": "an incident, or application names separated by commas"}, "since": {"type": "string", "description": "how far back commits count: 24h, 3d or a date"}}), &["target"])},
-        {"name": "why", "description": "Provenance of every fact about a node: harvest graph, source, extractor, model and confidence, and quarantined proposals.",
+        {"name": "why", "description": "Provenance of every fact about a node: harvest graph, source, extractor, model and confidence, and quarantined proposals. For an event, `chronic` says when its series fired again and again within the correlation window of it.",
          "inputSchema": s(json!({"node": {"type": "string"}}), &["node"])},
         {"name": "uses", "description": "What depends on a source file, a directory of them or one record (FILE#n), for when a source turns out to be wrong: its facts and the other sources that also state each one, the events and incidents only it states, the chains that would go, be relinked, move or enter without it (with incident and rank), the current verdicts on chains that would go or be relinked, and its quarantined proposals. Paths are relative to the workspace root.",
          "inputSchema": s(json!({"source": {"type": "string"}}), &["source"])},
@@ -166,7 +166,7 @@ fn arg<'a>(p: &'a Value, k: &str) -> anyhow::Result<&'a str> {
 pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
     let snap = ws.store.snapshot()?;
     Ok(match method {
-        "before" => serde_json::to_value(query::before(&snap, arg(p, "incident")?, p.get("window").and_then(Value::as_str).map_or(Ok(600), query::duration_s)?, 4)?)?,
+        "before" => serde_json::to_value(query::before(&snap, arg(p, "incident")?, p.get("window").and_then(Value::as_str).map_or(Ok(600), query::duration_s)?, 4, ws.config.correlation.window_s)?)?,
         "chains" => {
             let ids = correlate::Ids::new(&snap)?;
             let mut st = ws.config.correlation.clone();
@@ -182,7 +182,7 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
         "blast" => serde_json::to_value(query::blast(&snap, arg(p, "app")?, 8, None)?)?,
         "similar" => serde_json::to_value(query::similar(&snap, arg(p, "incident")?, &ws.config.correlation, 5)?)?,
         "code" => serde_json::to_value(ws.code(&snap, arg(p, "incident")?, p.get("top").and_then(Value::as_u64).unwrap_or(5) as usize)?)?,
-        "why" => serde_json::to_value(query::why(&snap, arg(p, "node")?)?)?,
+        "why" => serde_json::to_value(query::why(&snap, arg(p, "node")?, Some(ws.config.correlation.window_s))?)?,
         "uses" => {
             let root = std::env::current_dir()?.join(&ws.root);
             serde_json::to_value(query::uses(&ws.store, &ws.ontology, &ws.config.correlation, &query::source_key(&root, &root, arg(p, "source")?))?)?

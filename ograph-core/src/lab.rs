@@ -43,7 +43,8 @@ fn section(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, n: usize) -> anyhow::R
     let iri = correlate::literal(s, i).unwrap_or_default();
     let mut a = query::chains(s, ids, i, st)?;
     a.apps.truncate(5);
-    let (app, t, cands) = correlate::candidates(s, ids, i, st)?;
+    let (app, t, mut cands) = correlate::candidates(s, ids, i, st)?;
+    correlate::mark_chronic(s, ids, t - st.window_s * 1000, t, &query::chronic_span(st.window_s), cands.iter_mut())?;
     let src = s.iri(evt::SOURCE_RECORD)?;
     let events: Vec<Event> = cands
         .into_iter()
@@ -82,12 +83,13 @@ fn section(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, n: usize) -> anyhow::R
     for e in events.iter().rev() {
         write!(
             h,
-            "<tr data-app=\"{}\"><td>-{} min</td><td>{}</td><td>{}</td><td>{:.2}</td><td><code>{}</code></td></tr>",
+            "<tr data-app=\"{}\"><td>-{} min</td><td>{}</td><td>{}</td><td>{:.2}{}</td><td><code>{}</code></td></tr>",
             esc(&e.sig.app_name),
             minutes(t - e.sig.at_ms),
             esc(&e.sig.app_name),
             esc(&e.sig.kind),
             e.sig.severity,
+            chronic_note(&e.sig),
             esc(e.record.as_deref().unwrap_or(&vocab::compact(&e.sig.iri)))
         )?;
     }
@@ -318,7 +320,7 @@ fn inspector(s: &Snapshot, a: &Analysis, t: i64, n: usize) -> anyhow::Result<Str
         write!(h, r#"<p class="cmd"><code>ograph verdict {} accept --evidence TICKET --by "$USER"</code> <button data-copy="accept">copy</button> <button data-copy="reject">copy as reject</button></p>"#, esc(&id))?;
         h += "<ol>";
         for (j, e) in chain_events(c).enumerate() {
-            write!(h, r#"<li id="c{n}-{k}-{j}"><b>{} {}</b> at -{} min, strength {:.2}"#, esc(&e.app_name), esc(&e.kind), minutes(t - e.at_ms), e.severity)?;
+            write!(h, r#"<li id="c{n}-{k}-{j}"><b>{} {}</b> at -{} min, strength {:.2}{}"#, esc(&e.app_name), esc(&e.kind), minutes(t - e.at_ms), e.severity, chronic_note(e))?;
             if let Some(l) = c.scores.get(j) {
                 let basis = if l.known_pair { "known pair".to_owned() } else { format!("time {:.2}, severity {:.2}", l.time, l.severity) };
                 write!(h, "<br>link to {}: score {:.3} ({basis})", esc(&l.to), l.score)?;
@@ -347,8 +349,13 @@ fn verdict(s: &Snapshot, chain: &str) -> anyhow::Result<Option<(String, String)>
     Ok(Some((state, sentence)))
 }
 
+/// A chronic event's mark, after its strength.
+fn chronic_note(e: &Signal) -> String {
+    e.chronic.as_deref().map_or(String::new(), |c| format!(r#" <span class="mute">chronic: {}</span>"#, esc(c)))
+}
+
 fn why(s: &Snapshot, iri: &str) -> String {
-    let Ok(p) = query::why(s, iri) else { return String::new() };
+    let Ok(p) = query::why(s, iri, None) else { return String::new() };
     let mut h = String::from("<div class=\"why\"><p>");
     let mut graphs: Vec<&query::GraphInfo> = Vec::new();
     let mut models = Vec::new();

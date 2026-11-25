@@ -1,0 +1,7 @@
+target/lane-t/final-cand.log:skill@c rcaeval-heldout/c-97bf1c72d2/INC-97BF1C run 3: leak checkoutservice 58.0 s bash: climbs out with ..
+target/lane-t/final-cand.log:leak check: 8 of 540 runs voided; 0 errors
+target/lane-t/final-cand.log:GATE chains arm reproduces rcaeval_score.py: PASS (60/60 cases with the same rank 1 on every run; AC@1 0.9167 against 0.9167)
+target/lane-t/final-parent.log:skill@p rcaeval-heldout/c-a254fd4742/INC-A254FD run 2: leak checkoutservice 29.9 s bash: climbs out with ..
+target/lane-t/final-parent.log:skill@p rcaeval-heldout/c-90376d73d9/INC-90376D run 2: leak checkoutservice 96.0 s bash: reaches /private/tmp/claude-501/lane-t-work/final-parent/runs/e8a5cfb3f9/lat.py
+target/lane-t/final-parent.log:leak check: 5 of 540 runs voided; 0 errors
+target/lane-t/final-parent.log:GATE chains arm reproduces rcaeval_score.py: PASS (60/60 cases with the same rank 1 on every run; AC@1 0.9167 against 0.9167)
