@@ -177,7 +177,7 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
             if suspects.is_empty() { serde_json::to_value(a)? } else { serde_json::to_value(query::Chains { analysis: a, suspects })? }
         }
         "suspects" => serde_json::to_value(ws.suspects(&snap, arg(p, "target")?, p.get("since").and_then(Value::as_str), &ws.config.correlation)?.0)?,
-        "blast" => serde_json::to_value(query::blast(&snap, arg(p, "app")?, 8)?)?,
+        "blast" => serde_json::to_value(query::blast(&snap, arg(p, "app")?, 8, None)?)?,
         "similar" => serde_json::to_value(query::similar(&snap, arg(p, "incident")?, &ws.config.correlation, 5)?)?,
         "code" => serde_json::to_value(ws.code(&snap, arg(p, "incident")?, p.get("top").and_then(Value::as_u64).unwrap_or(5) as usize)?)?,
         "why" => serde_json::to_value(query::why(&snap, arg(p, "node")?)?)?,

@@ -30,6 +30,12 @@ shape:Application a sh:NodeShape ;
   sh:property [ sh:path ops:name ; sh:minCount 1 ; sh:maxCount 1 ] ;
   sh:property [ sh:path ops:ownedBy ; sh:maxCount 1 ] .
 
+shape:Dependency a sh:NodeShape ;
+  sh:targetClass ops:Dependency ;
+  sh:property [ sh:path ops:caller ; sh:minCount 1 ; sh:message "a dated dependency needs the application that depends" ] ;
+  sh:property [ sh:path ops:callee ; sh:minCount 1 ; sh:message "a dated dependency needs the application depended on" ] ;
+  sh:property [ sh:path ops:validFrom ; sh:minCount 1 ; sh:message "a dated dependency needs its date" ] .
+
 shape:Incident a sh:NodeShape ;
   sh:targetClass inc:Incident ;
   sh:property [ sh:path inc:id ; sh:minCount 1 ; sh:maxCount 1 ] ;

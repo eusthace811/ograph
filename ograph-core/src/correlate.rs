@@ -206,6 +206,34 @@ pub struct Analysis {
     /// application's position here, so the number `ograph chains` prints is the one a verdict
     /// resolves.
     pub apps: Vec<Ranked>,
+    /// Dependencies of the scope that the repository added after the incident opened, so
+    /// correlation did not follow them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub withheld: Vec<Withheld>,
+}
+
+/// A dated dependency left out of an incident's scope because it began after the incident opened.
+#[derive(Clone, Debug, Serialize)]
+pub struct Withheld {
+    pub caller: String,
+    pub callee: String,
+    pub valid_from: String,
+}
+
+/// The dated dependencies of applications in `app`'s scope at `t` (Unix ms) that began after `t`.
+pub fn withheld(s: &Snapshot, ids: &Ids, app: Id, depth: usize, t: i64) -> anyhow::Result<Vec<Withheld>> {
+    if ids.valid_from.is_empty() {
+        return Ok(vec![]);
+    }
+    let scope = downstream(s, ids, app, depth, Some(t))?;
+    let mut out: Vec<Withheld> = ids
+        .valid_from
+        .iter()
+        .filter(|&(&(x, _), &from)| from > t && scope.contains_key(&x))
+        .map(|(&(x, y), &from)| Withheld { caller: app_name(s, ids, x), callee: app_name(s, ids, y), valid_from: term::format_millis(from) })
+        .collect();
+    out.sort_by(|a, b| (&a.caller, &a.callee).cmp(&(&b.caller, &b.callee)));
+    Ok(out)
 }
 
 pub struct Ids {
@@ -221,6 +249,10 @@ pub struct Ids {
     pub name: Option<Id>,
     pub changed_file: Option<Id>,
     pub code_location: Option<Id>,
+    /// Dependencies a repository's history dates, as (caller, callee) -> the first time, in Unix
+    /// ms, that a graph stating the dependency gives it. A dependency missing here holds at every
+    /// time: some graph states it without a date.
+    pub valid_from: FxHashMap<(Id, Id), i64>,
 }
 
 impl Ids {
@@ -239,8 +271,48 @@ impl Ids {
             name: s.iri(ops::NAME)?,
             changed_file: s.iri(evt::CHANGED_FILE)?,
             code_location: s.iri(evt::CODE_LOCATION)?,
+            valid_from: valid_from(s)?,
         })
     }
+
+    /// The applications `app` depends on, with dependencies that began after `at` (Unix ms) left
+    /// out; all of them without a time.
+    pub fn callees(&self, s: &Snapshot, app: Id, at: Option<i64>) -> anyhow::Result<Vec<Id>> {
+        Ok(s.objects(app, self.depends)?.into_iter().filter(|&y| self.holds(app, y, at)).collect())
+    }
+
+    /// The applications that depend on `app`, as [`Ids::callees`] filters them.
+    pub fn callers(&self, s: &Snapshot, app: Id, at: Option<i64>) -> anyhow::Result<Vec<Id>> {
+        Ok(s.subjects(self.depends, app)?.into_iter().filter(|&x| self.holds(x, app, at)).collect())
+    }
+
+    fn holds(&self, caller: Id, callee: Id, at: Option<i64>) -> bool {
+        match (at, self.valid_from.get(&(caller, callee))) {
+            (Some(at), Some(&from)) => from <= at,
+            _ => true,
+        }
+    }
+}
+
+fn valid_from(s: &Snapshot) -> anyhow::Result<FxHashMap<(Id, Id), i64>> {
+    let mut out = FxHashMap::default();
+    let (Some(vf), Some(caller), Some(callee), Some(depends)) = (s.iri(ops::VALID_FROM)?, s.iri(ops::CALLER)?, s.iri(ops::CALLEE)?, s.iri(ops::DEPENDS_ON)?) else { return Ok(out) };
+    let mut dated: FxHashMap<Id, FxHashMap<Id, i64>> = FxHashMap::default();
+    for q in s.quads([None, Some(vf), None], crate::store::GraphSel::AnyNamed) {
+        let [n, _, t, g] = q?;
+        if let Some(ms) = term::millis(t) {
+            let e = dated.entry(n).or_default().entry(g).or_insert(ms);
+            *e = (*e).min(ms);
+        }
+    }
+    for (n, by_graph) in dated {
+        let (Some(x), Some(y)) = (s.object(n, caller)?, s.object(n, callee)?) else { continue };
+        let graphs = s.graphs_of([x, depends, y])?;
+        if !graphs.is_empty() && graphs.iter().all(|g| by_graph.contains_key(g)) {
+            out.insert((x, y), graphs.iter().map(|g| by_graph[g]).min().unwrap_or(i64::MIN));
+        }
+    }
+    Ok(out)
 }
 
 pub fn literal(s: &Snapshot, id: Id) -> Option<String> {
@@ -257,15 +329,16 @@ pub fn app_name(s: &Snapshot, ids: &Ids, app: Id) -> String {
     })
 }
 
-/// Applications `app` depends on, transitively, with their distance (0 for `app`).
-pub fn downstream(s: &Snapshot, ids: &Ids, app: Id, depth: usize) -> anyhow::Result<FxHashMap<Id, usize>> {
+/// Applications `app` depends on, transitively, with their distance (0 for `app`), through
+/// dependencies that held at `at` (Unix ms).
+pub fn downstream(s: &Snapshot, ids: &Ids, app: Id, depth: usize, at: Option<i64>) -> anyhow::Result<FxHashMap<Id, usize>> {
     let mut dist = FxHashMap::default();
     dist.insert(app, 0);
     let mut frontier = vec![app];
     for d in 1..=depth {
         let mut next = Vec::new();
         for x in frontier {
-            for y in s.objects(x, ids.depends)? {
+            for y in ids.callees(s, x, at)? {
                 if let std::collections::hash_map::Entry::Vacant(e) = dist.entry(y) {
                     e.insert(d);
                     next.push(y);
@@ -277,8 +350,9 @@ pub fn downstream(s: &Snapshot, ids: &Ids, app: Id, depth: usize) -> anyhow::Res
     Ok(dist)
 }
 
-/// Applications that depend on `app`, transitively, by distance: the blast radius.
-pub fn upstream(s: &Snapshot, ids: &Ids, app: Id, depth: usize) -> anyhow::Result<Vec<(Id, usize)>> {
+/// Applications that depend on `app`, transitively, by distance: the blast radius, through
+/// dependencies that held at `at` (Unix ms).
+pub fn upstream(s: &Snapshot, ids: &Ids, app: Id, depth: usize, at: Option<i64>) -> anyhow::Result<Vec<(Id, usize)>> {
     let mut seen = FxHashSet::default();
     seen.insert(app);
     let mut out = Vec::new();
@@ -286,7 +360,7 @@ pub fn upstream(s: &Snapshot, ids: &Ids, app: Id, depth: usize) -> anyhow::Resul
     for d in 1..=depth {
         let mut next = Vec::new();
         for x in frontier {
-            for y in s.subjects(ids.depends, x)? {
+            for y in ids.callers(s, x, at)? {
                 if seen.insert(y) {
                     out.push((y, d));
                     next.push(y);
@@ -352,7 +426,7 @@ pub fn chain_iri(incident: &str, root: &str) -> String {
 /// episodes that started before it but were still under way when it opened.
 pub fn candidates(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::Result<(Id, i64, Vec<Signal>)> {
     let (app, t) = incident_anchor(s, ids, incident)?;
-    let mut scope = downstream(s, ids, app, st.depth)?;
+    let mut scope = downstream(s, ids, app, st.depth, Some(t))?;
     if st.ignore_dependencies
         && let Some(c) = s.iri(ops::APPLICATION)? {
             for a in s.subjects(ids.ty, c)? {
@@ -473,7 +547,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
         if st.ignore_dependencies {
             break;
         }
-        for y in s.subjects(ids.depends, x)? {
+        for y in ids.callers(s, x, Some(t))? {
             if scope.contains(&y) {
                 callers.entry(x).or_default().insert(y);
             }
@@ -584,7 +658,8 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
         }),
         RankMode::Propagation => apps.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.first_ms.cmp(&b.first_ms)).then(a.app.cmp(&b.app))),
     }
-    Ok(Analysis { incident: incident_iri, app: app_name(s, ids, app), at_ms: t, candidates: cands.len(), apps })
+    let withheld = if st.ignore_dependencies { vec![] } else { withheld(s, ids, app, st.depth, t)? };
+    Ok(Analysis { incident: incident_iri, app: app_name(s, ids, app), at_ms: t, candidates: cands.len(), apps, withheld })
 }
 
 /// The score of every link along `path`, then of the link that closes it at the incident, with

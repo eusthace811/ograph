@@ -105,6 +105,15 @@ impl std::fmt::Display for Location {
     }
 }
 
+/// The first commit of the run, along the main line, in which the operations files have held an
+/// entity or an edge (`--dated`, in ogrep releases after 0.3.0).
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Since {
+    pub commit: String,
+    /// Commit time, in Unix seconds.
+    pub time: i64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Edge {
     pub from: String,
@@ -112,6 +121,7 @@ pub struct Edge {
     pub relation: String,
     pub provenance: String,
     pub evidence: Location,
+    pub since: Option<Since>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -123,11 +133,26 @@ pub struct Entity {
     pub aliases: Vec<String>,
     pub location: Location,
     pub edges: Vec<Edge>,
+    pub since: Option<Since>,
 }
 
 /// `ogrep --entities . --json`: what the operations files of a repository declare. A
 /// repository that declares nothing is a failure, as it is for the catalog.
 pub fn entities(dir: &Path) -> Result<Vec<Entity>, Failure> {
+    Ok(parse_entities(&stdout(dir, "--entities", &["--entities", ".", "--json"], None, true)?))
+}
+
+/// [`entities`] with `--dated`: each entity and edge with the commit since which the files have
+/// held it. `None` when this ogrep cannot date them (0.3.0 and older refuse the flag).
+pub fn dated_entities(dir: &Path) -> Result<Option<Vec<Entity>>, Failure> {
+    match stdout(dir, "--entities", &["--entities", ".", "--json", "--dated"], None, true) {
+        Ok(text) => Ok(Some(parse_entities(&text))),
+        Err(Failure::Failed { stderr, .. }) if stderr.contains("--dated") => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+fn parse_entities(text: &str) -> Vec<Entity> {
     #[derive(Deserialize)]
     struct Data {
         entity: Head,
@@ -142,6 +167,7 @@ pub fn entities(dir: &Path) -> Result<Vec<Entity>, Failure> {
         locations: Vec<Location>,
         #[serde(default)]
         aliases: Vec<String>,
+        since: Option<Since>,
     }
     #[derive(Deserialize)]
     struct RawEdge {
@@ -152,23 +178,24 @@ pub fn entities(dir: &Path) -> Result<Vec<Entity>, Failure> {
         provenance: Option<String>,
         #[serde(default)]
         evidence: Location,
+        since: Option<Since>,
     }
-    let text = stdout(dir, "--entities", &["--entities", ".", "--json"], None, true)?;
-    Ok(records::<Data>(&text, None)
+    records::<Data>(text, None)
         .into_iter()
         .map(|d| Entity {
             id: d.entity.id,
             kind: d.entity.kind,
             aliases: d.entity.aliases,
             location: d.entity.locations.into_iter().next().unwrap_or_default(),
+            since: d.entity.since,
             edges: d
                 .edges
                 .into_iter()
                 .filter_map(|e| serde_json::from_value::<RawEdge>(e).ok())
-                .map(|e| Edge { from: e.from, to: e.to, relation: e.relation, provenance: e.provenance.unwrap_or_else(|| "declared".into()), evidence: e.evidence })
+                .map(|e| Edge { from: e.from, to: e.to, relation: e.relation, provenance: e.provenance.unwrap_or_else(|| "declared".into()), evidence: e.evidence, since: e.since })
                 .collect(),
         })
-        .collect())
+        .collect()
 }
 
 /// The ids of the services among [`entities`].

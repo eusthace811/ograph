@@ -15,7 +15,7 @@
 # (ALERT, LOG, METRIC, TIMELINE), INCIDENT, SLACK (disc), CORRELATION, RCA and HARVEST.
 # Only what the four benchmark questions need is modeled.
 
-<https://ograph.dev/ontology> a owl:Ontology ; owl:versionInfo "1.3" .
+<https://ograph.dev/ontology> a owl:Ontology ; owl:versionInfo "1.4" .
 
 # ---------- OPS: the catalog ----------
 og:Thing a owl:Class ; rdfs:comment "Anything the graph can name." .
@@ -24,6 +24,7 @@ ops:Team a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A group of peopl
 ops:Region a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A cloud or datacenter region where an application runs, such as eu-west-1." .
 ops:BusinessProcess a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A business capability that one or more applications support, such as payments." .
 ops:Vendor a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "An external organization an application depends on. May be provisional." .
+ops:Dependency a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "The date of one ops:dependsOn, from the history of the repository that declares it. Only a dependency added to an application the files already declared has one; a dependency without one holds at every time." .
 
 ops:dependsOn a owl:ObjectProperty ; rdfs:domain ops:Application ; rdfs:range ops:Application ; rdfs:comment "The subject application calls or needs the object application; a failure of the object can affect the subject." .
 ops:ownedBy a owl:ObjectProperty ; rdfs:domain ops:Application ; rdfs:range ops:Team ; rdfs:comment "The team that owns and is responsible for the application." .
@@ -33,6 +34,10 @@ ops:usesVendor a owl:ObjectProperty ; rdfs:domain ops:Application ; rdfs:range o
 ops:name a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string ; rdfs:comment "The canonical name." .
 ops:tier a owl:DatatypeProperty ; rdfs:domain ops:Application ; rdfs:range xsd:string ; rdfs:comment "How critical the application is to the business." .
 ops:alias a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:string ; rdfs:comment "Another name people or tools use for the same thing." .
+ops:caller a owl:ObjectProperty, owl:FunctionalProperty ; rdfs:domain ops:Dependency ; rdfs:range ops:Application ; rdfs:comment "The application that depends." .
+ops:callee a owl:ObjectProperty, owl:FunctionalProperty ; rdfs:domain ops:Dependency ; rdfs:range ops:Application ; rdfs:comment "The application depended on." .
+ops:validFrom a owl:DatatypeProperty ; rdfs:domain ops:Dependency ; rdfs:range xsd:dateTime ; rdfs:comment "When the repository's main line started to hold the dependency: the time of the commit that added it. Correlation, before and blast for an incident use the dependency only if the incident opened at or after this time." .
+ops:addedIn a owl:DatatypeProperty ; rdfs:domain ops:Dependency ; rdfs:range xsd:string ; rdfs:comment "The full id of the commit that added the dependency." .
 
 # ---------- Events: one class per signal type ----------
 evt:Event a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "Something that happened at a time, on an application." .
