@@ -168,6 +168,55 @@ for root, (texts, acts) in zip(roots, ACTION_THREADS):
 pathlib.Path("chat-actions").mkdir(exist_ok=True)
 pathlib.Path("chat-actions/actions.json").write_text(json.dumps(amsgs, indent=1))
 pathlib.Path("actions-labels.json").write_text(json.dumps(alabels, indent=1))
+# Threads that name applications the way people do (a short name, an alias, a word of the
+# name) and threads whose words only look like an application (git checkout, an inventory of
+# hosts, a vendor). apps-labels.json lists, per thread root, the catalog applications each
+# thread above and here refers to. Read only by scripts/eval/catalog_slice_gate.py; no demo
+# source reads chat-mentions.
+MENTION_THREADS = [
+    (["auth is throwing 401s for every login since the 14:00 deploy", "rolled auth back, logins work again"], ["auth-service"]),
+    (["frontend is serving a blank page in safari, looks like the new bundle"], ["web-frontend"]),
+    (["notif service queue is 40k deep, emails are going out an hour late"], ["notifications"]),
+    (["ES heap at 95%, GC pauses of 8s on every data node"], ["elasticsearch"]),
+    (["pay gw returning 502s to checkout since 11:20"], ["payments-api", "checkout"]),
+    (["finder p99 is 3s, the query cache got disabled in the last release"], ["search-api"]),
+    (["ledger-pg replication lag is 15 minutes"], ["ledger-db"]),
+    (["the ledger database ran out of connections again", "orders and payments are both erroring because of it"], ["ledger-db", "orders-api", "payments-api"]),
+    (["inventory svc reports negative stock for 200 SKUs after the migration"], ["inventory"]),
+    (["git checkout of the release branch fails on the build agents, the CI cache is corrupt"], []),
+    (["doing an inventory of our EC2 hosts before the audit, please tag yours by friday"], []),
+    (["CardRail is down for all merchants per their status page, nothing on our side"], []),
+    (["can't search the wiki, Confluence is down for everyone"], []),
+    (["PagerDuty notifications were not reaching phones for an hour, their incident, resolved now"], []),
+    (["the payments service retries every bank call 5 times, which tripled our load on CardRail"], ["payments-api"]),
+    (["orders backlog cleared after we doubled the workers"], ["orders-api"]),
+    (["checkout svc and auth svc both leak connections after the java upgrade"], ["checkout", "auth-service"]),
+    (["the frontend can't reach checkout, DNS still resolves to the old IP"], ["web-frontend", "checkout"]),
+    (["search pods crashlooping since the config push", "elastic itself is fine, it's the search-api config"], ["search-api", "elasticsearch"]),
+    (["frontend team offsite next week, no deploys from them until monday"], []),
+    (["mail sends failing, MailRelay answers 503, notifications keeps retrying"], ["notifications"]),
+    (["rolled back pay-gw to 2.2.9, card auths are going through again"], ["payments-api"]),
+    (["stock reservations double counted in inventory", "turned the reserve_v2 flag off"], ["inventory"]),
+    (["the postgres primary behind the ledger is at 100% disk"], ["ledger-db"]),
+    (["web-frontend errors spiked; it's the CDN, the vendor confirmed"], ["web-frontend"]),
+    (["elasticsearch upgrade to 8.12 done, finder reindex running overnight"], ["elasticsearch", "search-api"]),
+    (["the orders API returns 504 whenever the export job runs"], ["orders-api"]),
+    (["please search the runbooks before paging, half of tonight's pages were known issues"], []),
+    (["auth-svc certificate expires tomorrow, renewing it tonight"], ["auth-service"]),
+    (["payments team asks who approved the checkout of the old ledger schema branch"], []),
+]
+OPS_APPS = [["payments-api", "ledger-db"], ["checkout"], ["auth-service"], ["orders-api"], ["ledger-db"], ["search-api", "elasticsearch"], ["notifications"], ["web-frontend", "checkout"], ["inventory", "checkout"], ["auth-service"], ["web-frontend", "checkout"], ["ledger-db"], ["payments-api"], ["search-api"], [], ["orders-api"]]
+ACTION_APPS = [["checkout"], ["payments-api"], ["orders-api"], ["ledger-db"], ["auth-service"], ["search-api"], ["inventory"], ["notifications"], ["checkout"], ["web-frontend"], ["elasticsearch"], ["payments-api"], ["orders-api"], ["ledger-db", "payments-api"], ["ledger-db"], ["checkout"], ["auth-service"], ["search-api"], ["inventory"], ["notifications"], ["web-frontend"], ["checkout", "payments-api"], ["ledger-db"], ["orders-api"], ["auth-service"], ["elasticsearch"], ["payments-api"], ["web-frontend"], ["inventory"], ["checkout"], ["payments-api", "ledger-db"]]
+TM = T0 - 40 * 86400
+mmsgs = []
+apps_labels = {"ops": {f"{T0 - (len(THREADS) - i) * 3600}.000100": a for i, a in enumerate(OPS_APPS)}, "incidents": {f"{r}.000200": a for r, a in zip(roots, ACTION_APPS)}, "mentions": {}}
+for i, (texts, apps) in enumerate(MENTION_THREADS):
+    ts = [f"{TM + i * 3600 + k * 60}.000300" for k in range(len(texts))]
+    mmsgs += [{"ts": t, "thread_ts": ts[0], "channel": "mentions", "user": f"U{k + 2}", "text": x} for k, (t, x) in enumerate(zip(ts, texts))]
+    apps_labels["mentions"][ts[0]] = apps
+pathlib.Path("chat-mentions").mkdir(exist_ok=True)
+pathlib.Path("chat-mentions/mentions.json").write_text(json.dumps(mmsgs, indent=1))
+pathlib.Path("apps-labels.json").write_text(json.dumps(apps_labels, indent=1))
 news = [
     {"at": NOW - 7200, "title": "CardRail reports elevated authorization latency", "summary": "CardRail says authorizations are slow for some merchants in North America", "mentions": ["CardRail"]},
     {"at": NOW - 86400, "title": "MailRelay deprecates v1 send API", "summary": "MailRelay will turn off the v1 send API in 60 days", "mentions": ["MailRelay"]},

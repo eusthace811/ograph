@@ -1,0 +1,240 @@
+[
+ {
+  "ts": "1791844000.000300",
+  "thread_ts": "1791844000.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "auth is throwing 401s for every login since the 14:00 deploy"
+ },
+ {
+  "ts": "1791844060.000300",
+  "thread_ts": "1791844000.000300",
+  "channel": "mentions",
+  "user": "U3",
+  "text": "rolled auth back, logins work again"
+ },
+ {
+  "ts": "1791847600.000300",
+  "thread_ts": "1791847600.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "frontend is serving a blank page in safari, looks like the new bundle"
+ },
+ {
+  "ts": "1791851200.000300",
+  "thread_ts": "1791851200.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "notif service queue is 40k deep, emails are going out an hour late"
+ },
+ {
+  "ts": "1791854800.000300",
+  "thread_ts": "1791854800.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "ES heap at 95%, GC pauses of 8s on every data node"
+ },
+ {
+  "ts": "1791858400.000300",
+  "thread_ts": "1791858400.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "pay gw returning 502s to checkout since 11:20"
+ },
+ {
+  "ts": "1791862000.000300",
+  "thread_ts": "1791862000.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "finder p99 is 3s, the query cache got disabled in the last release"
+ },
+ {
+  "ts": "1791865600.000300",
+  "thread_ts": "1791865600.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "ledger-pg replication lag is 15 minutes"
+ },
+ {
+  "ts": "1791869200.000300",
+  "thread_ts": "1791869200.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "the ledger database ran out of connections again"
+ },
+ {
+  "ts": "1791869260.000300",
+  "thread_ts": "1791869200.000300",
+  "channel": "mentions",
+  "user": "U3",
+  "text": "orders and payments are both erroring because of it"
+ },
+ {
+  "ts": "1791872800.000300",
+  "thread_ts": "1791872800.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "inventory svc reports negative stock for 200 SKUs after the migration"
+ },
+ {
+  "ts": "1791876400.000300",
+  "thread_ts": "1791876400.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "git checkout of the release branch fails on the build agents, the CI cache is corrupt"
+ },
+ {
+  "ts": "1791880000.000300",
+  "thread_ts": "1791880000.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "doing an inventory of our EC2 hosts before the audit, please tag yours by friday"
+ },
+ {
+  "ts": "1791883600.000300",
+  "thread_ts": "1791883600.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "CardRail is down for all merchants per their status page, nothing on our side"
+ },
+ {
+  "ts": "1791887200.000300",
+  "thread_ts": "1791887200.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "can't search the wiki, Confluence is down for everyone"
+ },
+ {
+  "ts": "1791890800.000300",
+  "thread_ts": "1791890800.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "PagerDuty notifications were not reaching phones for an hour, their incident, resolved now"
+ },
+ {
+  "ts": "1791894400.000300",
+  "thread_ts": "1791894400.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "the payments service retries every bank call 5 times, which tripled our load on CardRail"
+ },
+ {
+  "ts": "1791898000.000300",
+  "thread_ts": "1791898000.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "orders backlog cleared after we doubled the workers"
+ },
+ {
+  "ts": "1791901600.000300",
+  "thread_ts": "1791901600.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "checkout svc and auth svc both leak connections after the java upgrade"
+ },
+ {
+  "ts": "1791905200.000300",
+  "thread_ts": "1791905200.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "the frontend can't reach checkout, DNS still resolves to the old IP"
+ },
+ {
+  "ts": "1791908800.000300",
+  "thread_ts": "1791908800.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "search pods crashlooping since the config push"
+ },
+ {
+  "ts": "1791908860.000300",
+  "thread_ts": "1791908800.000300",
+  "channel": "mentions",
+  "user": "U3",
+  "text": "elastic itself is fine, it's the search-api config"
+ },
+ {
+  "ts": "1791912400.000300",
+  "thread_ts": "1791912400.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "frontend team offsite next week, no deploys from them until monday"
+ },
+ {
+  "ts": "1791916000.000300",
+  "thread_ts": "1791916000.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "mail sends failing, MailRelay answers 503, notifications keeps retrying"
+ },
+ {
+  "ts": "1791919600.000300",
+  "thread_ts": "1791919600.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "rolled back pay-gw to 2.2.9, card auths are going through again"
+ },
+ {
+  "ts": "1791923200.000300",
+  "thread_ts": "1791923200.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "stock reservations double counted in inventory"
+ },
+ {
+  "ts": "1791923260.000300",
+  "thread_ts": "1791923200.000300",
+  "channel": "mentions",
+  "user": "U3",
+  "text": "turned the reserve_v2 flag off"
+ },
+ {
+  "ts": "1791926800.000300",
+  "thread_ts": "1791926800.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "the postgres primary behind the ledger is at 100% disk"
+ },
+ {
+  "ts": "1791930400.000300",
+  "thread_ts": "1791930400.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "web-frontend errors spiked; it's the CDN, the vendor confirmed"
+ },
+ {
+  "ts": "1791934000.000300",
+  "thread_ts": "1791934000.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "elasticsearch upgrade to 8.12 done, finder reindex running overnight"
+ },
+ {
+  "ts": "1791937600.000300",
+  "thread_ts": "1791937600.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "the orders API returns 504 whenever the export job runs"
+ },
+ {
+  "ts": "1791941200.000300",
+  "thread_ts": "1791941200.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "please search the runbooks before paging, half of tonight's pages were known issues"
+ },
+ {
+  "ts": "1791944800.000300",
+  "thread_ts": "1791944800.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "auth-svc certificate expires tomorrow, renewing it tonight"
+ },
+ {
+  "ts": "1791948400.000300",
+  "thread_ts": "1791948400.000300",
+  "channel": "mentions",
+  "user": "U2",
+  "text": "payments team asks who approved the checkout of the old ledger schema branch"
+ }
+]
