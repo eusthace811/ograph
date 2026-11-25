@@ -71,6 +71,10 @@ enum Cmd {
         /// ago (90m, 2d)
         #[arg(long)]
         known_at: Option<String>,
+        /// Also rank as the store was at this time, and name the changed source files that
+        /// move the ranking when each is tested alone
+        #[arg(long, conflicts_with = "known_at")]
+        since: Option<String>,
     },
     /// Past incidents that resemble this one, with accepted causes and mitigations (Q3)
     Similar {
@@ -192,6 +196,27 @@ fn print<T: serde::Serialize>(json: bool, v: &T, human: impl FnOnce(&T)) {
         println!("{}", serde_json::to_string(v).unwrap());
     } else {
         human(v);
+    }
+}
+
+fn print_shift(s: &query::RankShift) {
+    let list = |r: &[query::RankedApp]| if r.is_empty() { "nothing ranked".to_owned() } else { r.iter().enumerate().map(|(k, a)| format!("{}. {} {:.3}", k + 1, a.app, a.score)).collect::<Vec<_>>().join("  ") };
+    let moved = s.then.iter().map(|a| &a.app).ne(s.now.iter().map(|a| &a.app));
+    println!("since {}: {}; source files changed: {}", s.since, if moved { "the ranking moved" } else { "the ranking is the same" }, s.changed_graphs);
+    if !moved {
+        return;
+    }
+    println!("  then  {}\n  now   {}", list(&s.then), list(&s.now));
+    if s.causes.is_empty() {
+        println!("  no changed file moves it when tested alone; the changes move it together");
+    }
+    for c in &s.causes {
+        let why = match (c.needed, c.enough) {
+            (true, true) => "taking it back alone changes the ranking now, and it alone changes the ranking then",
+            (true, false) => "taking it back alone changes the ranking now",
+            _ => "it alone changes the ranking then",
+        };
+        println!("  {} [{}]: {why}", c.graph, c.source.as_deref().unwrap_or("?"));
     }
 }
 
@@ -329,7 +354,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             });
             Ok(found)
         }
-        Cmd::Chains { incident, rank, window, top, set, known_at } => {
+        Cmd::Chains { incident, rank, window, top, set, known_at, since } => {
             let snap = view(&ws, known_at.as_deref())?;
             let ids = correlate::Ids::new(&snap)?;
             let mut st = ws.config.correlation.clone();
@@ -348,6 +373,10 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             let mut a = query::chains(&snap, &ids, i, &st)?;
             let (suspects, degraded) = ws.fallback_suspects(&snap, &a, &incident, &st);
             a.apps.truncate(top);
+            let shift = match &since {
+                Some(when) => Some(query::rank_shift(&snap, ws.history_time(&snap, when)?.0, &incident, &st, top)?),
+                None => None,
+            };
             let found = !a.apps.is_empty() || !suspects.is_empty();
             let human = |a: &correlate::Analysis| {
                 println!("{} on {} at {}: {} candidate events", ograph_core::vocab::compact(&a.incident), a.app, ograph_core::term::format_millis(a.at_ms), a.candidates);
@@ -370,13 +399,18 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 }
             };
             warn(&degraded);
-            if suspects.is_empty() {
+            if suspects.is_empty() && shift.is_none() {
                 print(json, &a, human);
             } else {
-                print(json, &query::Chains { analysis: a, suspects }, |c| {
+                print(json, &query::Chains { analysis: a, suspects, shift }, |c| {
                     human(&c.analysis);
-                    println!("no application ranked from telemetry; these come from the dependency graph and recent commits, not from telemetry:");
-                    print_suspects(&c.suspects);
+                    if !c.suspects.is_empty() {
+                        println!("no application ranked from telemetry; these come from the dependency graph and recent commits, not from telemetry:");
+                        print_suspects(&c.suspects);
+                    }
+                    if let Some(s) = &c.shift {
+                        print_shift(s);
+                    }
                 });
             }
             Ok(found)

@@ -686,6 +686,80 @@ pub fn changes(then: &Snapshot, now: &Snapshot) -> anyhow::Result<Vec<FactChange
     Ok(out)
 }
 
+/// How an incident's ranked root causes moved between a time and now, and which source files
+/// moved them.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct RankShift {
+    pub since: String,
+    pub then: Vec<RankedApp>,
+    pub now: Vec<RankedApp>,
+    /// The graphs that recorded or removed a fact since, chains, quarantine and harvest
+    /// bookkeeping aside.
+    pub changed_graphs: usize,
+    /// The changed graphs that move the ranking when tested one at a time; empty when the
+    /// ranking did not move.
+    pub causes: Vec<RankCause>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct RankedApp {
+    pub app: String,
+    pub score: f64,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+pub struct RankCause {
+    pub graph: String,
+    pub source: Option<String>,
+    /// Taking this graph alone back to the time changes the ranking now.
+    pub needed: bool,
+    /// This graph's change alone, on the store as it was at the time, changes the ranking then.
+    pub enough: bool,
+}
+
+/// Ranks `incident` at `t_ms` (a time the history covers) and now, and when the ranked
+/// applications differ, tests each changed source graph twice: now with only that graph taken
+/// back, and then with only that graph brought forward. A graph is a cause when either test
+/// changes the order of the top `top` applications. Every view reads the one state of the store
+/// `s` holds.
+pub fn rank_shift(s: &Snapshot, t_ms: i64, incident: &str, st: &Settings, top: usize) -> anyhow::Result<RankShift> {
+    let ranking = |v: &Snapshot| -> anyhow::Result<Vec<RankedApp>> {
+        let (Ok(i), Ok(ids)) = (lookup(v, incident), Ids::new(v)) else { return Ok(vec![]) };
+        let a = chains(v, &ids, i, st)?;
+        Ok(a.apps.into_iter().take(top).map(|r| RankedApp { app: r.app, score: r.score }).collect())
+    };
+    let order = |r: &[RankedApp]| r.iter().map(|a| a.app.clone()).collect::<Vec<_>>();
+    let d = s.delta(t_ms)?;
+    let derived = [vocab::QUARANTINE.to_owned(), format!("{}harvest/correlation/", vocab::GRAPH)];
+    let mut bookkeeping: FxHashMap<Id, bool> = FxHashMap::default();
+    let mut changed = std::collections::BTreeSet::new();
+    for &[subject, p, _, g] in d.quads() {
+        if subject != g && !*bookkeeping.entry(p).or_insert_with(|| literal(s, p).is_some_and(|p| p.starts_with(harv::NS))) {
+            changed.insert(g);
+        }
+    }
+    let graphs: Vec<(Id, String)> = changed
+        .into_iter()
+        .map(|g| (g, literal(s, g).unwrap_or_default()))
+        .filter(|(_, iri)| !derived.iter().any(|x| iri.starts_with(x.as_str())))
+        .collect();
+    let then_view = s.now()?.revert(&d, |_| true)?;
+    let (then, current) = (ranking(&then_view)?, ranking(s)?);
+    let mut causes = Vec::new();
+    if order(&then) != order(&current) {
+        let (mut cache_now, mut cache_then) = (FxHashMap::default(), FxHashMap::default());
+        for &(g, ref iri) in &graphs {
+            let needed = order(&ranking(&s.now()?.revert(&d, |x| x == g)?)?) != order(&current);
+            let enough = order(&ranking(&s.now()?.revert(&d, |x| x != g)?)?) != order(&then);
+            if needed || enough {
+                let source = graph_info(s, g, &mut cache_now).source.or_else(|| graph_info(&then_view, g, &mut cache_then).source);
+                causes.push(RankCause { graph: vocab::compact(iri), source, needed, enough });
+            }
+        }
+    }
+    Ok(RankShift { since: term::format_millis(t_ms), then, now: current, changed_graphs: graphs.len(), causes })
+}
+
 /// Provenance of every fact about a node: which harvest graphs assert it, their source,
 /// extractor and time, model provenance for model-proposed facts, and quarantined proposals.
 pub fn why(s: &Snapshot, node: &str) -> anyhow::Result<Provenance> {
@@ -1166,6 +1240,8 @@ pub struct Chains {
     pub analysis: correlate::Analysis,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub suspects: Vec<Suspect>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shift: Option<RankShift>,
 }
 
 /// At most this many mentions per `resolve` call, so an agent names what it needs, not a list.

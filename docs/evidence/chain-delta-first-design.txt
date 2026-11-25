@@ -1,0 +1,21 @@
+
+c-011f3b9bc3 (INC-011F3B, top 5 before: emailservice, redis, currencyservice, cartservice, checkoutservice; Z = adservice, Z3 = paymentservice); the steps moved the ranking as designed: yes
+
+c-011f3b9bc3
+| step | top 5 moved (plain chains) | files named by --since | pass |
+|---|---|---|---|
+| s1 add alerts/a1.json (adservice, 60 s before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s2 add alerts/old.json (3 days before) | no | none | yes |
+| s3 edit ownership.jsonl | no | none | yes |
+| s4 add alerts/a2.json (paymentservice, 90 s before) | yes | g:harvest/alerts/alerts/a2.json | yes |
+| s5 add alerts/a2dup.json (same alert) | no | none | yes |
+| W1 since t0 after s5 | yes | g:harvest/alerts/alerts/a1.json, g:harvest/alerts/alerts/a2.json, g:harvest/alerts/alerts/a2dup.json | yes |
+| s6 edit alerts/a1.json (3 days before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s7 remove alerts/old.json | no | none | yes |
+| s8 remove alerts/a2.json | no | none | yes |
+| s9 remove alerts/a2dup.json | yes | g:harvest/alerts/alerts/a2dup.json | yes |
+| s10 edit metrics.csv (drop emailservice) | no | none | yes |
+| W2 since t5 after s10 | yes | g:harvest/alerts/alerts/a1.json, g:harvest/alerts/alerts/a2.json, g:harvest/alerts/alerts/a2dup.json, g:harvest/metrics/metrics.csv | NO |
+| W3 since t0 after s10 | yes | none | yes |
+
+GATE FAILED

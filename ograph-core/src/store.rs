@@ -479,6 +479,20 @@ impl<'t> Tx<'t> {
 
 type QuadIter<'a> = Box<dyn Iterator<Item = Result<[Id; 4]>> + 'a>;
 
+/// The quads recorded and removed after a time, with when, before any view applies them.
+/// Quads are `[s, p, o, g]`.
+pub struct Delta {
+    hidden: FxHashMap<[Id; 4], i64>,
+    restored: FxHashMap<[Id; 4], i64>,
+}
+
+impl Delta {
+    /// Every quad recorded or removed since the time.
+    pub fn quads(&self) -> impl Iterator<Item = &[Id; 4]> {
+        self.hidden.keys().chain(self.restored.keys())
+    }
+}
+
 /// How the store at an earlier time differs from the store now. Quads are `[s, p, o, g]`.
 struct AsOf {
     /// Present quads recorded after the time, with when.
@@ -524,7 +538,7 @@ impl<K: Fn(&[Id; 4]) -> [Id; 4]> Iterator for Merge<'_, K> {
 /// A consistent read view of the whole store, as it is or, after [`Snapshot::known_at`], as it
 /// was.
 pub struct Snapshot {
-    _txn: ReadTransaction,
+    txn: std::sync::Arc<ReadTransaction>,
     as_of: Option<Box<AsOf>>,
     meta: ReadOnlyTable<&'static str, u64>,
     born: ReadOnlyTable<Id, i64>,
@@ -587,6 +601,10 @@ fn scan<'a, V: redb::Value + 'static, const N: usize>(
 
 impl Snapshot {
     fn open(txn: ReadTransaction) -> Result<Self> {
+        Self::on(std::sync::Arc::new(txn))
+    }
+
+    fn on(txn: std::sync::Arc<ReadTransaction>) -> Result<Self> {
         Ok(Self {
             as_of: None,
             meta: txn.open_table(META)?,
@@ -600,8 +618,14 @@ impl Snapshot {
             app_time: txn.open_table(APP_TIME)?,
             union: open_ro(&txn, UNION)?,
             named: open_ro(&txn, NAMED)?,
-            _txn: txn,
+            txn,
         })
+    }
+
+    /// The store as this view's transaction reads it now, with no earlier time applied, so
+    /// several views can differ from one state of the store and from nothing else.
+    pub fn now(&self) -> Result<Self> {
+        Self::on(self.txn.clone())
     }
 
     /// When the history begins: nothing removed before it is kept. `None` for a store that has
@@ -613,7 +637,14 @@ impl Snapshot {
     /// This view as the store was at `t_ms`: without what was recorded after it, with what was
     /// removed after it. It costs one pass over the history and over the graphs born since, and
     /// keeps both in memory. Only what the history still holds comes back.
-    pub fn known_at(mut self, t_ms: i64) -> Result<Self> {
+    pub fn known_at(self, t_ms: i64) -> Result<Self> {
+        let d = self.delta(t_ms)?;
+        self.revert(&d, |_| true)
+    }
+
+    /// What every graph recorded and removed after `t_ms`, in one pass over the history and over
+    /// the graphs born since, for [`Snapshot::revert`] to apply in part.
+    pub fn delta(&self, t_ms: i64) -> Result<Delta> {
         let spog = |k: [Id; 4]| [k[1], k[2], k[3], k[0]];
         let mut hidden: FxHashMap<[Id; 4], i64> = FxHashMap::default();
         for r in self.added.iter()? {
@@ -631,10 +662,6 @@ impl Snapshot {
                 }
             }
         }
-        let mut hidden_per_triple: FxHashMap<[Id; 3], u32> = FxHashMap::default();
-        for q in hidden.keys() {
-            *hidden_per_triple.entry([q[0], q[1], q[2]]).or_default() += 1;
-        }
         let mut restored: FxHashMap<[Id; 4], i64> = FxHashMap::default();
         for r in self.history.iter()? {
             let (k, removed) = r?;
@@ -644,6 +671,18 @@ impl Snapshot {
             if added as i64 <= t_ms && t_ms < removed.value() && (hidden.contains_key(&[s, p, o, g]) || self.named[0].get([g, s, p, o])?.is_none()) {
                 restored.insert([s, p, o, g], removed.value());
             }
+        }
+        Ok(Delta { hidden, restored })
+    }
+
+    /// This view with the graphs `which` selects taken back to the time of `d`, and every other
+    /// graph as it is now.
+    pub fn revert(mut self, d: &Delta, which: impl Fn(Id) -> bool) -> Result<Self> {
+        let hidden: FxHashMap<[Id; 4], i64> = d.hidden.iter().filter(|(q, _)| which(q[3])).map(|(&q, &t)| (q, t)).collect();
+        let restored: FxHashMap<[Id; 4], i64> = d.restored.iter().filter(|(q, _)| which(q[3])).map(|(&q, &t)| (q, t)).collect();
+        let mut hidden_per_triple: FxHashMap<[Id; 3], u32> = FxHashMap::default();
+        for q in hidden.keys() {
+            *hidden_per_triple.entry([q[0], q[1], q[2]]).or_default() += 1;
         }
         let mut per_graph: FxHashMap<Id, i64> = FxHashMap::default();
         for r in self.graphs.iter()? {

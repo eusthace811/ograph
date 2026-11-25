@@ -828,3 +828,50 @@ The first rerun of `known_at_gate.py` failed because a time 0.1 s before the his
 The following outputs are the same as before the fixes, apart from timings: `rcaeval_score.py` (chain AC@1 0.93), `similar_eval.py` (82/89 = 0.92), `known_at_gate.py`, `incident_conflicts_eval.py`, `ontology_diff_eval.py` (14 mutations, 0 mismatched), `lab_check.py`, `lab_browser.mjs`, `resolve_eval.py`, `hook_eval.py` (slowest 27.6 ms) and the pi and MCP contract. The 90-case lab page is 34 bytes longer because each run records verdict times of a different length.
 
 **Not run.** `action_gate.py`, `coverage_decline_eval.py`, `agent_rca_eval.py` and `llm_gate.py` need the model. `ruled_out_eval.py` needs `ruled_out_weight`, which lane A1 dropped; it now says so and exits 0, and `ruled-out.txt` keeps the run from commit 5f3ea74.
+## Phase 13, lane H: why the ranking changed since T (`chain-delta.txt`, `chain-delta-first-design.txt`)
+
+Phase 12 lane G gave ograph a history: `chains INC --known-at T` prints the ranking of a past time, and `changes --since T` lists the facts added, removed and changed since. Neither says which of those changes moved the ranking. `changes` has no ranking in it: on the demo, after one alert file lost one alert, it lists 14 fact changes, 7 of them renumbered `evt:sourceRecord` lines of alerts that stayed, and nothing that says rank 1 went from ledger-db to payments-api. Comparing two `chains` outputs by hand shows that the ranking moved, not why. So the item is not answered by what exists and is not dropped.
+
+semantica keeps a support set for each derived fact and recomputes a closure at a `known_at` time (`semantica/reasoning/temporal_truth_maintenance.py:106-168`). ograph's ranking is a score over events, not a rule closure, so support sets do not carry over. What carries over is recomputing at two times and attributing by counterfactual: ograph ranks again with one source file's change taken back, or with only that change applied.
+
+**Verdict: KEEP.** Every gate below passed. The change is one flag on an existing command; no command was added.
+
+### What was built
+
+- **`ograph chains INC --since T`.** After the usual output it prints the top `--top` applications as the store ranked them at T and now. When the order differs, it tests each source file (named graph) that changed since T, chains and quarantine aside, twice: `needed`, the store now with only that file taken back to T ranks differently; `enough`, the store at T with only that file brought forward ranks differently. A file is named when either holds. `--json` adds `shift`. Excluded from `--known-at`.
+- **`Snapshot::delta(t)` and `Snapshot::revert(delta, which)`.** `known_at` is now these two: one pass over the history builds the delta, and a view applies the part of it whose graph `which` selects. `Snapshot::now()` opens a second view on the same read transaction, so every view of one `--since` answer reads one state of the store, even while a harvest commits.
+
+### Gates, written before the code (`scripts/eval/chain_delta_gate.py`)
+
+Each step adds, edits or removes exactly one source file and harvests. Whether the top 5 moved is read from plain `chains --json` before and after the step, not from the feature. The file the step touched is the responsible one by construction.
+
+| Gate | Pass condition | Result |
+|---|---|---|
+| Single steps: a copy of examples/demo (6 steps, `INC-5377`, no model) and copies of the first 6 RCAEval cases (10 steps each, an `alerts` directory source added) | `then` and `now` equal the plain rankings before and after; the touched file is named when the top 5 moved, and nothing is named when it did not | 66 of 66 steps; 30 moved and named exactly their file, 36 did not move and named nothing |
+| Windows of several steps (2 on the demo, 3 per case) | The files named and their `needed` and `enough` marks equal what stores rebuilt from scratch give: for each file that differs between the window's start and now, a new store from today's files with that one as it was, and a new store from the start's files with that one as it is today | 20 of 20 windows, 17 of them with a moved ranking |
+| Current answers | RCAEval chain AC@1 and `similar_eval.py` unchanged | chain AC@1 0.93, AC@3 0.99, Avg@5 0.98, per-case rankings identical on 90 of 90 against `data/rcaeval-final.json`; similar 82/89 = 0.92, output identical apart from timings |
+| `--known-at` after the refactor | `known_at_gate.py` passes | GATE PASSED; 90 of 90 RCAEval views equal the saved output |
+| Tests | `cargo test --workspace` | 88 + 20 + 12 passed; clippy with `--all-targets` reports nothing |
+
+**The first design was wrong, and the record of it is kept.** It expected the names in a window from the step design alone, on the claim that the steps do not interact. On the first case (`chain-delta-first-design.txt`) the window from after s5 to after s10 failed: the feature named `metrics.csv`, which the design did not expect. The feature was right. Step s10 drops the rank-1 application's metrics, which lowers emailservice from 1.000 to 0.858. On its own step that reorders nothing. At the start of the window the alerts of `a1.json` and `a2.json` were in the top 5 too, and with them the same drop changes the order, so `metrics.csv` is `enough`. The window expectation now comes from rebuilt stores, which involve no history view, and that one condition is the only one that changed.
+
+The windows include the two kinds of interaction the design covers. `a2.json` and `a2dup.json` hold the same alert: while both are present neither is `needed` and each is `enough`, and after both are removed each is `needed` and neither is `enough`.
+
+### Cost
+
+On one store of the 90 cases (similar_eval's layout, first harvest 9.5 s), one process per call, median of 5 with the range:
+
+| files changed since T | graphs that changed a fact | `chains` (ms) | `chains --since T` (ms) |
+|---|---|---|---|
+| 1 | 1 | 13 (13 to 16) | 18 (18 to 26) |
+| 10 | 9 | 15 (15 to 18) | 61 (55 to 63) |
+| 90 | 88 | 15 (13 to 15) | 725 (715 to 780) |
+
+Each changed file costs two rankings in views, about 8 ms at 88 files, so the cost grows with the files changed since T and not with the store. One of the 10 files and 2 of the 90 lost only rows that held no detected episode, so they changed no fact. In every row the ranking moved and only the file that moved it was named.
+
+### What it does not do
+
+- **A moved ranking is a different order of the top `--top` applications.** A score that changed without changing the order is not a move. When the order did not move no file is tested, so two changes that cancel out are not reported.
+- **Interactions beyond one file.** A move that needs two files together, where neither alone is `needed` or `enough`, names no file; the output then says the changes move it together. No pair is tested. The gate has no case of this kind, so that message is not measured.
+- **Chains and quarantine are not candidates.** A view keeps them as its base has them. Verdict graphs are candidates, since a verdict can move a ranking through `precedent_weight`.
+- **Not in `serve` or the MCP tools.** Only the CLI has `--since`.

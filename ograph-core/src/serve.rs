@@ -174,7 +174,7 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
             let mut a = query::chains(&snap, &ids, query::lookup(&snap, arg(p, "incident")?)?, &st)?;
             let (suspects, _) = ws.fallback_suspects(&snap, &a, arg(p, "incident")?, &st);
             a.apps.truncate(5);
-            if suspects.is_empty() { serde_json::to_value(a)? } else { serde_json::to_value(query::Chains { analysis: a, suspects })? }
+            if suspects.is_empty() { serde_json::to_value(a)? } else { serde_json::to_value(query::Chains { analysis: a, suspects, shift: None })? }
         }
         "suspects" => serde_json::to_value(ws.suspects(&snap, arg(p, "target")?, p.get("since").and_then(Value::as_str), &ws.config.correlation)?.0)?,
         "blast" => serde_json::to_value(query::blast(&snap, arg(p, "app")?, 8)?)?,
