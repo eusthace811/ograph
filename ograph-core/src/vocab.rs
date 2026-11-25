@@ -57,6 +57,9 @@ ns!(evt, "https://ograph.dev/evt#", {
     REVISION = "revision",
     CHANGED_FILE = "changedFile",
     CODE_LOCATION = "codeLocation",
+    OPERATOR_ACTION = "OperatorAction",
+    ACTION_KIND = "actionKind",
+    DURING = "during",
 });
 
 ns!(inc, "https://ograph.dev/inc#", {

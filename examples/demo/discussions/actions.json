@@ -1,0 +1,632 @@
+[
+ {
+  "ts": "1792708000.000200",
+  "thread_ts": "1792708000.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "checkout 5xx after the 4.2.0 deploy"
+ },
+ {
+  "ts": "1792708120.000200",
+  "thread_ts": "1792708000.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "should we roll back checkout?"
+ },
+ {
+  "ts": "1792708240.000200",
+  "thread_ts": "1792708000.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "rolled back checkout to 4.1.9, errors dropping"
+ },
+ {
+  "ts": "1792715200.000200",
+  "thread_ts": "1792715200.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "payments-api pods stuck in a crash loop"
+ },
+ {
+  "ts": "1792715320.000200",
+  "thread_ts": "1792715200.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "restarted payments-api pods, they came back healthy"
+ },
+ {
+  "ts": "1792722400.000200",
+  "thread_ts": "1792722400.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "orders-api queue is growing"
+ },
+ {
+  "ts": "1792722520.000200",
+  "thread_ts": "1792722400.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "let's scale orders-api to 20 replicas"
+ },
+ {
+  "ts": "1792722640.000200",
+  "thread_ts": "1792722400.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "nah, it drained on its own"
+ },
+ {
+  "ts": "1792729600.000200",
+  "thread_ts": "1792729600.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "ledger-db primary is unresponsive in us-east-1a"
+ },
+ {
+  "ts": "1792729720.000200",
+  "thread_ts": "1792729600.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "failed over ledger-db to the replica in us-east-1b"
+ },
+ {
+  "ts": "1792729840.000200",
+  "thread_ts": "1792729600.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "writes are flowing again"
+ },
+ {
+  "ts": "1792736800.000200",
+  "thread_ts": "1792736800.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "auth-service p99 jumped after enabling new_token_cache"
+ },
+ {
+  "ts": "1792736920.000200",
+  "thread_ts": "1792736800.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "turned off the new_token_cache flag on auth-service"
+ },
+ {
+  "ts": "1792737040.000200",
+  "thread_ts": "1792736800.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "latency back to normal"
+ },
+ {
+  "ts": "1792744000.000200",
+  "thread_ts": "1792744000.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "search-api timing out on long queries"
+ },
+ {
+  "ts": "1792744120.000200",
+  "thread_ts": "1792744000.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "raised the search-api request timeout from 2s to 5s in its config"
+ },
+ {
+  "ts": "1792751200.000200",
+  "thread_ts": "1792751200.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "inventory has a fix for the stock bug ready"
+ },
+ {
+  "ts": "1792751320.000200",
+  "thread_ts": "1792751200.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "deployed inventory 3.4.1 with the fix"
+ },
+ {
+  "ts": "1792751440.000200",
+  "thread_ts": "1792751200.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "stock numbers look right now"
+ },
+ {
+  "ts": "1792758400.000200",
+  "thread_ts": "1792758400.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "notifications are failing to send"
+ },
+ {
+  "ts": "1792758520.000200",
+  "thread_ts": "1792758400.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "can someone restart notifications?"
+ },
+ {
+  "ts": "1792758640.000200",
+  "thread_ts": "1792758400.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "I'll do it after the standup"
+ },
+ {
+  "ts": "1792765600.000200",
+  "thread_ts": "1792765600.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "checkout memory keeps climbing"
+ },
+ {
+  "ts": "1792765720.000200",
+  "thread_ts": "1792765600.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "bounced checkout on all hosts"
+ },
+ {
+  "ts": "1792765840.000200",
+  "thread_ts": "1792765600.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "memory flat again, will keep an eye on it"
+ },
+ {
+  "ts": "1792772800.000200",
+  "thread_ts": "1792772800.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "web-frontend is slow from europe"
+ },
+ {
+  "ts": "1792772920.000200",
+  "thread_ts": "1792772800.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "maybe we should fail over web-frontend to eu-west?"
+ },
+ {
+  "ts": "1792773040.000200",
+  "thread_ts": "1792772800.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "no, it's the CDN, not us"
+ },
+ {
+  "ts": "1792780000.000200",
+  "thread_ts": "1792780000.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "elasticsearch cluster yellow"
+ },
+ {
+  "ts": "1792780120.000200",
+  "thread_ts": "1792780000.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "added two data nodes to elasticsearch"
+ },
+ {
+  "ts": "1792780240.000200",
+  "thread_ts": "1792780000.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "cluster green"
+ },
+ {
+  "ts": "1792787200.000200",
+  "thread_ts": "1792787200.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "payments-api error rate up after config push"
+ },
+ {
+  "ts": "1792787320.000200",
+  "thread_ts": "1792787200.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "reverted the payments-api retry setting to 3"
+ },
+ {
+  "ts": "1792787440.000200",
+  "thread_ts": "1792787200.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "errors gone"
+ },
+ {
+  "ts": "1792794400.000200",
+  "thread_ts": "1792794400.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "orders-api 4.0 broke the export job"
+ },
+ {
+  "ts": "1792794520.000200",
+  "thread_ts": "1792794400.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "we did not roll back orders-api, the job owners patched it instead"
+ },
+ {
+  "ts": "1792801600.000200",
+  "thread_ts": "1792801600.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "ledger-db connections maxed"
+ },
+ {
+  "ts": "1792801720.000200",
+  "thread_ts": "1792801600.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "raised max_connections on ledger-db to 400"
+ },
+ {
+  "ts": "1792801840.000200",
+  "thread_ts": "1792801600.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "ok"
+ },
+ {
+  "ts": "1792801960.000200",
+  "thread_ts": "1792801600.000200",
+  "channel": "incidents",
+  "user": "U5",
+  "text": "also restarted payments-api to drop the stale pool"
+ },
+ {
+  "ts": "1792808800.000200",
+  "thread_ts": "1792808800.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "planning: next week we will fail over ledger-db to test the runbook"
+ },
+ {
+  "ts": "1792816000.000200",
+  "thread_ts": "1792816000.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "checkout canary looks bad"
+ },
+ {
+  "ts": "1792816120.000200",
+  "thread_ts": "1792816000.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "rolled back the checkout canary"
+ },
+ {
+  "ts": "1792816240.000200",
+  "thread_ts": "1792816000.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "full fleet was never touched"
+ },
+ {
+  "ts": "1792823200.000200",
+  "thread_ts": "1792823200.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "auth-service login errors"
+ },
+ {
+  "ts": "1792823320.000200",
+  "thread_ts": "1792823200.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "flipped fast_login off for auth-service"
+ },
+ {
+  "ts": "1792823440.000200",
+  "thread_ts": "1792823200.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "still errors"
+ },
+ {
+  "ts": "1792823560.000200",
+  "thread_ts": "1792823200.000200",
+  "channel": "incidents",
+  "user": "U5",
+  "text": "rolled back auth-service to 2.8.0"
+ },
+ {
+  "ts": "1792823680.000200",
+  "thread_ts": "1792823200.000200",
+  "channel": "incidents",
+  "user": "U6",
+  "text": "fixed"
+ },
+ {
+  "ts": "1792830400.000200",
+  "thread_ts": "1792830400.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "search-api is at 90% cpu"
+ },
+ {
+  "ts": "1792830520.000200",
+  "thread_ts": "1792830400.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "scaled search-api from 6 to 12 instances"
+ },
+ {
+  "ts": "1792837600.000200",
+  "thread_ts": "1792837600.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "inventory sync is stuck"
+ },
+ {
+  "ts": "1792837720.000200",
+  "thread_ts": "1792837600.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "if it doesn't recover in 10 min we restart inventory"
+ },
+ {
+  "ts": "1792837840.000200",
+  "thread_ts": "1792837600.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "it recovered"
+ },
+ {
+  "ts": "1792844800.000200",
+  "thread_ts": "1792844800.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "notifications backlog"
+ },
+ {
+  "ts": "1792844920.000200",
+  "thread_ts": "1792844800.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "scaled notifications workers to 30"
+ },
+ {
+  "ts": "1792845040.000200",
+  "thread_ts": "1792844800.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "backlog cleared in 15 min"
+ },
+ {
+  "ts": "1792852000.000200",
+  "thread_ts": "1792852000.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "web-frontend shows a blank page for some users"
+ },
+ {
+  "ts": "1792852120.000200",
+  "thread_ts": "1792852000.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "deployed web-frontend 9.1.2 hotfix"
+ },
+ {
+  "ts": "1792852240.000200",
+  "thread_ts": "1792852000.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "blank pages gone"
+ },
+ {
+  "ts": "1792859200.000200",
+  "thread_ts": "1792859200.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "checkout and payments-api both erroring"
+ },
+ {
+  "ts": "1792859320.000200",
+  "thread_ts": "1792859200.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "should we restart checkout or payments-api first?"
+ },
+ {
+  "ts": "1792859440.000200",
+  "thread_ts": "1792859200.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "restarted payments-api first"
+ },
+ {
+  "ts": "1792859560.000200",
+  "thread_ts": "1792859200.000200",
+  "channel": "incidents",
+  "user": "U5",
+  "text": "checkout recovered by itself"
+ },
+ {
+  "ts": "1792866400.000200",
+  "thread_ts": "1792866400.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "ledger-db replication lag at 20 minutes"
+ },
+ {
+  "ts": "1792866520.000200",
+  "thread_ts": "1792866400.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "we could fail over ledger-db but the replica is behind too"
+ },
+ {
+  "ts": "1792866640.000200",
+  "thread_ts": "1792866400.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "waiting it out"
+ },
+ {
+  "ts": "1792873600.000200",
+  "thread_ts": "1792873600.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "orders-api throwing NPEs after 5.2.0"
+ },
+ {
+  "ts": "1792873720.000200",
+  "thread_ts": "1792873600.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "rolled back orders-api to 5.1.3"
+ },
+ {
+  "ts": "1792873840.000200",
+  "thread_ts": "1792873600.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "NPEs gone"
+ },
+ {
+  "ts": "1792880800.000200",
+  "thread_ts": "1792880800.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "auth-service rate limit too low for the sale"
+ },
+ {
+  "ts": "1792880920.000200",
+  "thread_ts": "1792880800.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "bumped the auth-service rate limit to 2000 rps in config"
+ },
+ {
+  "ts": "1792888000.000200",
+  "thread_ts": "1792888000.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "elasticsearch master node down"
+ },
+ {
+  "ts": "1792888120.000200",
+  "thread_ts": "1792888000.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "restarted the elasticsearch master"
+ },
+ {
+  "ts": "1792888240.000200",
+  "thread_ts": "1792888000.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "cluster rejoined"
+ },
+ {
+  "ts": "1792895200.000200",
+  "thread_ts": "1792895200.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "payments-api latency high"
+ },
+ {
+  "ts": "1792895320.000200",
+  "thread_ts": "1792895200.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "is it worth scaling payments-api?"
+ },
+ {
+  "ts": "1792895440.000200",
+  "thread_ts": "1792895200.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "not yet, let's watch it"
+ },
+ {
+  "ts": "1792902400.000200",
+  "thread_ts": "1792902400.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "web-frontend us-east is down"
+ },
+ {
+  "ts": "1792902520.000200",
+  "thread_ts": "1792902400.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "moved web-frontend traffic to us-west"
+ },
+ {
+  "ts": "1792902640.000200",
+  "thread_ts": "1792902400.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "users are back"
+ },
+ {
+  "ts": "1792909600.000200",
+  "thread_ts": "1792909600.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "inventory feature flag reserve_v2 causing double reservations"
+ },
+ {
+  "ts": "1792909720.000200",
+  "thread_ts": "1792909600.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "disabled reserve_v2 for inventory"
+ },
+ {
+  "ts": "1792909840.000200",
+  "thread_ts": "1792909600.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "no more doubles"
+ },
+ {
+  "ts": "1794263500.000200",
+  "thread_ts": "1794263500.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "INC-4388 checkout 500s after v4.1.0"
+ },
+ {
+  "ts": "1794263620.000200",
+  "thread_ts": "1794263500.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "rolled back checkout to 4.0.9"
+ },
+ {
+  "ts": "1794263740.000200",
+  "thread_ts": "1794263500.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "errors gone, closing"
+ },
+ {
+  "ts": "1793572300.000200",
+  "thread_ts": "1793572300.000200",
+  "channel": "incidents",
+  "user": "U2",
+  "text": "INC-4120 payments failing, ledger-db pool exhausted"
+ },
+ {
+  "ts": "1793572420.000200",
+  "thread_ts": "1793572300.000200",
+  "channel": "incidents",
+  "user": "U3",
+  "text": "raised the ledger-db connection pool to 200"
+ },
+ {
+  "ts": "1793572540.000200",
+  "thread_ts": "1793572300.000200",
+  "channel": "incidents",
+  "user": "U4",
+  "text": "payments recovering"
+ }
+]

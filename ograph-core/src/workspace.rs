@@ -849,4 +849,58 @@ mod tests {
         std::fs::write(&cfg, std::fs::read_to_string(&cfg).unwrap() + "[incidents]\nmerge = { service = \"earliest\" }\n").unwrap();
         assert_eq!(Workspace::open(&root).err().unwrap().to_string(), "[incidents] merge: service = \"earliest\" does not apply to service");
     }
+
+    #[test]
+    fn a_done_action_takes_its_message_time_and_the_rest_is_quarantined() {
+        let msg = |at: i64, text: &str| format!(r#"{{"ts":"{at}.000100","thread_ts":"{}.000100","channel":"ops","text":"{text}"}}"#, T - 400);
+        let thread = format!("[{},{},{}]", msg(T - 400, "checkout errors spiking INC-10, should we roll back checkout?"), msg(T - 100, "rolled back checkout to 4.0.9"), msg(T + 60, "errors gone"));
+        let alerts = format!("[{},{}]", alert("checkout", "Latency", T - 300), alert("checkout", "Latency", T + 86_100));
+        let root = fixture("actions", &[("discussions", "ops.json", &thread), ("alerts", "alerts.json", &alerts)]);
+        std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-10","service":"checkout","opened":{T},"resolved":{}}},{{"id":"INC-11","service":"checkout","opened":{}}}]"#, T + 600, T + 86_400)).unwrap();
+        let action = |kind: &str, app: &str, n: u32, quote: &str| format!(r#"{{"kind":"{kind}","app":"{app}","message":{n},"quote":"{quote}"}}"#);
+        let actions = [
+            action("ROLLBACK", "checkout", 2, "rolled back checkout"),
+            action("ROLLBACK", "checkout", 1, "roll back checkout"),
+            action("RESTART", "checkout", 3, "restarted checkout"),
+            action("SCALE", "checkout", 7, "scaled checkout"),
+            action("FAILOVER", "made-up", 2, "rolled back checkout"),
+            action("REBOOT", "checkout", 2, "rolled back checkout"),
+            action("RESTART", "checkout", 3, "errors gone"),
+        ];
+        let answer = format!(r#"{{"category":"UNKNOWN","sentiment":"urgent","apps":[],"calls":[],"actions":[{}],"confidence":0.9}}"#, actions.join(","));
+        std::fs::write(root.join("answer.json"), answer).unwrap();
+        let cfg = root.join(".ograph/config.toml");
+        let model = format!("[llm.extract]\ncommand = [\"sh\", \"-c\", \"cat >/dev/null; cat '{}'\"]\nmodel = \"fixture\"\n", root.join("answer.json").display());
+        std::fs::write(&cfg, std::fs::read_to_string(&cfg).unwrap() + &model).unwrap();
+        let out = harvest(&root, None);
+        let mut reasons: Vec<String> = out.iter().find(|o| o.graph.contains("/discussions/")).unwrap().quarantined.iter().map(|r| r.reason.clone()).collect();
+        reasons.sort();
+        assert_eq!(
+            reasons,
+            [
+                "\"REBOOT\" is not in the closed vocabulary of evt:actionKind",
+                "\"errors gone\" does not say what a RESTART does",
+                "\"restarted checkout\" is not in message 3",
+                "\"roll back checkout\" is a question, not a done action",
+            ]
+            .into_iter()
+            .chain(["SHACL MinCountConstraintComponent: an action needs its kind"; 8])
+            .chain(["message 7 is not in the thread", "the thread does not name \"made-up\""])
+            .collect::<Vec<_>>()
+        );
+        assert_eq!(violations(&root), 0);
+        assert_eq!(
+            sparql(&root, "SELECT ?k ?app ?at ?i WHERE { ?a a evt:OperatorAction ; evt:actionKind ?k ; evt:on ?app ; evt:at ?at ; evt:during ?i }"),
+            [["ROLLBACK", "id:app/checkout", "2026-11-22T22:25:00Z", "id:inc/inc-10"]]
+        );
+        let ws = Workspace::open(&root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let before = crate::query::before(&snap, "INC-10", 1800, 4).unwrap();
+        assert_eq!(before.events.iter().map(|e| e.signal.as_str()).collect::<Vec<_>>(), ["OPERATOR_ACTION", "ALERT"]);
+        let ids = crate::correlate::Ids::new(&snap).unwrap();
+        let chains = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-10").unwrap(), &ws.config.correlation).unwrap();
+        assert_eq!(chains.apps.iter().map(|a| a.chain.as_ref().unwrap().root.kind.as_str()).collect::<Vec<_>>(), ["ALERT"]);
+        let similar = crate::query::similar(&snap, "INC-11", &ws.config.correlation, 5).unwrap();
+        assert_eq!(similar[0].mitigations, ["ROLLBACK checkout at 2026-11-22T22:25:00Z: rolled back checkout"]);
+    }
 }
