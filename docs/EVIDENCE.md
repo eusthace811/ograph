@@ -381,3 +381,22 @@ These are the reasons, each measured above:
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.
+
+## Phase 12, lane D: the lab page (`lab-check.txt`, `lab-browser.txt`)
+
+`ograph lab` now draws, per incident, a timeline with one lane per application, the dependency neighbourhood, and the evidence and verdict of each chain. The SVG is written by ograph, not by a script, so the page reads with scripts off and a test can count its marks.
+
+| Gate | Result |
+|---|---|
+| Every `before` event has exactly one timeline mark, the top chain of `chains` has one arrow per link, and every application in `blast` of the top cause and in `before` is in the neighbourhood. `lab_check.py` takes the expected values from the CLI | 0 failures on the demo (13 events, 8 links, 16 applications) and on 90 merged RCAEval cases (2308 events, 130 links, 760 applications). The behavior test `the_lab_page_marks_every_event_and_link_once_and_draws_every_application` checks the same on a three-alert fixture with literal values |
+| Size: at most 2x the old bytes per incident on the 90-case page (27,120), set before the first measurement | 26,952 bytes per incident (2,425,705 in all, from 1,220,469). The demo went from 13,197 to 38,306 bytes. The first version was 31,559 per incident and failed |
+| Headless Chrome: JavaScript errors, clicks, dark scheme, phone width | 0 errors on both pages. A chain arrow opens its evidence, a neighbourhood click filters the timeline and a second click clears it, the copy button gives the `ograph verdict` line, and at 390 px the page is 390 px wide |
+
+Each part was kept only if it shows an on-call engineer something the rest of the page does not:
+
+- **Timeline: kept.** The old table stopped at 25 events, and 33 of the 90 RCAEval incidents have more (up to 64). Overlapping episodes of one application get their own rows, so no mark hides another.
+- **Replay (range input and play button): dropped.** The x axis already orders events by arrival. Replay would hide events on a page that is read after the fact, and it adds state to a static page.
+- **Chain evidence: kept.** It puts the provenance of each chain event (harvest graph, source, extractor, harvest time, model and confidence when a model proposed the fact) next to the chain, with the current verdict and the command to record one. Per-link score parts are shown when the analysis carries them (`links[].score`, `weakest`), and nothing breaks without them.
+- **Dependency neighbourhood: kept.** It shows applications the timeline has no lane for: silent dependencies and callers of the top cause, a mean of 2.57 per incident on the 90 cases (78 of 90 have one) and 4.75 on the demo.
+
+Not done: a page per incident. The page grows linearly, about 27 KB per incident, so a workspace with thousands of incidents needs a filter on `ograph lab`. The ranking and the correlation are unchanged: this lane does not touch `correlate.rs`, `query.rs` or the CLI.

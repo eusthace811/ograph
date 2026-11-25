@@ -604,6 +604,31 @@ mod tests {
     }
 
     #[test]
+    fn the_lab_page_marks_every_event_and_link_once_and_draws_every_application() {
+        let alerts = [alert("ledger-db", "PoolSaturated", T - 600), alert("payments-api", "ErrorRate", T - 300), alert("checkout", "Latency", T - 60)];
+        let root = fixture("lab", &[("alerts", "alerts.json", &format!("[{}]", alerts.join(",")))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        ws.verdict("id:chain/inc-1-1", true, "oncall", &["PM-7".into()]).unwrap();
+        let page = crate::lab::page(&ws.store.snapshot().unwrap(), &ws.config.correlation).unwrap();
+        let svg = |class: &str| page[page.find(&format!("<svg class=\"{class}\"")).unwrap()..].split("</svg>").next().unwrap().to_owned();
+        let (timeline, hood) = (svg("timeline"), svg("hood"));
+        for (app, name) in [("ledger-db", "poolsaturated"), ("payments-api", "errorrate"), ("checkout", "latency")] {
+            let mark = format!("data-ev=\"id:ev/alert-{app}-{name}-");
+            assert_eq!(timeline.matches(&mark).count(), 1, "{app}");
+            assert_eq!(hood.matches(&format!("data-app=\"{app}\"")).count(), 1, "{app}");
+        }
+        assert_eq!(timeline.matches("data-ev=").count(), 3);
+        let hops: Vec<&str> = timeline.match_indices("data-hop=\"").map(|(i, _)| &timeline[i + 10..i + 11]).collect();
+        assert_eq!(hops, ["0", "1"]);
+        assert_eq!(hood.matches("class=\"dep hot\"").count(), 1);
+        assert!(page.contains("Verdict: accepted by oncall at "));
+        assert!(page.contains("evidence: PM-7"));
+        assert!(page.contains("ograph verdict id:chain/inc-1-"));
+        assert!(!page.contains("<script src"));
+    }
+
+    #[test]
     fn a_leftover_iri_in_the_rank_form_does_not_shadow_the_rank() {
         let root = fixture("leftover", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
         harvest(&root, None);
