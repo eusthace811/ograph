@@ -46,6 +46,22 @@ It correlates every judged incident again and lists accepted chains whose applic
 rank 1 or drops out, and rejected chains that rise to rank 1. Exit 1 means some verdict would
 flip: show the list to the person before changing `config.toml`.
 
+The `[correlation]` keys `--set` takes (and `chains --set`, which ranks once without storing):
+
+| Key | Default | What it sets |
+|---|---|---|
+| `window_s` | 1800 | seconds before the incident searched |
+| `after_s` | 0 | seconds after the incident still searched |
+| `min_confidence` | 0.6 | chains under it are dropped |
+| `w_time`, `w_severity` | 0.6, 0.4 | a link's score is `time * w_time + severity * w_severity` |
+| `known_pair_prior` | 0.9 | the score of a known causal pair |
+| `rank` | `chain` | or `propagation` |
+| `prop_weights` | [0.4, 0.5, 0.1, 0.0] | propagation: strength, chain, spread, onset |
+| `signature_window_s` | 900 | the window `similar` compares |
+| `precedent_weight` | 0.0 | added to a root's score, times similarity, when a similar past incident's accepted cause has its application and signal |
+| `depth` | 4 | dependency hops in scope |
+| `max_chains` | 10 | ranked applications whose chains a harvest stores |
+
 ## Errors
 
 - `no chain id:chain/...; ograph chains INCIDENT lists them`: the id is wrong or the chain no

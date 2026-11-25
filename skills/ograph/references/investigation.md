@@ -58,6 +58,14 @@ ograph chains INC-5377
   geometric mean of its links. Check the weakest link first: a low time part means a long gap,
   and `dependency seen only in traces` or `no direct dependency` means the catalog does not
   state the edge the link crosses.
+- `--json` gives per application its `score` and, when it has one, `precedent`; per chain its
+  `id`, `confidence`, `scores` (one per link: `from`, `to`, `time`, `severity`, `known_pair`,
+  `edge`, `score`) and `weakest`. `edge` is where the dependency a link crosses comes from:
+  `same_app`, `catalog` (declared, or inferred by ogrep from configuration), `trace` (only
+  parent spans state it), `other`, or `indirect` (the link closes at the incident from more
+  than one hop away).
+- `--window 60m` and `--set KEY=VALUE` (any `[correlation]` key, references/verdicts.md) rank
+  again under other settings without storing anything.
 - `--rank propagation` ranks by how an anomaly spread to callers. When both rankings agree,
   say so; when they differ, report both.
 - A line `app:SIGNAL was accepted as the cause of id:inc/... (similarity 0.97)` under an
@@ -94,7 +102,9 @@ ograph similar INC-5377
   0.599  id:inc/inc-4120 on payments-api at 2026-11-01T22:26:40Z  causes: [ledger-db]  mitigations: [raised ledger-db connection pool to 200]
 ```
 
-- Similarity compares the signal pattern around each incident's onset.
+- Similarity compares the signal pattern around each incident's onset. What the incidents
+  state (the application, `fault` and the fault class an `incidents` source with
+  `classify = true` asks a model for) then orders the matches.
 - `causes` appear only for past incidents with an accepted verdict. An empty list means nobody
   confirmed one yet, not that there was none.
 - A mitigation that worked on a similar incident is the strongest fix to suggest.
@@ -129,7 +139,7 @@ Distance is in dependency hops. Business processes come from the ownership sourc
 Run this when the workspace has a `code` source (`.ograph/config.toml`), after `chains`.
 
 ```bash
-ograph code INC-1
+ograph code INC-1     # in a workspace with a code source
 ```
 
 ```
@@ -170,6 +180,7 @@ past write-ups:
   (with `touches`), `files`, `files_confidence`, `writeups` and `degraded`. A reason under `degraded` means ogrep could not answer for a
   repository: say so, do not report the empty list as "nothing found".
 - Commits outside the correlation window are not listed. `suspects --since 7d` reaches further back.
+- `--top 3` limits the files and write-ups (default 5).
 - `ogrep index .` in the code repository makes these lookups fast. ograph does not build that
   index itself.
 
@@ -201,6 +212,8 @@ ograph suspects checkout,payments --since 3d
 
 - Run it when `before` and `chains` find nothing or little. It needs no telemetry: ogrep ranks
   the failing applications and what they depend on by distance and by recent commits.
+- For an incident, `suspects` counts commits from the day before it until it opened. With
+  ogrep 0.2.0, which cannot stop at a time, later commits count too and a note says so.
 - Other incidents opened within the correlation window count as failing too, so one upstream
   cause that explains several of them ranks higher.
 - With a `code` source, `chains` prints the same list when it ranks no application.
@@ -216,6 +229,16 @@ Each item names the vendor, the applications that use it and their business proc
 `--since` counts back from now. News is context, not correlation: an item matters to an
 incident when its applications are in the incident's `scope` and it came shortly before the
 first symptom. Say so as a lead to check, not as a cause.
+
+## Show it to a person
+
+```bash
+ograph lab --out lab.html
+```
+
+One HTML page, no server. Per incident: the ranked causes with their chains, a timeline with a
+lane per application and the top chain as arrows, the dependency neighbourhood, the evidence of
+every event in the top five chains with its verdict, and an `ograph verdict` command to copy.
 
 ## What to report
 

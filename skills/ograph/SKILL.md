@@ -27,13 +27,14 @@ ograph harvest    # commands search upward for .ograph/; the last line counts qu
 
 ```bash
 ograph before INC-5377                 # default window 10m, 4 dependency hops
-ograph before INC-5377 --window 45m    # widen when nothing shows up
+ograph before INC-5377 --window 45m    # widen when nothing shows up; --depth 6 for more hops
 ograph chains INC-5377                 # top 5 applications, each with its best chain
 ograph chains INC-5377 --top 10
 ograph chains INC-5377 --rank propagation   # second opinion: anomaly spread, not chain score
-ograph blast ledger-db                 # name, alias or IRI of an application
+ograph chains INC-5377 --window 60m --set depth=6   # what a wider correlation would rank (stores nothing)
+ograph blast ledger-db                 # name, alias or IRI of an application; --depth limits the hops
 ograph similar INC-5377 --top 3
-ograph code INC-5377                   # lines, commits, files and past write-ups behind it (needs a code source)
+ograph code INC-5377 --top 3           # lines, commits, files and write-ups behind it; nothing without a code source (exit 1)
 ograph suspects INC-5377               # likely causes from dependencies and recent commits, no telemetry needed
 ograph suspects checkout,payments --since 3d   # the same for failing applications
 ograph news                            # all news; --since 24h, 7d counts back from now
@@ -61,13 +62,16 @@ ograph cite-check answer.md              # every chain, incident, application an
 ograph status                            # a line when the graph is stale or chains wait for a verdict
 ```
 
+`./x install-hook` in the ograph repository runs `ograph status` at the start of each Claude Code
+session (references/data-quality.md).
+
 ### Record (only after a person confirms)
 
 ```bash
 # accept or reject a chain; use the chain id that `chains` printed
 ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept --evidence PM-5377 --by oncall
 ograph verdict id:chain/inc-5377-f1ece3ced5be33c7 reject --evidence "deploy was a no-op" --by oncall
-ograph replay --set window_s=600       # before a settings change: which past verdicts would flip (exit 1)
+ograph replay --set window_s=600       # before a settings change: which past verdicts it would flip; exits 1 if any
 ```
 
 ### Query anything else
@@ -86,7 +90,7 @@ ograph harvest              # all sources, then correlation; unchanged files wri
 ograph harvest --only alerts   # one kind, then re-correlate
 ograph validate             # full SHACL audit, expect "0 violations"
 ograph stats                # store size, graphs, triples
-ograph lab --out lab.html   # one HTML page over incidents, causes, timelines
+ograph lab --out lab.html   # one HTML page for a person: causes, timeline, neighbourhood, evidence
 ograph export --out all.trig
 ograph compact              # drop history older than history_days, shrink the file
 ```
