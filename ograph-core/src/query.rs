@@ -13,6 +13,16 @@ use std::path::{Path, PathBuf};
 
 /// Finds a node from an IRI, a prefixed name, an incident id (`INC-5377`), or an app's name or alias.
 pub fn lookup(s: &Snapshot, name: &str) -> anyhow::Result<Id> {
+    let id = find(s, name)?;
+    // The dictionary keeps every name the store ever held, so a view of an earlier time can find
+    // a node that has no facts in it yet.
+    if s.as_of_counts().is_some() && s.quads([Some(id), None, None], crate::store::GraphSel::Union).next().is_none() {
+        anyhow::bail!("{name} was not known at that time: the store recorded it later");
+    }
+    Ok(id)
+}
+
+fn find(s: &Snapshot, name: &str) -> anyhow::Result<Id> {
     let iri = crate::workspace::resolve_iri(name);
     if let Some(id) = s.iri(&iri)? {
         return Ok(id);

@@ -192,6 +192,45 @@ fn a_dependency_added_to_a_declared_service_is_dated_and_one_that_came_with_it_i
     assert_eq!(values(&old, "SELECT ?to WHERE { id:app\\/checkout ops:dependsOn ?to }"), ["https://ograph.dev/id/app/mailer", "https://ograph.dev/id/app/payments"]);
 }
 
+/// An incident on checkout that opened between 2001, when payments came with checkout, and
+/// 2004, when checkout -> mailer was added, with an alert on each callee before it.
+#[test]
+fn every_view_of_the_ranking_follows_a_dependency_only_from_its_date() {
+    let opened = 1_050_000_000;
+    let alert = |app: &str, at: i64| format!(r#"{{"labels":{{"alertname":"Down","service":"{app}","severity":"critical"}},"startsAt":{at}}}"#);
+    let alerts = format!("[{},{}]", alert("mailer", opened - 300), alert("payments", opened - 200));
+    let root = workspace("dated-views", &format!("{CATALOG}[[source]]\nkind = \"alerts\"\npath = \"alerts.json\"\n"), &[("alerts.json", &alerts), ("shop/.undated", "")]);
+    std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-1","title":"Checkout failing","service":"checkout","opened":{opened},"severity":"SEV1","status":"open"}}]"#)).unwrap();
+    harvest(&root);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let undated_at = ograph_core::term::format_millis(ograph_core::store::now_ms());
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    std::fs::remove_file(root.join("shop/.undated")).unwrap();
+    harvest(&root);
+
+    let ws = Workspace::open(&root).unwrap();
+    let ranked = |snap: &ograph_core::store::Snapshot| {
+        let ids = ograph_core::correlate::Ids::new(snap).unwrap();
+        let a = ograph_core::query::chains(snap, &ids, ograph_core::query::lookup(snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+        (a.apps.iter().map(|r| r.app.clone()).collect::<Vec<_>>(), a.withheld.iter().map(|w| format!("{} -> {} from {}", w.caller, w.callee, w.valid_from)).collect::<Vec<_>>())
+    };
+    assert_eq!(ranked(&ws.store.snapshot().unwrap()), (vec!["payments".to_owned()], vec!["checkout -> mailer from 2004-11-09T11:33:20Z".to_owned()]));
+    assert_eq!(ranked(&ws.known_at(&undated_at).unwrap().0), (vec!["mailer".to_owned(), "payments".to_owned()], vec![]));
+
+    let names = |r: &[ograph_core::query::RankedApp]| r.iter().map(|a| a.app.clone()).collect::<Vec<_>>();
+    let t = ograph_core::workspace::when_ms(&undated_at).unwrap();
+    let shift = ograph_core::query::rank_shift(&ws.store.snapshot().unwrap(), t, "INC-1", &ws.config.correlation, 5).unwrap();
+    assert_eq!((names(&shift.then), names(&shift.now)), (vec!["mailer".to_owned(), "payments".to_owned()], vec!["payments".to_owned()]));
+    assert_eq!(shift.causes.iter().map(|c| c.graph.as_str()).collect::<Vec<_>>(), ["g:harvest/catalog/shop"]);
+
+    let used = ograph_core::query::uses(&ws.store, &ws.ontology, &ws.config.correlation, "alerts.json").unwrap();
+    assert_eq!(used.chains.iter().map(|c| (c.change, c.rank)).collect::<Vec<_>>(), [("gone", Some(1))]);
+    let snap = ws.store.snapshot().unwrap();
+    let ids = ograph_core::correlate::Ids::new(&snap).unwrap();
+    let now = ograph_core::query::chains(&snap, &ids, ograph_core::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+    assert_eq!(used.chains[0].chain, ograph_core::vocab::compact(&now.apps[0].chain.as_ref().unwrap().id));
+}
+
 #[test]
 fn a_call_ogrep_infers_is_a_dependency_unless_the_catalog_says_declared_only() {
     let depends = |root: &Path| values(root, "SELECT ?to WHERE { id:app\\/checkout ops:dependsOn ?to }");

@@ -141,10 +141,10 @@ pub use crate::store::now_ms;
 
 /// A time as `--known-at` and `--since` take it: an `xsd:dateTime` with a zone, or how long ago.
 pub fn when_ms(s: &str) -> anyhow::Result<i64> {
-    if let Some(ms) = term::parse_millis(s) {
+    if let Some(ms) = term::instant_millis(s) {
         return Ok(ms);
     }
-    let ago = crate::query::duration_s(s).map_err(|_| anyhow::anyhow!("{s:?} is not a time: write 2026-11-25T09:30:00Z, or how long ago, such as 90m or 2d"))?;
+    let ago = crate::query::duration_s(s).map_err(|_| anyhow::anyhow!("{s:?} is not a time: write an xsd:dateTime with a zone, such as 2026-11-25T09:30:00Z, or how long ago, such as 90m or 2d"))?;
     Ok(now_ms() - ago * 1000)
 }
 
@@ -886,6 +886,32 @@ pub(crate) mod tests {
 
         let too_early = ws.known_at(&crate::term::format_millis(t0)).err().unwrap().to_string();
         assert!(too_early.starts_with("no record of what was known at "), "{too_early}");
+    }
+
+    #[test]
+    fn an_incident_recorded_after_the_time_asked_about_was_not_known_then() {
+        let root = fixture("known-at-later", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        let incidents = std::fs::read_to_string(root.join("incidents.json")).unwrap();
+        std::fs::write(root.join("incidents.json"), "[]").unwrap();
+        harvest(&root, None);
+        let t1 = pause();
+        std::fs::write(root.join("incidents.json"), incidents).unwrap();
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let then = ws.known_at(&crate::term::format_millis(t1)).unwrap().0;
+        assert_eq!(crate::query::lookup(&then, "INC-1").err().unwrap().to_string(), "INC-1 was not known at that time: the store recorded it later");
+        let shift = crate::query::rank_shift(&ws.store.snapshot().unwrap(), t1, "INC-1", &ws.config.correlation, 5).unwrap();
+        let apps = |r: &[crate::query::RankedApp]| r.iter().map(|a| a.app.clone()).collect::<Vec<_>>();
+        assert_eq!((apps(&shift.then), apps(&shift.now)), (vec![], vec!["ledger-db".to_owned()]));
+    }
+
+    #[test]
+    fn a_time_takes_any_xsd_date_time_with_a_zone() {
+        let ms = 1_795_442_000_123;
+        assert_eq!(super::when_ms("2026-11-23T13:53:20.123Z").unwrap(), ms);
+        assert_eq!(super::when_ms("2026-11-23T13:53:20.123456Z").unwrap(), ms);
+        assert_eq!(super::when_ms("2026-11-23T14:53:20.123999+01:00").unwrap(), ms);
+        assert!(super::when_ms("2026-11-23T13:53:20.123").is_err());
     }
 
     #[test]

@@ -86,6 +86,16 @@ pub fn parse_millis(lexical: &str) -> Option<i64> {
     millis_of(DateTime::from_str(lexical).ok()?)
 }
 
+/// The instant an `xsd:dateTime` with a zone names, in Unix milliseconds, rounded down to the
+/// millisecond; `None` for one without a zone, which names no single instant.
+pub fn instant_millis(lexical: &str) -> Option<i64> {
+    let dt = DateTime::from_str(lexical).ok()?;
+    dt.timezone_offset()?;
+    let bytes = dt.adjust(Some(oxsdatatypes::TimezoneOffset::UTC))?.to_be_bytes();
+    let delta = i128::from_be_bytes(bytes[0..16].try_into().unwrap()) - epoch_value();
+    i64::try_from(delta.div_euclid(1_000_000_000_000_000)).ok().filter(|m| m.unsigned_abs() < TIME_BIAS as u64)
+}
+
 pub fn format_millis(millis: i64) -> String {
     date_time_from_millis(millis).to_string()
 }
