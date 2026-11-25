@@ -1,0 +1,16 @@
+1. shipped ontology, empty store
+   expected from the sources, unwritten: []
+   expected from the sources, untimed:   []
+   exit 0, problems 0; warnings equal the sources: True
+2. after merging a sample proposed.ttl
+   warning: property without a domain (2): ops:region, ops:runsOnCluster
+   warning: property without a range (2): ops:region, ops:runsOnCluster
+   warning: term still marked Proposed (3): ops:Cluster, ops:region, ops:runsOnCluster
+   warning: declared but no code writes it (3): ops:Cluster, ops:region, ops:runsOnCluster
+   proposed terms ['ops:Cluster', 'ops:region', 'ops:runsOnCluster']; flagged as proposed ['ops:Cluster', 'ops:region', 'ops:runsOnCluster']; exit 0; every term flagged: True
+3. shapes.ttl with sh:targetClass evt:Aletr
+   problem: shape:Paged in shapes.ttl names undeclared class evt:Aletr
+   validate: 0 violations, exit 0; focus nodes [['shape:Application', 10], ['shape:Chain', 7], ['shape:Dependency', 0], ['shape:EpisodeOrder', 3], ['shape:Event', 21], ['shape:Incident', 4], ['shape:IncidentOrder', 3], ['shape:News', 3], ['shape:OperatorAction', 0], ['shape:Paged', 0], ['shape:Thread', 47], ['shape:Verdict', 0]]
+   validate: matched nothing ['shape:Dependency', 'shape:OperatorAction', 'shape:Paged', 'shape:Verdict']
+   check exit 1; reported by check and validate: True
+ONTOLOGY LINT GATE: PASS

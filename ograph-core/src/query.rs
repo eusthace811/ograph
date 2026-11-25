@@ -39,6 +39,8 @@ pub struct Before {
     pub at: String,
     pub scope: Vec<(String, usize)>,
     pub events: Vec<BeforeEvent>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub withheld: Vec<correlate::Withheld>,
 }
 
 #[derive(Serialize)]
@@ -60,13 +62,14 @@ pub fn before(s: &Snapshot, incident: &str, window_s: i64, depth: usize) -> anyh
     let st = Settings { window_s, depth, ..Settings::default() };
     let (app, t, cands) = correlate::candidates(s, &ids, i, &st)?;
     let src = s.iri(evt::SOURCE_RECORD)?;
-    let mut scope: Vec<(String, usize)> = correlate::downstream(s, &ids, app, depth)?.into_iter().map(|(a, d)| (app_name(s, &ids, a), d)).collect();
+    let mut scope: Vec<(String, usize)> = correlate::downstream(s, &ids, app, depth, Some(t))?.into_iter().map(|(a, d)| (app_name(s, &ids, a), d)).collect();
     scope.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
     Ok(Before {
         incident: vocab::compact(&literal(s, i).unwrap_or_default()),
         app: app_name(s, &ids, app),
         at: term::format_millis(t),
         scope,
+        withheld: correlate::withheld(s, &ids, app, depth, t)?,
         events: cands
             .iter()
             .rev()
@@ -84,19 +87,34 @@ pub fn before(s: &Snapshot, incident: &str, window_s: i64, depth: usize) -> anyh
     })
 }
 
+/// The time `when` names: an incident's opening time, or a time as `--known-at` takes it.
+pub fn time_of(s: &Snapshot, when: &str) -> anyhow::Result<i64> {
+    if let Ok(i) = lookup(s, when)
+        && let Some(at) = s.iri(evt::AT)?
+        && let Some(t) = s.object(i, at)?.and_then(term::millis)
+    {
+        return Ok(t);
+    }
+    crate::workspace::when_ms(when)
+}
+
 #[derive(Serialize)]
 pub struct Blast {
     pub app: String,
+    /// The time whose dependencies were followed, when one was given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at: Option<String>,
     pub dependents: Vec<(String, usize)>,
     pub processes: Vec<(String, Vec<String>)>,
     pub open_incidents: Vec<String>,
 }
 
-/// Q2: which services and business processes this failure might affect.
-pub fn blast(s: &Snapshot, app: &str, depth: usize) -> anyhow::Result<Blast> {
+/// Q2: which services and business processes this failure might affect. With `at` (Unix ms),
+/// only through dependencies that held then.
+pub fn blast(s: &Snapshot, app: &str, depth: usize, at: Option<i64>) -> anyhow::Result<Blast> {
     let ids = Ids::new(s)?;
     let a = lookup(s, app)?;
-    let ups = correlate::upstream(s, &ids, a, depth)?;
+    let ups = correlate::upstream(s, &ids, a, depth, at)?;
     let mut processes: FxHashMap<String, Vec<String>> = FxHashMap::default();
     let mut open = Vec::new();
     let supports = s.iri(ops::SUPPORTS)?;
@@ -134,7 +152,7 @@ pub fn blast(s: &Snapshot, app: &str, depth: usize) -> anyhow::Result<Blast> {
     let mut processes: Vec<(String, Vec<String>)> = processes.into_iter().collect();
     processes.sort();
     open.sort();
-    Ok(Blast { app: app_name(s, &ids, a), dependents: ups.into_iter().map(|(x, d)| (app_name(s, &ids, x), d)).collect(), processes, open_incidents: open })
+    Ok(Blast { app: app_name(s, &ids, a), at: at.map(term::format_millis), dependents: ups.into_iter().map(|(x, d)| (app_name(s, &ids, x), d)).collect(), processes, open_incidents: open })
 }
 
 #[derive(Serialize, Clone)]

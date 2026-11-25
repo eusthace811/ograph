@@ -50,6 +50,10 @@ enum Cmd {
         app: String,
         #[arg(long, default_value_t = 8)]
         depth: usize,
+        /// Follow only dependencies that held at this time: an incident (its opening time), a
+        /// dateTime with a zone, or how long ago (90m, 2d)
+        #[arg(long)]
+        at: Option<String>,
         /// Answer from what the store held at this time: a dateTime with a zone, or how long
         /// ago (90m, 2d)
         #[arg(long)]
@@ -256,6 +260,12 @@ fn link_basis(l: &correlate::LinkScore) -> String {
     }
 }
 
+fn print_withheld(withheld: &[correlate::Withheld]) {
+    for w in withheld {
+        println!("  not followed: {} -> {}, added to the repository at {}, after the incident opened", w.caller, w.callee, w.valid_from);
+    }
+}
+
 fn print_suspects(suspects: &[query::Suspect]) {
     for s in suspects {
         println!("  {}. {:<22} score {:.2}  distance {}  explains {}", s.rank, s.app, s.score, s.distance, s.explains.join(", "));
@@ -337,15 +347,18 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 for e in &b.events {
                     println!("  -{:>5.1} min  {:<16} {:<15} sev {:.2}  {}", e.minutes_before, e.app, e.signal, e.severity, e.event);
                 }
+                print_withheld(&b.withheld);
             });
             Ok(found)
         }
-        Cmd::Blast { app, depth, known_at } => {
+        Cmd::Blast { app, depth, at, known_at } => {
             let snap = view(&ws, known_at.as_deref())?;
-            let b = query::blast(&snap, &app, depth)?;
+            let at = at.map(|w| query::time_of(&snap, &w)).transpose()?;
+            let b = query::blast(&snap, &app, depth, at)?;
             let found = !b.dependents.is_empty() || !b.processes.is_empty();
             print(json, &b, |b| {
-                println!("{} is depended on by {} applications", b.app, b.dependents.len());
+                let when = b.at.as_ref().map_or(String::new(), |t| format!(" at {t}"));
+                println!("{} is depended on by {} applications{when}", b.app, b.dependents.len());
                 for (a, d) in &b.dependents {
                     println!("  {d}  {a}");
                 }
@@ -401,6 +414,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                         }
                     }
                 }
+                print_withheld(&a.withheld);
             };
             warn(&degraded);
             if suspects.is_empty() && shift.is_none() {

@@ -54,7 +54,7 @@ fn section(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, n: usize) -> anyhow::R
         .collect();
     let similar = query::similar(s, &iri, st, 3).unwrap_or_default();
     let top = a.apps.first().and_then(|r| Some((query::lookup(s, &r.app).ok()?, r)));
-    let blast = top.and_then(|(_, r)| query::blast(s, &r.app, 8).ok());
+    let blast = top.and_then(|(_, r)| query::blast(s, &r.app, 8, Some(t)).ok());
     let chain = a.apps.first().and_then(|r| r.chain.as_ref());
 
     let mut h = String::new();
@@ -72,7 +72,7 @@ fn section(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, n: usize) -> anyhow::R
     h += r#"<h3>Timeline</h3><p class="mute">One lane per application, nearest dependency first. Bars are episodes, the line is the incident, arrows are the top chain. Click an arrow or a chip for its evidence.</p>"#;
     h += &timeline(&events, &a.app, t, chain, n);
     h += r#"<h3>Dependency neighbourhood</h3><p class="mute">Callers on the left, dependencies on the right. Filled: applications with events. Outlined in red: the top chain. Click an application to filter the timeline.</p>"#;
-    h += &hood(s, ids, app, st.depth, top.map(|(x, _)| x), &events, chain)?;
+    h += &hood(s, ids, app, t, st.depth, top.map(|(x, _)| x), &events, chain)?;
     if let Some(b) = &blast {
         let procs: Vec<&str> = b.processes.iter().map(|p| p.0.as_str()).collect();
         write!(h, "<p>{} is depended on by {} applications; processes: {}.</p>", esc(&b.app), b.dependents.len(), esc(&if procs.is_empty() { "none recorded".into() } else { procs.join(", ") }))?;
@@ -217,17 +217,17 @@ fn timeline(events: &[Event], incident_app: &str, t: i64, chain: Option<&Chain>,
 /// The incident application's dependencies up to `depth` by distance, plus the callers of the top
 /// cause (its blast radius) placed by how far they call from it. No force layout: a column per
 /// distance, names sorted within it.
-fn hood(s: &Snapshot, ids: &Ids, app: Id, depth: usize, top: Option<Id>, events: &[Event], chain: Option<&Chain>) -> anyhow::Result<String> {
-    let mut col: FxHashMap<Id, i64> = correlate::downstream(s, ids, app, depth)?.into_iter().map(|(x, d)| (x, d as i64)).collect();
+fn hood(s: &Snapshot, ids: &Ids, app: Id, at: i64, depth: usize, top: Option<Id>, events: &[Event], chain: Option<&Chain>) -> anyhow::Result<String> {
+    let mut col: FxHashMap<Id, i64> = correlate::downstream(s, ids, app, depth, Some(at))?.into_iter().map(|(x, d)| (x, d as i64)).collect();
     if let Some(top) = top {
         let base = *col.entry(top).or_insert(1);
-        for (x, d) in correlate::upstream(s, ids, top, 8)? {
+        for (x, d) in correlate::upstream(s, ids, top, 8, Some(at))? {
             col.entry(x).or_insert(base - d as i64);
         }
     }
     let mut edges = Vec::new();
     for &x in col.keys() {
-        for y in s.objects(x, ids.depends)? {
+        for y in ids.callees(s, x, Some(at))? {
             if col.contains_key(&y) && x != y {
                 edges.push((x, y));
             }

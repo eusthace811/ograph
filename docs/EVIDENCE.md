@@ -953,3 +953,62 @@ In this sample, every chain that went or was relinked had a root, link or incide
 **No regression.** `rcaeval_score.py` on the 90 cases gives chain AC@1 0.93 with per-case rankings identical to `integrate-phase-12`. `similar_eval.py --out target/rcaeval-merged` gives 82/89 = 0.92. Apart from timings, both outputs are identical to `rcaeval-final.txt` and `similar-eval.txt`. `incident_conflicts_eval.py`, `known_at_gate.py`, `hook_eval.py` and the pi and MCP contract pass. `cargo test --workspace` passes 90 + 20 + 12, and clippy with `--all-targets` reports nothing. Each incident now carries one `evt:sourceRecord` per record that states it, so an incident batch proposes one more fact per record: `a_withheld_value_counts_as_proposed` now expects 12 proposed and 11 accepted.
 
 **Verdict: KEEP.** `ograph uses PATH[#n]` (text and `--json`) and the MCP and JSON-RPC tool `uses {source}` ship on by default.
+
+## Phase 13, lane O: valid time on dependency edges
+
+Correlation scores a past incident with today's dependency edges. An edge added to the catalog after an incident can put a service in the incident's scope that was not connected to it then, and change its rank 1. `--known-at` (Phase 12, lane G) covers only what ograph recorded, so a first harvest after the incident cannot tell. This lane has ogrep date each dependency by the commit since which the repository has held it, and ograph uses an edge for an incident only when it held at the incident's open time.
+
+### Gates, written before the code
+
+| Gate | Data | Pass condition |
+|---|---|---|
+| 1. Old ranking restored | A scripted git repository: commit 1 declares `web -> api`; incident A opens on `web` 10 days later, with a fraud-service event closer and more severe than the api event; commit 2, 20 days after commit 1, adds `web -> fraud`; incident B opens 30 days after commit 1, with the same two events | `chains A` with dated edges equals, byte for byte, `chains A` harvested from the repository checked out at commit 1, while the undated build ranks `fraud` first for A; `chains B` still ranks `fraud` first; `before A` leaves `fraud` out of the scope and `before B` keeps it; `blast fraud --at A` lists no `web` and `blast fraud` does |
+| | The same repository with an ogrep that cannot date | Harvest says so, and every answer equals today's build |
+| 2. ogrep | ogrep's own suite | `cargo test --workspace` passes in ogrep, with new tests for the dating |
+| 3. No regression | RCAEval, 90 cases | chain AC@1 0.93 and `similar_eval.py` 82/89 = 0.92, with per-case output byte-identical between `integrate-phase-12` (5179213) and this lane, run with the dating ogrep (`ab_compare.sh`) |
+| 4. Cost | The dating call on real repositories with full history (GoogleCloudPlatform/microservices-demo, open-telemetry/opentelemetry-demo) | Time stated against plain `--entities`. On by default only if the dated call takes at most 5 s on each; otherwise KEEP-OFF behind a config key |
+
+The brief assumed RCAEval's catalog has no git history. It has one: `data/fixtures/online-boutique` is a git repository with one commit, made on 2026-11-22, and RCAEval's incidents opened in 2024. Dating each edge by the commit that added it would drop all 15 edges from every incident. So an edge that entered the files in the same commit as the service that declares it is not dated: before that commit the files said nothing about the service, which is no evidence that the dependency was absent. Only an edge added to a service the files already declared gets a date. Gate 3 checks this rule on real data.
+
+**Verdict: KEEP.** All four gates pass, and dating costs 1.3 to 1.9 s per catalog harvest on the two real repositories, under the 5 s set before the code, so it is on by default with no config key.
+
+### What was built
+
+- **ogrep, branch `edge-dates`.** `--entities --dated` gives each entity and edge `"since": {"commit", "time"}`: the first commit of the unbroken run, along HEAD's first-parent history, in which the operations files have held it. ogrep lists the first-parent commits that change a `.yaml`, `.yml` or `.env` file, reads their blobs through one `git cat-file --batch`, and runs its operations scan on each commit whose changed files the scan reads. An edge is keyed by its two ends and relation, so moving it to another file does not date it again. What only the work tree holds, and what a shallow clone has held since its boundary, has no `since`.
+- **ograph.** The catalog runs `--dated` and stores, for each dependency it dates, an `ops:Dependency` with `ops:caller`, `ops:callee`, `ops:validFrom` and `ops:addedIn` (ontology 1.4, `shape:Dependency`). `Ids` reads them into one map, and every walk over `ops:dependsOn` for an incident goes through `Ids::callees` and `Ids::callers` with the incident's open time: the scope of `chains`, `before` and `similar` signatures, the callers a chain may follow, and the lab's neighbourhood. `blast` takes `--at INC` or a time. `chains` and `before` list in `withheld` each dependency of the scope they did not follow.
+- **Which edges get a date.** An edge that entered in the same commit as the service that declares it gets none (the rule above). A pair that several edges state holds from the earliest of them, and at every time if one is undated. A pair another graph states without a date (a trace, a second catalog) holds at every time.
+- **An ogrep without `--dated`** (0.3.0 and older) refuses the flag. ograph then reads the entities as before and marks the catalog degraded with `dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0`, as it does for a deployment an old ogrep cannot compare (commit c975ff8).
+
+### How often a date matters (`edge-dates.txt`, `scripts/eval/edge_dates_eval.py`)
+
+| Repository | Dependency pairs | Came with their service | Added later, so dated | Withheld from an incident 90 / 365 days before HEAD |
+|---|---|---|---|---|
+| GoogleCloudPlatform/microservices-demo (2581 commits) | 17 | 13 | 4 | 0 / 0 |
+| open-telemetry/opentelemetry-demo (2530 commits) | 80 | 50 | 30 | 4 / 14 |
+| RCAEval's catalog, `data/fixtures/online-boutique` (1 commit) | 15 | 15 | 0 | 0 / 0 |
+
+On microservices-demo, the system RCAEval RE2-OB ran on, one dated pair is later than all 90 RCAEval incidents: `frontend -> shoppingassistantservice`, added on 2024-04-08. A catalog read from today's microservices-demo would put it in scope for every one of them, and dating withholds it from all 90. The service did not exist in 2024, so it has no events there and no ranking changes; on a system whose new dependency points at a service with telemetry, the gate's scripted repository is that case. On opentelemetry-demo, a year of history adds 14 of 80 pairs.
+
+### Results
+
+| Gate | Result | File |
+|---|---|---|
+| 1. Old ranking restored | 10 of 10 checks. `chains INC-A` with dated edges ranks `api` first (0.700), as the repository at commit 1 does, and the undated build ranks `fraud` first (0.960). `chains INC-B` ranks `fraud` first. `before INC-A` scope `api, web`, `before INC-B` `api, fraud, web`. `blast fraud --at INC-A` lists nobody, `blast fraud` lists `web`. With ogrep 0.2.0 the harvest says the dependencies carry no date, and 7 of 7 answers equal the base build's | `edge-dates-gate.txt` |
+| 2. ogrep suite | `cargo fmt --check`, `clippy -D warnings` and `cargo test --workspace`: 1141 passed, 0 failed, with one new test for `--dated` (shown to fail when a removed edge is not forgotten) and one for the hang below | `edge-dates-ogrep-suite.txt` |
+| 3. No regression | 11 of 12 outputs identical between 5179213 and this lane, both with the dating ogrep: RCAEval per-case rankings (chain AC@1 0.93, AC@3 0.99, Avg@5 0.98), `similar_eval.py` 82/89 = 0.92, the demo harvest and seven queries. `validate.json` differs by the new `shape:Dependency`, which matches nothing | `edge-dates-ab.txt` |
+| 4. Cost | `--entities --dated`: median 1.31 s on microservices-demo (502 commits change an operations file) and 1.86 s on opentelemetry-demo (802), against 0.05 and 0.04 s for `--entities`; 0.06 s on RCAEval's one-commit catalog. Load average 11 to 15 on 12 cores during the runs | `edge-dates.txt` |
+| Ontology | `ontology check` on the shipped 1.4: 0 problems, 0 warnings; the lint gate passes | `edge-dates-lint.txt` |
+
+Two comparisons in gate 1 are not byte for byte. A chain's root carries `id`, the store's row number for the event, and the dated store interns five more terms first (25 against 32); the undated store interns the harvest note (35 against 37). Gate 1 compares the JSON with those numbers removed and says so in its output. Everything else, IRIs, scores and order included, is identical.
+
+**What the cost is.** The first measurement of opentelemetry-demo took 10.4 s. Most of it was ogrep's scan trimming every line of a manifest again for each workload and each variable, and reading a file again for each service in it. ogrep commit e30c7ab trims each line once and reads each file once, with identical `--entities` output on both repositories; the dated call then took 2.1 s. Its time now goes to parsing YAML once per commit that changes an operations file, about 2.5 ms per commit.
+
+**A hang found on the way.** `ogrep --entities` on microservices-demo never finished: a Helm template under `helm-chart/` is not YAML, serde_yaml yields that syntax error again on every later call, and ogrep's loop over a manifest's documents skipped errors. ogrep commit 69353dd stops at the first repeated error and keeps the documents before it. This affects every ogrep release, dated or not.
+
+### What it does not do
+
+- `ograph suspects` and the `chains` fallback ask `ogrep --suspects`, which walks ogrep's own dependency model with today's edges.
+- `serve` and MCP `blast` take no time; `--at` is on the command line only.
+- An existing workspace keeps its copy of the ontology, so its dated facts are quarantined as unknown terms until `.ograph/ontology.ttl` and `shapes.ttl` are updated to 1.4. On gate 1's repository with the 1.3 files, the catalog harvest quarantines 5 of 13 facts and `chains INC-A` ranks `fraud` first, as without dates.
+- An edge that only changed provenance or file keeps its date; a service renamed in the files is a new service, so its edges come with it and are undated.
+- A dependency removed from the repository is gone from the catalog, so an incident before the removal does not see it: valid time here has a start, not an end.

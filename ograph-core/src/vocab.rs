@@ -25,6 +25,11 @@ ns!(ops, "https://ograph.dev/ops#", {
     ALIAS = "alias",
     VENDOR = "Vendor",
     USES_VENDOR = "usesVendor",
+    DEPENDENCY = "Dependency",
+    CALLER = "caller",
+    CALLEE = "callee",
+    VALID_FROM = "validFrom",
+    ADDED_IN = "addedIn",
 });
 
 ns!(evt, "https://ograph.dev/evt#", {

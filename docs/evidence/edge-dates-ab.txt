@@ -1,0 +1,23 @@
+ab_compare.sh: 5179213 (base) against lane O a548da7, both with OGRAPH_OGREP = ogrep edge-dates 9ce4230, cases mirrored under target/
+validate.json differs only by the new shape:Dependency, which matches nothing in the demo.
+
+identical  before_INC-5377.json
+identical  blast_ledger-db.json
+identical  chains_INC-5377.json
+identical  chains_INC-5377_--rank_propagation.json
+identical  news.json
+identical  rcaeval.json
+identical  similar_INC-5377.json
+DIFFERENT  validate.json
+identical  why_INC-5377.json
+identical  harvest.txt
+identical  rcaeval.txt
+identical  similar.txt
+11 of 12 outputs identical
+| chain | 0.93 | 0.99 | 0.98 |
+top-1 similar past incident shares the root cause: 82/89 = 0.92; any of top 3: 0.94; chance about 0.20
+latency, median of 150 runs each, the binaries taking turns:
+  before INC-5377    old 15.65 ms   new 16.27 ms
+  chains INC-5377    old 16.04 ms   new 15.63 ms
+  similar INC-5377   old 13.62 ms   new 14.04 ms
+  blast ledger-db    old 16.46 ms   new 17.28 ms
