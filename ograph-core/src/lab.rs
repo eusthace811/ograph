@@ -13,7 +13,7 @@ pub fn page(s: &Snapshot, st: &Settings) -> anyhow::Result<String> {
     if let Some(c) = ids.incident {
         for i in s.subjects(ids.ty, c)? {
             let iri = correlate::literal(s, i).unwrap_or_default();
-            let Ok(mut a) = correlate::analyze(s, &ids, i, st) else { continue };
+            let Ok(mut a) = query::chains(s, &ids, i, st) else { continue };
             a.apps.truncate(5);
             let before = query::before(s, &iri, st.window_s, st.depth).ok();
             let similar = query::similar(s, &iri, st, 3).unwrap_or_default();

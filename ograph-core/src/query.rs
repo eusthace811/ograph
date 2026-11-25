@@ -147,6 +147,15 @@ pub struct Similar {
     pub cause_apps: Vec<String>,
     pub mitigations: Vec<String>,
     pub title: Option<String>,
+    /// Roots people rejected on that incident: what it was found not to be.
+    pub ruled_out: Vec<RuledOut>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct RuledOut {
+    pub app: String,
+    pub signal: String,
+    pub evidence: Vec<String>,
 }
 
 /// An incident's signature: (application, signal) pairs seen before it, summed over their events'
@@ -186,28 +195,71 @@ fn cause_app(s: &Snapshot, ids: &Ids, e: Id) -> anyhow::Result<Option<Id>> {
     Ok(None)
 }
 
-/// Q3: past incidents that resemble this one, with their accepted causes and mitigations.
-pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> anyhow::Result<Vec<Similar>> {
-    let ids = Ids::new(s)?;
-    let i = lookup(s, incident)?;
-    let (_, t) = correlate::incident_anchor(s, &ids, i)?;
-    let mine = signature(s, &ids, i, st)?;
+/// A root a verdict judged: its application and signal as the verdict kept them, so they
+/// outlive the root's telemetry.
+struct Judged {
+    accepted: bool,
+    root: Id,
+    app: Option<Id>,
+    signal: String,
+    evidence: Vec<String>,
+}
+
+/// The verdicts on the chains of `incident`.
+fn verdicts(s: &Snapshot, incident: Id) -> anyhow::Result<Vec<Judged>> {
+    let (Some(leads), Some(root_p), Some(on_chain), Some(state)) = (s.iri(vocab::corr::LEADS_TO)?, s.iri(vocab::corr::ROOT_CAUSE)?, s.iri(vocab::rca::ON_CHAIN)?, s.iri(vocab::rca::STATE)?) else { return Ok(vec![]) };
+    let (root_on, root_signal, root_class, evidence) = (s.iri(vocab::rca::ROOT_ON)?, s.iri(vocab::rca::ROOT_SIGNAL)?, s.iri(vocab::rca::ROOT_CLASS)?, s.iri(vocab::rca::EVIDENCE)?);
+    let mut out = Vec::new();
+    for chain in s.subjects(leads, incident)? {
+        let Some(root) = s.object(chain, root_p)? else { continue };
+        for v in s.subjects(on_chain, chain)? {
+            let text = |p: Option<Id>| p.and_then(|p| s.object(v, p).ok().flatten()).and_then(|o| literal(s, o));
+            let Some(state) = text(Some(state)) else { continue };
+            let signal = text(root_signal).or_else(|| text(root_class).map(|c| c.rsplit('#').next().unwrap_or("").to_uppercase())).unwrap_or_default();
+            let mut evidence = correlate::texts(s, v, evidence)?;
+            evidence.sort();
+            out.push(Judged { accepted: state == "accepted", root, app: root_on.and_then(|p| s.object(v, p).ok().flatten()), signal, evidence });
+        }
+    }
+    Ok(out)
+}
+
+/// Incidents that resemble `i`, most similar first: the incident, its similarity, application
+/// and time. Past ones only, unless `any_time`.
+fn resembling(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, any_time: bool) -> anyhow::Result<Vec<(Id, f64, Id, i64)>> {
+    let (_, t) = correlate::incident_anchor(s, ids, i)?;
+    let mine = signature(s, ids, i, st)?;
     let Some(c) = ids.incident else { return Ok(vec![]) };
-    let (cause_p, mit_p, title_p) = (s.iri(inc::CAUSE)?, s.iri(inc::MITIGATION)?, s.iri(inc::TITLE)?);
     let mut out = Vec::new();
     for other in s.subjects(ids.ty, c)? {
         if other == i {
             continue;
         }
-        let Ok((app, at)) = correlate::incident_anchor(s, &ids, other) else { continue };
-        if at >= t {
+        let Ok((app, at)) = correlate::incident_anchor(s, ids, other) else { continue };
+        if at >= t && !any_time {
             continue;
         }
-        let similarity = (cosine(&mine, &signature(s, &ids, other, st)?).max(0.0) * 1000.0).round() / 1000.0;
+        let similarity = (cosine(&mine, &signature(s, ids, other, st)?).max(0.0) * 1000.0).round() / 1000.0;
         if similarity == 0.0 {
             continue;
         }
+        out.push((other, similarity, app, at));
+    }
+    out.sort_by(|a, b| b.1.total_cmp(&a.1).then(b.3.cmp(&a.3)));
+    Ok(out)
+}
+
+/// Q3: past incidents that resemble this one, with their accepted causes and mitigations, and
+/// the roots people rejected on them.
+pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> anyhow::Result<Vec<Similar>> {
+    let ids = Ids::new(s)?;
+    let i = lookup(s, incident)?;
+    let (cause_p, mit_p, title_p) = (s.iri(inc::CAUSE)?, s.iri(inc::MITIGATION)?, s.iri(inc::TITLE)?);
+    let mut out = Vec::new();
+    for (other, similarity, app, at) in resembling(s, &ids, i, st, st.past_any_time)?.into_iter().take(limit) {
         let causes: Vec<Id> = cause_p.map(|p| s.objects(other, p)).transpose()?.unwrap_or_default();
+        let mut ruled_out: Vec<RuledOut> = verdicts(s, other)?.into_iter().filter(|v| !v.accepted).map(|v| RuledOut { app: v.app.map(|a| app_name(s, &ids, a)).unwrap_or_default(), signal: v.signal, evidence: v.evidence }).collect();
+        ruled_out.sort_by(|a, b| (&a.app, &a.signal).cmp(&(&b.app, &b.signal)));
         out.push(Similar {
             incident: vocab::compact(&literal(s, other).unwrap_or_default()),
             similarity,
@@ -217,11 +269,55 @@ pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> any
             causes: causes.iter().filter_map(|&e| literal(s, e)).map(|x| vocab::compact(&x)).collect(),
             mitigations: mit_p.map(|p| s.objects(other, p)).transpose()?.unwrap_or_default().into_iter().filter_map(|v| literal(s, v)).collect(),
             title: title_p.and_then(|p| s.object(other, p).ok().flatten()).and_then(|v| literal(s, v)),
+            ruled_out,
         });
     }
-    out.sort_by(|a, b| b.similarity.total_cmp(&a.similarity).then(b.at.cmp(&a.at)));
-    out.truncate(limit);
     Ok(out)
+}
+
+/// How many similar incidents with a verdict of one kind `chains` consults.
+const PAST_TOP: usize = 3;
+
+/// What people concluded on the incidents most like `i`: the accepted causes of the `PAST_TOP`
+/// most similar incidents that have one, and the rejected roots of the `PAST_TOP` most similar
+/// that have one. Empty, and free, in a store without verdicts.
+pub fn past(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<correlate::Past> {
+    let mut past = correlate::Past::default();
+    if s.iri(vocab::rca::STATE)?.is_none() {
+        return Ok(past);
+    }
+    let (mut accepted_on, mut rejected_on) = (0, 0);
+    for (other, similarity, _, _) in resembling(s, ids, i, st, st.past_any_time)? {
+        if accepted_on >= PAST_TOP && rejected_on >= PAST_TOP {
+            break;
+        }
+        let incident = vocab::compact(&literal(s, other).unwrap_or_default());
+        let judged = verdicts(s, other)?;
+        for (accepted, seen, into) in [(true, &mut accepted_on, &mut past.accepted), (false, &mut rejected_on, &mut past.rejected)] {
+            let mut roots: Vec<correlate::PastRoot> = judged
+                .iter()
+                .filter(|v| v.accepted == accepted && *seen < PAST_TOP)
+                .map(|v| {
+                    // A root still in its telemetry is described by it, as the chains under analysis are.
+                    let live = s.object(v.root, ids.on).ok().flatten();
+                    let signal = if live.is_some() { correlate::kind_of(s, ids, v.root) } else { v.signal.clone() };
+                    correlate::PastRoot { incident: incident.clone(), similarity, app: live.or(v.app).map(|a| app_name(s, ids, a)).unwrap_or_default(), signal, evidence: v.evidence.clone() }
+                })
+                .collect();
+            if !roots.is_empty() {
+                *seen += 1;
+                roots.sort_by(|a, b| (&a.app, &a.signal).cmp(&(&b.app, &b.signal)));
+                into.extend(roots);
+            }
+        }
+    }
+    Ok(past)
+}
+
+/// `ograph chains`: the chains of an incident, ranked and marked with what people concluded on
+/// the incidents most like it.
+pub fn chains(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<correlate::Analysis> {
+    correlate::analyze(s, ids, i, st, &past(s, ids, i, st)?)
 }
 
 #[derive(Serialize)]
@@ -522,7 +618,7 @@ pub fn code(s: &Snapshot, incident: &str, st: &Settings) -> anyhow::Result<(Code
     commits.sort_by_key(|c| c.touches.is_empty());
     deployments.sort_by_key(|d| d.touches.is_empty());
     let mut words: Vec<String> = text(i, title).into_iter().collect();
-    let analysis = correlate::analyze(s, &ids, i, st)?;
+    let analysis = chains(s, &ids, i, st)?;
     if let Some(chain) = analysis.apps.first().and_then(|r| r.chain.as_ref()) {
         for link in std::iter::once(&chain.root).chain(&chain.links) {
             words.push(link.app_name.clone());
@@ -737,4 +833,77 @@ pub struct Chains {
     pub analysis: correlate::Analysis,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub suspects: Vec<Suspect>,
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use crate::correlate::{PastRoot, Settings};
+    use crate::workspace::Workspace;
+    use crate::workspace::tests::{T, alert, fixture, harvest};
+    use std::path::{Path, PathBuf};
+
+    const DAY: i64 = 86_400;
+
+    /// INC-1 and, a day later, INC-2, each after the same two alerts, so they are fully similar
+    /// and both rank ledger-db above payments-api at 0.9.
+    fn twice(name: &str) -> PathBuf {
+        let alerts = [alert("ledger-db", "PoolSaturated", T - 600), alert("payments-api", "ErrorRate", T - 300), alert("ledger-db", "PoolSaturated", T + DAY - 600), alert("payments-api", "ErrorRate", T + DAY - 300)];
+        let root = fixture(name, &[("alerts", "alerts.json", &format!("[{}]", alerts.join(",")))]);
+        std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T}}},{{"id":"INC-2","service":"checkout","opened":{}}}]"#, T + DAY)).unwrap();
+        harvest(&root, None);
+        root
+    }
+
+    /// Application, score to three decimals, and the two marks, per ranked application.
+    fn ranked(root: &Path, incident: &str, st: impl FnOnce(&mut Settings)) -> Vec<(String, String, Option<PastRoot>, Option<PastRoot>)> {
+        let ws = Workspace::open(root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let ids = crate::correlate::Ids::new(&snap).unwrap();
+        let mut settings = ws.config.correlation.clone();
+        st(&mut settings);
+        let a = super::chains(&snap, &ids, super::lookup(&snap, incident).unwrap(), &settings).unwrap();
+        a.apps.into_iter().map(|r| (r.app, format!("{:.3}", r.score), r.precedent, r.ruled_out)).collect()
+    }
+
+    fn judged(app: &str, evidence: &str) -> PastRoot {
+        PastRoot { incident: "id:inc/inc-1".into(), similarity: 1.0, app: app.into(), signal: "ALERT".into(), evidence: vec![evidence.into()] }
+    }
+
+    #[test]
+    fn a_root_rejected_on_a_similar_incident_is_marked_and_can_be_ranked_lower() {
+        let root = twice("ruled-out");
+        Workspace::open(&root).unwrap().verdict("id:chain/inc-1-1", false, "oncall", &["pool was at 40%".into()]).unwrap();
+        let ws = Workspace::open(&root).unwrap();
+        let similar = super::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5).unwrap();
+        assert_eq!(similar.len(), 1);
+        assert_eq!(similar[0].ruled_out, [super::RuledOut { app: "ledger-db".into(), signal: "ALERT".into(), evidence: vec!["pool was at 40%".into()] }]);
+        assert!(similar[0].cause_apps.is_empty());
+
+        let mark = Some(judged("ledger-db", "pool was at 40%"));
+        assert_eq!(ranked(&root, "INC-2", |_| {}), [("ledger-db".to_owned(), "0.900".to_owned(), None, mark.clone()), ("payments-api".to_owned(), "0.900".to_owned(), None, None)]);
+        assert_eq!(ranked(&root, "INC-2", |st| st.ruled_out_weight = 0.2), [("payments-api".to_owned(), "0.900".to_owned(), None, None), ("ledger-db".to_owned(), "0.700".to_owned(), None, mark)]);
+        // INC-2 opened later, so it says nothing about INC-1.
+        assert!(ranked(&root, "INC-1", |st| st.ruled_out_weight = 0.2).iter().all(|r| r.3.is_none()));
+    }
+
+    #[test]
+    fn a_cause_accepted_on_a_similar_incident_is_marked_and_can_be_ranked_higher() {
+        let root = twice("precedent");
+        Workspace::open(&root).unwrap().verdict("id:chain/inc-1-2", true, "oncall", &["PM-7".into()]).unwrap();
+        let mark = Some(judged("payments-api", "PM-7"));
+        assert_eq!(ranked(&root, "INC-2", |_| {}), [("ledger-db".to_owned(), "0.900".to_owned(), None, None), ("payments-api".to_owned(), "0.900".to_owned(), mark.clone(), None)]);
+        assert_eq!(ranked(&root, "INC-2", |st| st.precedent_weight = 0.1), [("payments-api".to_owned(), "1.000".to_owned(), mark, None), ("ledger-db".to_owned(), "0.900".to_owned(), None, None)]);
+    }
+
+    #[test]
+    fn a_harvest_stores_the_ranks_the_past_weights_give() {
+        let root = twice("precedent-stored");
+        Workspace::open(&root).unwrap().verdict("id:chain/inc-1-2", true, "oncall", &[]).unwrap();
+        let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
+        std::fs::write(root.join(".ograph/config.toml"), config + "[correlation]\nprecedent_weight = 0.1\n").unwrap();
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let rows = crate::sparql::run(&ws.store.snapshot().unwrap(), &crate::sparql::parse("SELECT ?app WHERE { ?c corr:leadsTo ?i ; corr:rank 1 ; corr:candidateApp ?app . ?i inc:id \"INC-2\" }").unwrap(), None).unwrap();
+        assert_eq!(serde_json::to_value(&rows).unwrap()["rows"], serde_json::json!([["id:app/payments-api"]]));
+    }
 }

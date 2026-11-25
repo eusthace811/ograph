@@ -306,7 +306,10 @@ impl Workspace {
         let incidents = snap.subjects(ids.ty, c)?;
         let mut batches = Vec::new();
         for i in incidents {
-            let Ok(a) = correlate::analyze(&snap, &ids, i, &self.config.correlation) else { continue };
+            // Stored chains carry ranks, not marks, so the past is read only when it can move a rank.
+            let st = &self.config.correlation;
+            let past = if st.precedent_weight > 0.0 || st.ruled_out_weight > 0.0 { crate::query::past(&snap, &ids, i, st)? } else { correlate::Past::default() };
+            let Ok(a) = correlate::analyze(&snap, &ids, i, st, &past) else { continue };
             batches.push(chain_batch(&a, self.config.correlation.max_chains));
         }
         drop(snap);
@@ -597,7 +600,7 @@ pub(crate) mod tests {
         let ws = Workspace::open(&root).unwrap();
         let snap = ws.store.snapshot().unwrap();
         let ids = crate::correlate::Ids::new(&snap).unwrap();
-        let a = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+        let a = crate::query::chains(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
         let printed: Vec<Vec<String>> = a.apps.iter().enumerate().map(|(k, r)| vec![crate::vocab::compact(&r.chain.as_ref().unwrap().id), (k + 1).to_string()]).collect();
         assert_eq!(printed.len(), 2);
         assert_eq!(sparql(&root, "SELECT ?c ?r WHERE { ?c corr:rank ?r } ORDER BY ?r"), printed);

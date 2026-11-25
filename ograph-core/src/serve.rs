@@ -52,7 +52,7 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
             if p.get("rank").and_then(Value::as_str) == Some("propagation") {
                 st.rank = RankMode::Propagation;
             }
-            let mut a = correlate::analyze(&snap, &ids, query::lookup(&snap, arg(p, "incident")?)?, &st)?;
+            let mut a = query::chains(&snap, &ids, query::lookup(&snap, arg(p, "incident")?)?, &st)?;
             let (suspects, _) = ws.fallback_suspects(&snap, &a, arg(p, "incident")?, &st);
             a.apps.truncate(5);
             if suspects.is_empty() { serde_json::to_value(a)? } else { serde_json::to_value(query::Chains { analysis: a, suspects })? }
