@@ -59,6 +59,9 @@ ograph chains INC-5377
   state the edge the link crosses.
 - `--rank propagation` ranks by how an anomaly spread to callers. When both rankings agree,
   say so; when they differ, report both.
+- A line `app:SIGNAL was accepted as the cause of id:inc/... (similarity 0.97)` under an
+  application means people accepted that same application and signal as the cause of a
+  similar past incident. Report it as support for the candidate, with the incident it names.
 - The chain id is stable across re-harvests. Use it for verdicts.
 
 ## 3. Has this happened before
@@ -75,6 +78,10 @@ ograph similar INC-5377
 - `causes` appear only for past incidents with an accepted verdict. An empty list means nobody
   confirmed one yet, not that there was none.
 - A mitigation that worked on a similar incident is the strongest fix to suggest.
+- A line `ruled out: app:SIGNAL (evidence)` under a past incident is a root people rejected
+  there. It says what that incident was not. It does not rule the application out here: on
+  RCAEval, 9 of the 11 top-ranked roots that matched an earlier rejection were the true cause
+  (docs/EVIDENCE.md).
 
 ## 4. What does it affect
 

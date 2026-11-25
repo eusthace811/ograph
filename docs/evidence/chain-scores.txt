@@ -5,24 +5,28 @@ DIFFERENT  chains_INC-5377.json
 DIFFERENT  chains_INC-5377_--rank_propagation.json
 identical  news.json
 identical  rcaeval.json
-identical  similar_INC-5377.json
+DIFFERENT  similar_INC-5377.json
 identical  validate.json
 identical  why_INC-5377.json
 identical  harvest.txt
 identical  rcaeval.txt
 identical  similar.txt
-10 of 12 outputs identical
+9 of 12 outputs identical
 | chain | 0.93 | 0.99 | 0.98 |
 top-1 similar past incident shares the root cause: 82/89 = 0.92; any of top 3: 0.94; chance about 0.20
 latency, median of 150 runs each, the binaries taking turns:
-  before INC-5377    old 73.92 ms   new 75.46 ms
-  chains INC-5377    old 92.32 ms   new 93.44 ms
-  similar INC-5377   old 111.18 ms   new 122.42 ms
-  blast ledger-db    old 150.82 ms   new 136.97 ms
+  before INC-5377    old 80.61 ms   new 81.82 ms
+  chains INC-5377    old 85.91 ms   new 84.67 ms
+  similar INC-5377   old 94.66 ms   new 96.81 ms
+  blast ledger-db    old 89.02 ms   new 87.34 ms
 
-$ same_but_for.py old new scores weakest
+$ same_but_for.py old new FIELDS
 identical but for scores, weakest: chains_INC-5377.json
 identical but for scores, weakest: chains_INC-5377_--rank_propagation.json
+identical but for ruled_out: similar_INC-5377.json
+
+$ chains on the store similar_eval.py left: 90 incidents, 90 accepted verdicts
+median of 150 runs over 30 incidents, the binaries taking turns: old 101.62 ms   new 108.57 ms; the new answer carries a precedent for 29 of the 30
 
 $ chain_scores_gate.py --bin NEW --cases rcaeval-cases --reuse --also demo
 90 cases and 4 incidents of target/lane/ab/new/demo, 2 rank modes, 2 weight settings: 2454 chains, 3533 links (24 known pairs)

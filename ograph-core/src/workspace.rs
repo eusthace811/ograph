@@ -308,7 +308,7 @@ impl Workspace {
         for i in incidents {
             // Stored chains carry ranks, not marks, so the past is read only when it can move a rank.
             let st = &self.config.correlation;
-            let past = if st.precedent_weight > 0.0 || st.ruled_out_weight > 0.0 { crate::query::past(&snap, &ids, i, st)? } else { correlate::Past::default() };
+            let past = if st.precedent_weight > 0.0 { crate::query::past(&snap, &ids, i, st)? } else { vec![] };
             let Ok(a) = correlate::analyze(&snap, &ids, i, st, &past) else { continue };
             batches.push(chain_batch(&a, self.config.correlation.max_chains));
         }

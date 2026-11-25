@@ -290,10 +290,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 println!("{} on {} at {}: {} candidate events", ograph_core::vocab::compact(&a.incident), a.app, ograph_core::term::format_millis(a.at_ms), a.candidates);
                 for (k, r) in a.apps.iter().enumerate() {
                     println!("  {}. {:<22} score {:.3}", k + 1, r.app, r.score);
-                    for (p, verb, moved) in [(&r.precedent, "accepted as the cause of", st.precedent_weight), (&r.ruled_out, "ruled out on", -st.ruled_out_weight)] {
-                        let Some(p) = p else { continue };
-                        let moved = if moved == 0.0 { String::new() } else { format!(", score {:+.3}", moved * p.similarity) };
-                        println!("     {}:{} was {verb} {} (similarity {:.3}{moved}): {}", p.app, p.signal, p.incident, p.similarity, p.evidence.join("; "));
+                    if let Some(p) = &r.precedent {
+                        let gain = if st.precedent_weight == 0.0 { String::new() } else { format!(", score {:+.3}", st.precedent_weight * p.similarity) };
+                        println!("     {}:{} was accepted as the cause of {} (similarity {:.3}{gain}): {}", p.app, p.signal, p.incident, p.similarity, p.evidence.join("; "));
                     }
                     if let Some(c) = &r.chain {
                         let path: Vec<String> = std::iter::once(&c.root).chain(&c.links).map(|s| format!("{}:{}", s.app_name, s.kind)).collect();

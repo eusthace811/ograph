@@ -41,9 +41,6 @@ pub struct Settings {
     /// application and signal: the score gains this times the similarity. 0 ranks on telemetry
     /// alone.
     pub precedent_weight: f64,
-    /// How much a rejected root of a similar past incident lowers a root with the same
-    /// application and signal: the score loses this times the similarity.
-    pub ruled_out_weight: f64,
     /// Evaluation: incidents that opened later count as past ones too, so a labeled set can be
     /// scored leave-one-out.
     pub past_any_time: bool,
@@ -53,7 +50,7 @@ impl Settings {
     /// Scores are probabilities and windows are spans, so out-of-range settings are refused
     /// rather than written as confidences the shapes then quarantine.
     pub fn check(&self) -> anyhow::Result<()> {
-        for (name, v) in [("min_confidence", self.min_confidence), ("w_time", self.w_time), ("w_severity", self.w_severity), ("known_pair_prior", self.known_pair_prior), ("precedent_weight", self.precedent_weight), ("ruled_out_weight", self.ruled_out_weight)] {
+        for (name, v) in [("min_confidence", self.min_confidence), ("w_time", self.w_time), ("w_severity", self.w_severity), ("known_pair_prior", self.known_pair_prior), ("precedent_weight", self.precedent_weight)] {
             anyhow::ensure!((0.0..=1.0).contains(&v), "correlation setting {name} = {v} must be between 0 and 1");
         }
         anyhow::ensure!(self.w_time + self.w_severity <= 1.0, "correlation settings w_time + w_severity = {} must not exceed 1", self.w_time + self.w_severity);
@@ -96,7 +93,6 @@ impl Default for Settings {
             only_signals: vec![],
             signature_window_s: 900,
             precedent_weight: 0.0,
-            ruled_out_weight: 0.0,
             past_any_time: false,
         }
     }
@@ -181,12 +177,9 @@ pub struct Ranked {
     /// The most similar past incident whose accepted cause has this root's application and signal.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub precedent: Option<PastRoot>,
-    /// The most similar past incident where a root with this application and signal was rejected.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ruled_out: Option<PastRoot>,
 }
 
-/// A root people judged on a past incident that resembles the one under analysis.
+/// A root people accepted as the cause of a past incident that resembles the one under analysis.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub struct PastRoot {
     pub incident: String,
@@ -194,13 +187,6 @@ pub struct PastRoot {
     pub app: String,
     pub signal: String,
     pub evidence: Vec<String>,
-}
-
-/// What people concluded on the incidents most like the one under analysis, most similar first.
-#[derive(Clone, Debug, Default)]
-pub struct Past {
-    pub accepted: Vec<PastRoot>,
-    pub rejected: Vec<PastRoot>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -317,7 +303,7 @@ fn severity_of(s: &Snapshot, ids: &Ids, e: Id) -> f64 {
     }
 }
 
-pub fn kind_of(s: &Snapshot, ids: &Ids, e: Id) -> String {
+fn kind_of(s: &Snapshot, ids: &Ids, e: Id) -> String {
     if let Some(v) = ids.signal.and_then(|p| s.object(e, p).ok().flatten()).and_then(|v| literal(s, v)) {
         return v;
     }
@@ -453,9 +439,10 @@ fn edge(s: &Snapshot, ids: &Ids, callee: Id, caller: Id) -> anyhow::Result<Edge>
     Ok(found)
 }
 
-/// Builds chains and ranks root-cause applications. `past` marks the roots people accepted or
-/// rejected on similar incidents, and moves their scores by the two past weights.
-pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &Past) -> anyhow::Result<Analysis> {
+/// Builds chains and ranks root-cause applications. `past` holds the accepted causes of similar
+/// incidents, most similar first: a root with the application and signal of one is marked with
+/// it, and gains `precedent_weight` times its similarity.
+pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[PastRoot]) -> anyhow::Result<Analysis> {
     let (app, t, cands) = candidates(s, ids, incident, st)?;
     let incident_iri = literal(s, incident).unwrap_or_default();
     // Which application calls which, inside the scope: a link may go from an event on X to an
@@ -536,7 +523,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &Past
         RankMode::Chain => {
             for c in &chains {
                 let first = cands.iter().filter(|x| x.app == c.root.app).map(|x| x.at_ms).min().unwrap_or(c.root.at_ms);
-                let e = per_app.entry(c.root.app).or_insert_with(|| Ranked { app: c.root.app_name.clone(), score: f64::MIN, first_ms: first, chain: None, precedent: None, ruled_out: None });
+                let e = per_app.entry(c.root.app).or_insert_with(|| Ranked { app: c.root.app_name.clone(), score: f64::MIN, first_ms: first, chain: None, precedent: None });
                 if c.confidence > e.score {
                     e.score = c.confidence;
                     e.chain = Some(c.clone());
@@ -558,17 +545,15 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &Past
                 });
                 let onset = ((t - peak_at) as f64 / w_ms).clamp(0.0, 1.0);
                 let score = ws * strength + wc * chain.as_ref().map_or(0.0, |c| c.confidence) + wp * spread + we * onset;
-                per_app.insert(x, Ranked { app: cands[strongest].app_name.clone(), score, first_ms: cands[mine[0]].at_ms, chain, precedent: None, ruled_out: None });
+                per_app.insert(x, Ranked { app: cands[strongest].app_name.clone(), score, first_ms: cands[mine[0]].at_ms, chain, precedent: None });
             }
         }
     }
     let mut apps: Vec<Ranked> = per_app.into_values().collect();
     for r in &mut apps {
         let Some(root) = r.chain.as_ref().map(|c| &c.root) else { continue };
-        let judged = |roots: &[PastRoot]| roots.iter().find(|p| p.app == root.app_name && p.signal == root.kind).cloned();
-        r.precedent = judged(&past.accepted);
-        r.ruled_out = judged(&past.rejected);
-        r.score += st.precedent_weight * r.precedent.as_ref().map_or(0.0, |p| p.similarity) - st.ruled_out_weight * r.ruled_out.as_ref().map_or(0.0, |p| p.similarity);
+        r.precedent = past.iter().find(|p| p.app == root.app_name && p.signal == root.kind).cloned();
+        r.score += st.precedent_weight * r.precedent.as_ref().map_or(0.0, |p| p.similarity);
     }
     match st.rank {
         // Sustained, saturated anomalies tie on confidence. Among ties the root whose chain
@@ -621,7 +606,7 @@ mod tests {
         let ws = Workspace::open(root).unwrap();
         let snap = ws.store.snapshot().unwrap();
         let ids = super::Ids::new(&snap).unwrap();
-        let a = super::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation, &super::Past::default()).unwrap();
+        let a = super::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation, &[]).unwrap();
         a.apps
             .iter()
             .map(|r| {

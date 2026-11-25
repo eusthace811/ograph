@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Do rejections on similar past incidents improve root-cause ranking? The experiment that
 decided against `ruled_out_weight` and against a "ruled out" mark in `ograph chains`. Both
-were removed after it, so this script needs the ograph of the commit that added it.
+were removed after it, so this script needs ograph built from the commit that added it, titled
+"Experiment: past verdicts as a ranking input in chains".
 
 All 90 RCAEval cases in one store. Wherever the rank-1 chain is wrong it is rejected. Each
 incident is then ranked with `ruled_out_weight` from a grid, seeing earlier incidents only (the
