@@ -80,8 +80,8 @@ ograph similar INC-5377
 - A mitigation that worked on a similar incident is the strongest fix to suggest.
 - A line `ruled out: app:SIGNAL (evidence)` under a past incident is a root people rejected
   there. It says what that incident was not. It does not rule the application out here: on
-  RCAEval, 9 of the 11 top-ranked roots that matched an earlier rejection were the true cause
-  (docs/EVIDENCE.md).
+  ograph's labeled benchmark incidents, 9 of the 11 top-ranked roots that matched an earlier
+  rejection were the true cause (docs/EVIDENCE.md).
 
 ## 4. What does it affect
 
