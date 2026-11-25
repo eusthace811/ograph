@@ -1,18 +1,21 @@
-//! `ograph status`: what is due in a workspace. Source files changed since the last full harvest,
-//! and incidents whose chains nobody has judged. Cheap enough for an agent's session-start hook.
+//! `ograph status`: what is due in a workspace. Source files changed, added, deleted or renamed
+//! since the last full harvest, and incidents whose chains nobody has judged. Cheap enough for an
+//! agent's session-start hook.
 
 use crate::correlate::{self, Ids};
 use crate::store::GraphSel;
 use crate::vocab::{corr, inc, rca};
 use crate::workspace::{HARVESTED, Workspace};
 use serde::Serialize;
+use std::collections::BTreeSet;
 use std::time::UNIX_EPOCH;
 
 #[derive(Serialize)]
 pub struct Status {
     /// When the last full harvest started, if one has run since ograph began recording it.
     pub harvested_at: Option<String>,
-    /// Inputs and settings changed since then, relative to the workspace root.
+    /// Inputs and settings changed, added, deleted or renamed since then, relative to the
+    /// workspace root.
     pub changed: Vec<String>,
     /// Incidents with chains and no verdict on any of them.
     pub unjudged: Vec<String>,
@@ -45,18 +48,33 @@ impl Status {
 }
 
 pub fn status(ws: &Workspace) -> anyhow::Result<Status> {
-    let harvested: Option<i64> = std::fs::read_to_string(ws.dir.join(HARVESTED)).ok().and_then(|s| s.trim().parse().ok());
-    let mut changed: Vec<String> = crate::serve::inventory(ws)
+    let marker = std::fs::read_to_string(ws.dir.join(HARVESTED)).unwrap_or_default();
+    let mut lines = marker.lines();
+    let harvested: Option<i64> = lines.next().and_then(|s| s.trim().parse().ok());
+    // A marker from before ograph listed the files read has only the time.
+    let read: Option<BTreeSet<&str>> = harvested.and_then(|_| {
+        let files: BTreeSet<&str> = lines.collect();
+        (!files.is_empty()).then_some(files)
+    });
+    let now = inputs(ws);
+    let mut changed: BTreeSet<String> = now.iter().filter(|(_, ms)| harvested.is_none_or(|h| *ms > h)).map(|(f, _)| f.clone()).collect();
+    if let Some(read) = &read {
+        changed.extend(read.iter().filter(|f| !now.iter().any(|(n, _)| n == *f)).map(|f| f.to_string()));
+        changed.extend(now.iter().filter(|(f, _)| !read.contains(f.as_str())).map(|(f, _)| f.clone()));
+    }
+    Ok(Status { harvested_at: harvested.map(crate::term::format_millis), changed: changed.into_iter().collect(), unjudged: unjudged(&ws.store.snapshot()?)? })
+}
+
+/// The files a harvest would read that exist now, relative to the workspace root, with their
+/// modification times in Unix ms. A missing file, such as an optional shapes.ttl, is not read.
+pub fn inputs(ws: &Workspace) -> Vec<(String, i64)> {
+    crate::serve::inventory(ws)
         .into_iter()
-        .filter(|(_, m, _)| {
-            // A file that does not exist, such as an optional shapes.ttl, has nothing to re-read.
-            let Some(ms) = m.and_then(|m| m.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as i64) else { return false };
-            harvested.is_none_or(|h| ms > h)
+        .filter_map(|(f, m, _)| {
+            let ms = m?.duration_since(UNIX_EPOCH).ok()?.as_millis() as i64;
+            Some((f.strip_prefix(&ws.root).unwrap_or(&f).display().to_string(), ms))
         })
-        .map(|(f, _, _)| f.strip_prefix(&ws.root).unwrap_or(&f).display().to_string())
-        .collect();
-    changed.sort();
-    Ok(Status { harvested_at: harvested.map(crate::term::format_millis), changed, unjudged: unjudged(&ws.store.snapshot()?)? })
+        .collect()
 }
 
 fn unjudged(s: &crate::store::Snapshot) -> anyhow::Result<Vec<String>> {

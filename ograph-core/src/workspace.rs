@@ -133,7 +133,8 @@ pub fn find(start: &Path) -> Option<PathBuf> {
     None
 }
 
-/// The file under `.ograph/` that holds when the last full harvest started, in Unix ms.
+/// The file under `.ograph/` that holds when the last full harvest started, in Unix ms, on its
+/// first line, then the files it read, one per line relative to the workspace root.
 pub const HARVESTED: &str = "harvested";
 
 pub use crate::store::now_ms;
@@ -193,13 +194,14 @@ impl Workspace {
 
     /// The store as it was at `when`, and a line that says what the view hides, what it brings
     /// back and how far back it can go. A time before the history starts is an error, since the
-    /// answer would silently lack what was removed before then.
+    /// answer would silently lack what was removed before then. A time written to the second
+    /// may name the second the history starts in.
     pub fn known_at(&self, when: &str) -> anyhow::Result<(crate::store::Snapshot, String)> {
         let t = when_ms(when)?;
         let snap = self.store.snapshot()?;
         let since = snap.history_since()?.ok_or_else(|| anyhow::anyhow!("this store has no history yet; it starts with the next harvest"))?;
         anyhow::ensure!(
-            t >= since,
+            t >= since || (t.rem_euclid(1000) == 0 && t == since - since.rem_euclid(1000)),
             "no record of what was known at {}: the history of this store starts at {} (history_days = {})",
             term::format_millis(t),
             term::format_millis(since),
@@ -270,6 +272,7 @@ impl Workspace {
     pub fn harvest(&self, only: Option<&str>, mut progress: impl FnMut(&Outcome, f64)) -> anyhow::Result<Vec<Outcome>> {
         let _write = self.store.write_lock()?;
         let started = now_ms();
+        let read = only.is_none().then(|| crate::status::inputs(self));
         let llm = self.llm();
         let code = self.code_repos();
         let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology, code: &code, merge: &self.config.incidents.merge };
@@ -350,8 +353,9 @@ impl Workspace {
         }
         self.prune(&chains, &kept, &kept_below)?;
         self.store.flush()?;
-        if only.is_none() {
-            std::fs::write(self.dir.join(HARVESTED), started.to_string())?;
+        if let Some(read) = read {
+            let lines: Vec<String> = std::iter::once(started.to_string()).chain(read.into_iter().map(|(f, _)| f)).collect();
+            std::fs::write(self.dir.join(HARVESTED), lines.join("\n") + "\n")?;
         }
         Ok(out)
     }
@@ -838,6 +842,21 @@ pub(crate) mod tests {
         assert!(too_early.starts_with("no record of what was known at "), "{too_early}");
     }
 
+    #[test]
+    fn known_at_accepts_the_second_the_history_starts_in() {
+        let root = fixture("known-at-second", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let since = ws.store.snapshot().unwrap().history_since().unwrap().unwrap();
+        let second = |ms: i64| crate::term::format_millis(ms - ms.rem_euclid(1000));
+        assert!(!second(since).contains('.'), "{}", second(since));
+        assert!(ws.known_at(&second(since)).is_ok());
+        assert!(ws.known_at(&second(since - 1000)).is_err());
+        if since.rem_euclid(1000) > 0 {
+            assert!(ws.known_at(&crate::term::format_millis(since - 1)).is_err());
+        }
+    }
+
     /// The other side of `a_judged_root_that_left_the_sources_is_no_longer_a_candidate`: the
     /// view of a time when the telemetry was held still ranks its root.
     #[test]
@@ -884,7 +903,7 @@ pub(crate) mod tests {
         assert_eq!(violations(&root), 0);
         let ws = Workspace::open(&root).unwrap();
         let why = crate::query::why(&ws.store.snapshot().unwrap(), &chain).unwrap();
-        let seen: Vec<(&str, &str, &str, Vec<String>, Option<&str>, Option<&str>)> = why.verdicts.iter().map(|e| (e.verdict.as_str(), e.state.as_str(), e.by.as_str(), e.evidence.clone(), e.rank.as_deref(), e.superseded_by.as_deref())).collect();
+        let seen: Vec<_> = why.verdicts.iter().map(|e| (e.verdict.as_str(), e.state.as_str(), e.by.as_str(), e.evidence.clone(), e.rank.as_deref(), e.superseded_by.as_deref())).collect();
         let v2 = format!("{v}-v2");
         assert_eq!(seen, [(v.as_str(), "accepted", "oncall", vec!["PM-1".to_owned()], Some("1"), Some(v2.as_str())), (v2.as_str(), "rejected", "lead", vec!["rollback changed nothing".to_owned()], Some("1"), None)]);
         ws.verdict(&chain, true, "lead", &["PM-1 rev 2".into()]).unwrap();
@@ -1001,6 +1020,18 @@ pub(crate) mod tests {
         let weakest: Vec<&str> = page.match_indices("<p>Weakest link: ").map(|(i, _)| page[i + 17..].split('<').next().unwrap()).collect();
         assert_eq!(weakest, ["checkout:ALERT to incident, score 0.900", "ledger-db:ALERT to payments-api:ALERT, score 0.900"]);
         assert!(!page.contains("<script src"));
+    }
+
+    #[test]
+    fn the_lab_page_shows_the_current_verdict_of_a_rejudged_chain() {
+        let root = fixture("lab-rejudged", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        ws.verdict("id:chain/inc-1-1", true, "oncall", &["PM-7".into()]).unwrap();
+        ws.verdict("id:chain/inc-1-1", false, "lead", &["rollback changed nothing".into()]).unwrap();
+        let page = crate::lab::page(&ws.store.snapshot().unwrap(), &ws.config.correlation).unwrap();
+        assert!(page.contains("Verdict: rejected by lead at "), "{}", &page[page.find("Verdict:").unwrap_or(0)..][..80]);
+        assert!(!page.contains("Verdict: accepted"));
     }
 
     #[test]
@@ -1235,6 +1266,36 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_merge_policy_picks_among_valid_values_and_an_invalid_one_is_quarantined_for_itself() {
+        let later = format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T},"severity":"SEV3"}}]"#);
+        let root = fixture("conflict-invalid", &[("incidents", "later.json", &later)]);
+        std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T},"severity":"critical","status":"open"}}]"#)).unwrap();
+        let cfg = root.join(".ograph/config.toml");
+        std::fs::write(&cfg, std::fs::read_to_string(&cfg).unwrap() + "[incidents]\nmerge = { severity = \"max\" }\n").unwrap();
+        let out = harvest(&root, None);
+        let q = out.iter().find(|o| o.graph.contains("/incidents/")).unwrap().quarantined.clone();
+        assert_eq!(reasons(&q), [("id:inc/inc-1 evt:severity \"critical\"".to_owned(), "\"critical\" is not in the closed vocabulary of evt:severity".to_owned())]);
+        assert_eq!(sparql(&root, "SELECT ?s WHERE { ?i inc:id \"INC-1\" ; evt:severity ?s }"), [["SEV3"]]);
+    }
+
+    #[test]
+    fn service_names_that_differ_only_in_case_are_no_conflict() {
+        let same = format!(r#"[{{"id":"INC-1","service":"Checkout","opened":{T},"severity":"SEV1"}}]"#);
+        let root = fixture("conflict-case", &[("incidents", "later.json", &same)]);
+        let out = harvest(&root, None);
+        assert_eq!(reasons(&out.iter().find(|o| o.graph.contains("/incidents/")).unwrap().quarantined), []);
+    }
+
+    #[test]
+    fn a_withheld_value_counts_as_proposed() {
+        let later = format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T},"severity":"SEV3"}}]"#);
+        let root = fixture("conflict-count", &[("incidents", "later.json", &later)]);
+        let out = harvest(&root, None);
+        let o = out.iter().find(|o| o.graph.contains("/incidents/")).unwrap();
+        assert_eq!((o.proposed, o.accepted, o.quarantined.len()), (10, 9, 1));
+    }
+
+    #[test]
     fn a_pick_that_does_not_fit_its_field_is_refused() {
         let root = fixture("conflict-badpick", &[]);
         let cfg = root.join(".ograph/config.toml");
@@ -1340,6 +1401,20 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn cite_check_binds_a_rank_only_to_the_chain_it_is_written_next_to() {
+        let root = two_chains();
+        let ranked = sparql(&root, "SELECT ?c WHERE { ?c corr:rank ?r } ORDER BY ?r");
+        let (first, second) = (&ranked[0][0], &ranked[1][0]);
+        let status = |text: &str| cite(&root, text).into_iter().filter(|c| c.0 == "Chain").map(|c| (c.1, c.2)).collect::<Vec<_>>();
+        let s = |c: &str, st: &str| (c.to_owned(), st.to_owned());
+        assert_eq!(status(&format!("3. Check {first}")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first} is rank 1 and {second} is rank 2")), [s(first, "Present"), s(second, "Present")]);
+        assert_eq!(status(&format!("rank 1: {first}, rank 1: {second}")), [s(first, "Present"), s(second, "Stale")]);
+        assert_eq!(status(&format!("{first} (rank 2), then {second}")), [s(first, "Stale"), s(second, "Present")]);
+        assert_eq!(status(&format!("{second}, rank 2: {first}")), [s(second, "Present"), s(first, "Stale")]);
+    }
+
+    #[test]
     fn status_is_silent_only_when_the_harvest_is_fresh_and_every_chain_judged() {
         let root = fixture("status", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
         let status = || crate::status::status(&Workspace::open(&root).unwrap()).unwrap();
@@ -1358,6 +1433,42 @@ pub(crate) mod tests {
         assert!(status().note().unwrap().starts_with("ograph: the graph is stale: 1 source files changed since the harvest at "));
         harvest(&root, None);
         assert_eq!(status().note(), None);
+    }
+
+    #[test]
+    fn status_reports_a_source_file_deleted_or_renamed_since_the_harvest() {
+        let root = fixture("status-gone", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        std::fs::create_dir_all(root.join("more")).unwrap();
+        std::fs::write(root.join("more/a.json"), format!("[{}]", alert("payments-api", "ErrorRate", T - 300))).unwrap();
+        let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
+        std::fs::write(root.join(".ograph/config.toml"), config + "[[source]]\nkind = \"alerts\"\npath = \"more\"\n").unwrap();
+        harvest(&root, None);
+        let changed = || crate::status::status(&Workspace::open(&root).unwrap()).unwrap().changed;
+        assert!(changed().is_empty());
+        std::fs::rename(root.join("more/a.json"), root.join("more/b.json")).unwrap();
+        assert_eq!(changed(), ["more/a.json", "more/b.json"]);
+        harvest(&root, None);
+        assert!(changed().is_empty());
+        std::fs::remove_file(root.join("alerts.json")).unwrap();
+        assert_eq!(changed(), ["alerts.json"]);
+    }
+
+    #[test]
+    fn ontology_diff_reports_verdict_facts_apart_from_harvest_quarantine() {
+        let root = fixture("diff-verdict", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        ws.verdict("id:chain/inc-1-1", true, "oncall", &["PM-1".into()]).unwrap();
+        let ttl: String = crate::ontology::DEFAULT_TTL.lines().filter(|l| !l.starts_with("rca:by a ")).map(|l| format!("{l}\n")).collect();
+        let newer = crate::ontology::Ontology::load(&ttl, crate::ontology::DEFAULT_SHAPES).unwrap();
+        let i = crate::gateway::impact(&ws.store.snapshot().unwrap(), &ws.ontology, &newer).unwrap();
+        let graphs = |v: &[crate::gateway::Impact]| v.iter().map(|q| (q.graph.clone(), q.facts)).collect::<Vec<_>>();
+        assert_eq!(graphs(&i.quarantine), []);
+        let chain = sparql(&root, "SELECT ?c WHERE { ?c corr:rank 1 }")[0][0].replace("id:chain/", "g:harvest/verdicts/");
+        assert_eq!(graphs(&i.verdicts), [(chain, 1)]);
+        std::fs::write(root.join(".ograph/ontology.ttl"), &ttl).unwrap();
+        let refused = format!("{:#}", Workspace::open(&root).unwrap().verdict("id:chain/inc-1-1", false, "lead", &["PM-2".into()]).unwrap_err());
+        assert!(refused.contains("rca:by"), "{refused}");
     }
 
     #[test]

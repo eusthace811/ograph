@@ -63,7 +63,7 @@ pub enum Resolution {
     Missing,
 }
 
-fn norm(s: &str) -> String {
+pub(crate) fn norm(s: &str) -> String {
     s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
@@ -652,7 +652,7 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, _d
     }
     let outcome = |removed, added| Outcome {
         graph: graph.as_str().to_owned(),
-        proposed: batch.facts.len(),
+        proposed: batch.facts.len() + batch.withheld.len(),
         accepted: accepted.len(),
         quarantined: rejected.clone(),
         removed,
@@ -734,14 +734,24 @@ pub struct Impact {
     pub reasons: Vec<(String, usize)>,
 }
 
-/// What a harvest under `newer` would quarantine that one under `current` keeps, per harvest
-/// graph. The stored facts of each graph go through the checks that depend on the ontology
-/// (membership, closed vocabularies, SHACL) against the rest of the store, as a re-harvest of
-/// that graph would see them; the checks that do not (catalog, evidence, confidence) passed
-/// when the facts were stored.
-pub fn impact(snap: &Snapshot, current: &Ontology, newer: &Ontology) -> anyhow::Result<Vec<Impact>> {
+/// The stored facts `newer` rejects and `current` keeps, per graph.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct Impacts {
+    /// What a harvest under `newer` would quarantine.
+    pub quarantine: Vec<Impact>,
+    /// Verdict facts no harvest rewrites. A new `ograph verdict` on the chain re-adds them, so
+    /// the gateway would refuse it.
+    pub verdicts: Vec<Impact>,
+}
+
+/// What `newer` rejects that `current` keeps, per harvest graph. The stored facts of each graph
+/// go through the checks that depend on the ontology (membership, closed vocabularies, SHACL)
+/// against the rest of the store, as a re-harvest of that graph would see them; the checks that
+/// do not (catalog, evidence, confidence) passed when the facts were stored.
+pub fn impact(snap: &Snapshot, current: &Ontology, newer: &Ontology) -> anyhow::Result<Impacts> {
     let harvest = format!("{}harvest/", vocab::GRAPH);
-    let mut out = Vec::new();
+    let verdicts = format!("{harvest}verdicts/");
+    let mut out = Impacts::default();
     for (gid, _) in snap.graphs()? {
         let Term::NamedNode(g) = snap.term(gid)? else { continue };
         if !g.as_str().starts_with(&harvest) {
@@ -773,7 +783,8 @@ pub fn impact(snap: &Snapshot, current: &Ontology, newer: &Ontology) -> anyhow::
         if facts > 0 {
             let mut reasons: Vec<(String, usize)> = reasons.into_iter().collect();
             reasons.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-            out.push(Impact { graph: vocab::compact(g.as_str()), facts, reasons });
+            let into = if g.as_str().starts_with(&verdicts) { &mut out.verdicts } else { &mut out.quarantine };
+            into.push(Impact { graph: vocab::compact(g.as_str()), facts, reasons });
         }
     }
     Ok(out)

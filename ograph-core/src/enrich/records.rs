@@ -128,9 +128,22 @@ pub fn incidents(files: &[(PathBuf, String, bool)], mut degraded: Vec<String>, c
     let m = rule("incident-export");
     let mut titles = Vec::new();
     let mut kept: HashMap<(&str, &str), usize> = HashMap::new();
-    for (&(key, p), ns) in &stated {
+    // Values outside a closed vocabulary take no part in the merge; each goes to the gateway,
+    // which quarantines it for that reason.
+    let mut invalid: Vec<(usize, &str)> = Vec::new();
+    let valid = |n: usize, p: &str| match (ctx.ontology.vocabulary(p), &value(n, p).unwrap().object) {
+        (Some(v), Object::Literal(l)) => v.iter().any(|x| x.value == l.value()),
+        _ => true,
+    };
+    for (&(key, p), all) in &stated {
         let Some((field, _)) = FUNCTIONAL.iter().find(|(_, q)| *q == p) else {
-            kept.insert((key, p), *ns.last().unwrap());
+            kept.insert((key, p), *all.last().unwrap());
+            continue;
+        };
+        let (ns, bad): (Vec<usize>, Vec<usize>) = all.iter().partition(|&&n| valid(n, p));
+        invalid.extend(bad.into_iter().map(|n| (n, p)));
+        let Some(&last) = ns.last() else {
+            kept.insert((key, p), *all.last().unwrap());
             continue;
         };
         let pick = ctx.merge.pick(field);
@@ -142,14 +155,13 @@ pub fn incidents(files: &[(PathBuf, String, bool)], mut degraded: Vec<String>, c
             Pick::Earliest | Pick::Max => ns.iter().rev().filter(|n| rank(n).is_some()).min_by_key(|n| rank(n)),
             Pick::Latest | Pick::Min => ns.iter().filter(|n| rank(n).is_some()).max_by_key(|n| rank(n)),
         }
-        .or(ns.last())
         .copied()
-        .unwrap();
+        .unwrap_or(last);
         kept.insert((key, p), chosen);
         let winner = &value(chosen, p).unwrap().object;
-        for &n in ns {
+        for &n in &ns {
             let loser = value(n, p).unwrap();
-            if loser.object != *winner && !records[n].2.0.is_empty() {
+            if !same(&loser.object, winner) && !records[n].2.0.is_empty() {
                 let ev = b.record(records[n].0.as_str());
                 b.withhold(known("inc", &records[n].2.0), p, loser.object.clone(), &ev, &m, format!("{} disagrees with {} (kept by policy {})", records[n].0, records[chosen].0, pick.name()));
             }
@@ -166,7 +178,7 @@ pub fn incidents(files: &[(PathBuf, String, bool)], mut degraded: Vec<String>, c
             b.add(s.clone(), inc::ID, lit(id.as_str()), &ev, &m);
         }
         for v in values {
-            if kept[&(keys[n].as_str(), v.predicate)] == n {
+            if kept[&(keys[n].as_str(), v.predicate)] == n || invalid.contains(&(n, v.predicate)) {
                 if let (true, inc::TITLE, Object::Literal(l)) = (classify, v.predicate, &v.object) {
                     titles.push((s.clone(), ev.clone(), l.value().to_owned()));
                 }
@@ -177,6 +189,15 @@ pub fn incidents(files: &[(PathBuf, String, bool)], mut degraded: Vec<String>, c
     }
     fault_classes(&mut b, ctx, titles);
     b
+}
+
+/// Whether two stated values agree: application names as the catalog matches them, the rest
+/// exactly.
+fn same(a: &Object, b: &Object) -> bool {
+    match (a, b) {
+        (Object::Entity(EntityRef::Provisional { class: c, name: x }), Object::Entity(EntityRef::Provisional { class: d, name: y })) => c == d && crate::gateway::norm(x) == crate::gateway::norm(y),
+        _ => a == b,
+    }
 }
 
 fn fault_prompt(ont: &crate::ontology::Ontology) -> String {

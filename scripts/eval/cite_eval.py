@@ -10,7 +10,8 @@ On a copy of the demo workspace:
      application near-twins (`-canary`, `-v2`, `legacy-`) of catalog names;
    - stale: a real chain cited at a rank it does not have, and the chains a narrower
      correlation window (window_s 1800 -> 120) stops producing while their events stay;
-   - present: the chains at their own rank, the events `before` lists, the catalog names.
+   - present: the chains at their own rank (`N. app: id:chain/x (rank N)`; the list number
+     alone is no rank), the events `before` lists, the catalog names.
 Flagged = stale or unknown. Precision = right flags / flags; recall = planted fabrications and
 stale citations flagged / planted. Status accuracy counts stale and unknown apart.
 The gate: no real citation flagged on the agent answer, precision 1.0 and recall 1.0 on the
@@ -65,7 +66,7 @@ def main():
     hexid = lambda: "".join(rng.choice("0123456789abcdef") for _ in range(16))
     planted = []  # (line, cited, expected status)
     for c, (rank, app, inc) in chains.items():
-        planted.append((f"{rank}. {app} {c}", c, "present"))
+        planted.append((f"{rank}. {app}: {c} (rank {rank})", c, "present"))
     for e in events[:6]: planted.append((f"See {e} in the timeline.", e, "present"))
     for n in apps: planted.append((f"The service {n} is involved.", n, "present"))
     for inc in incidents: planted.append((f"Compare with {inc}.", inc, "present"))

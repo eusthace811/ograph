@@ -53,12 +53,16 @@ fn tokens() -> &'static Regex {
     re(&R, r"[A-Za-z][A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*")
 }
 
-/// The rank an answer gives a chain on its line: a leading `2.` or a `rank 2`.
-fn cited_rank(line: &str) -> Option<i64> {
-    static R: OnceLock<Regex> = OnceLock::new();
-    let r = re(&R, r"(?i)^\s*(?:[-*]\s*)?(\d+)\.\s|\brank\s*#?(\d+)");
-    let c = r.captures(line)?;
-    c.get(1).or(c.get(2))?.as_str().parse().ok()
+/// The rank an answer gives the chain id written between `before` and `after`, the text that
+/// separates it from its neighbouring IRIs: `id:chain/x is rank 2`, `id:chain/x (rank 2)` or
+/// `rank 2: id:chain/x`. A list number like `3. id:chain/x` is no rank.
+fn cited_rank(before: &str, after: &str) -> Option<i64> {
+    static AFTER: OnceLock<Regex> = OnceLock::new();
+    static BEFORE: OnceLock<Regex> = OnceLock::new();
+    let a = re(&AFTER, r"(?i)^[\s,)]*\(?\s*(?:(?:is|was|at|now)\s+)*(?:the\s+)?rank\s*#?(\d+)\b\s*(:?)");
+    let b = re(&BEFORE, r"(?i)\brank\s*#?(\d+)\s*(?:is|was|[:=,-])?\s*(?:the\s+)?(?:chain\s+)?$");
+    // `x, rank 2: y` gives the rank to y.
+    a.captures(after).filter(|c| c[2].is_empty()).or_else(|| b.captures(before))?[1].parse().ok()
 }
 
 pub fn check(s: &Snapshot, text: &str) -> anyhow::Result<Vec<Citation>> {
@@ -69,15 +73,18 @@ pub fn check(s: &Snapshot, text: &str) -> anyhow::Result<Vec<Citation>> {
     for (n, line) in text.lines().enumerate() {
         let mut spans: Vec<(usize, usize)> = Vec::new();
         let mut found: Vec<(usize, Citation)> = Vec::new();
-        for m in iris().captures_iter(line) {
+        let matches: Vec<regex::Captures> = iris().captures_iter(line).collect();
+        for (j, m) in matches.iter().enumerate() {
             let whole = m.get(0).unwrap();
+            let prev_end = if j == 0 { 0 } else { matches[j - 1].get(0).unwrap().end() };
+            let next_start = matches.get(j + 1).map_or(line.len(), |n| n.get(0).unwrap().start());
             spans.push((whole.start(), whole.end()));
             let (kind, local) = (&m[1], m[2].to_owned());
             let iri = format!("{}{kind}/{local}", vocab::DATA);
             let shown = format!("id:{kind}/{local}");
             let (k, status, detail) = match kind {
                 "chain" => {
-                    let (st, d) = chain(s, &ids, &iri, cited_rank(line))?;
+                    let (st, d) = chain(s, &ids, &iri, cited_rank(&line[prev_end..whole.start()], &line[whole.end()..next_start]))?;
                     (Kind::Chain, st, d)
                 }
                 "inc" => match s.iri(&iri)?.filter(|&i| ids.incident.is_some_and(|c| s.contains([i, ids.ty, c]).unwrap_or(false))) {

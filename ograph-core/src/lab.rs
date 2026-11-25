@@ -336,10 +336,10 @@ fn inspector(s: &Snapshot, a: &Analysis, t: i64, n: usize) -> anyhow::Result<Str
     Ok(h)
 }
 
-/// The chain's verdict as (state, sentence), read from its `rca:Verdict` node.
+/// The chain's current verdict as (state, sentence), the last in `rca:supersededBy` order.
 fn verdict(s: &Snapshot, chain: &str) -> anyhow::Result<Option<(String, String)>> {
-    let (Some(on), Some(cid)) = (s.iri(rca::ON_CHAIN)?, s.iri(chain)?) else { return Ok(None) };
-    let Some(&v) = s.subjects(on, cid)?.first() else { return Ok(None) };
+    let Some(cid) = s.iri(chain)? else { return Ok(None) };
+    let Some(v) = query::verdicts(s, cid)?.pop() else { return Ok(None) };
     let get = |p: &str| -> Vec<String> { s.iri(p).ok().flatten().and_then(|p| s.objects(v, p).ok()).unwrap_or_default().into_iter().filter_map(|o| correlate::literal(s, o)).collect() };
     let state = get(rca::STATE).join(", ");
     let sentence = format!("{state} by {} at {}, evidence: {}", get(rca::BY).join(", "), get(rca::AT).join(", "), get(rca::EVIDENCE).join("; "));

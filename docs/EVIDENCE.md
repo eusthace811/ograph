@@ -807,4 +807,24 @@ The lanes were merged in the order F, G, A2, A1, C2, C1, D, E, B, and every dete
 - **`hook_eval.py`.** It edited the first JSON file of the demo, which after lane C1 is a labels file no source reads. It now edits a file `config.toml` names.
 - **Ontology 1.3.** Lane B's 1.2 plus the terms of lanes A2, C1 and C2. `evt:OperatorAction` with signal `OPERATOR_ACTION` is in `enrich::WRITES`.
 
-**Not run.** `action_gate.py`, `coverage_decline_eval.py`, `agent_rca_eval.py` and `llm_gate.py` need the model. `ruled_out_eval.py` needs `ruled_out_weight`, which lane A1 dropped.
+**Review fixes.** An independent review of the merged code found nine defects. Each has a test that failed before its fix:
+
+- The lab page showed a chain's oldest verdict. It now shows the current one in `rca:supersededBy` order (`the_lab_page_shows_the_current_verdict_of_a_rejudged_chain`).
+- `cite-check` read a list number such as `3.` as a rank, and gave one rank to every chain on a line. A rank now binds only to the chain id it is written next to (`cite_check_binds_a_rank_only_to_the_chain_it_is_written_next_to`).
+- `status` missed deleted and renamed source files. A full harvest now records the files it read in `.ograph/harvested` (`status_reports_a_source_file_deleted_or_renamed_since_the_harvest`). Recording them costs a harvest one more `ogrep --files` call, so three tests in `tests/code.rs` that list ogrep's calls now expect it.
+- `ontology diff` counted verdict graphs as facts a harvest would quarantine. They are now reported apart, as facts that make a new verdict on the chain be refused (`ontology_diff_reports_verdict_facts_apart_from_harvest_quarantine`).
+- The incident merge chose among raw values, so with `severity = "max"` a `critical` beat `SEV3` and was then rejected. It now chooses among values in the closed vocabulary, and an invalid value is quarantined for its own reason (`the_merge_policy_picks_among_valid_values_and_an_invalid_one_is_quarantined_for_itself`).
+- `checkout` and `Checkout` were a service conflict. They now compare by the catalog's normalization (`service_names_that_differ_only_in_case_are_no_conflict`).
+- A withheld value was quarantined but not counted as proposed (`a_withheld_value_counts_as_proposed`).
+- `--known-at` refused the whole second the history starts in (`known_at_accepts_the_second_the_history_starts_in`).
+- `ruled_out_eval.py` now names the build it needs and exits 0 on any other.
+
+After these fixes `cargo test --workspace` passes 87 + 20 + 12, and clippy with `--all-targets` reports nothing.
+
+The first rerun of `cite_eval.py` gave recall 0.968 and 0.977. Its control lines, `N. app id:chain/x`, still used a list number as a rank, so the eval now writes `N. app: id:chain/x (rank N)`. Both sets are then back at precision and recall 1.000 (`cite-check.txt`).
+
+The first rerun of `known_at_gate.py` failed because a time 0.1 s before the history start was accepted. Only a time written to the whole second may name the start second, and the gate passes again.
+
+The following outputs are the same as before the fixes, apart from timings: `rcaeval_score.py` (chain AC@1 0.93), `similar_eval.py` (82/89 = 0.92), `known_at_gate.py`, `incident_conflicts_eval.py`, `ontology_diff_eval.py` (14 mutations, 0 mismatched), `lab_check.py`, `lab_browser.mjs`, `resolve_eval.py`, `hook_eval.py` (slowest 27.6 ms) and the pi and MCP contract. The 90-case lab page is 34 bytes longer because each run records verdict times of a different length.
+
+**Not run.** `action_gate.py`, `coverage_decline_eval.py`, `agent_rca_eval.py` and `llm_gate.py` need the model. `ruled_out_eval.py` needs `ruled_out_weight`, which lane A1 dropped; it now says so and exits 0, and `ruled-out.txt` keeps the run from commit 5f3ea74.

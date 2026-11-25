@@ -258,7 +258,7 @@ fn deployments_keep_no_files_without_a_code_source_or_with_an_ogrep_that_reads_n
     let plain = workspace("deploy-plain", &format!("{CATALOG}{DEPLOYS}"), &[("deployments.jsonl", &deployments())]);
     let out = harvest(&plain);
     assert!(out.iter().all(|o| o.degraded.is_empty()), "{out:?}");
-    assert_eq!(calls(&plain), "--entities . --json\n");
+    assert_eq!(calls(&plain), "--files .\n--entities . --json\n");
     let old = workspace("deploy-old", &format!("{CATALOG}{CODE}{DEPLOYS}"), &[("deployments.jsonl", &deployments()), ("shop/.old", "")]);
     let out = harvest(&old);
     let o = out.iter().find(|o| o.graph.ends_with("/deployments/deployments.jsonl")).unwrap();
@@ -301,7 +301,7 @@ fn without_a_code_source_nothing_is_looked_up_in_code() {
     let ws = Workspace::open(&root).unwrap();
     let answer = ws.code(&ws.store.snapshot().unwrap(), "INC-1", 5).unwrap();
     assert_eq!(serde_json::to_value(&answer).unwrap(), serde_json::json!({"incident": "id:inc/inc-1", "app": "checkout", "at": ograph_core::term::format_millis(T * 1000), "locations": [], "commits": [], "files": [], "files_confidence": null, "writeups": [], "degraded": []}));
-    assert_eq!(calls(&root), "--entities . --json\n");
+    assert_eq!(calls(&root), "--files .\n--entities . --json\n");
 }
 
 const EVERYTHING: &str = "[[source]]\nkind = \"logs\"\npath = \"logs.jsonl\"\n[[source]]\nkind = \"errors\"\npath = \"errors.jsonl\"\n";
@@ -428,7 +428,7 @@ fn chains_falls_back_to_suspects_only_when_nothing_ranks_and_code_is_configured(
     harvest(&no_code);
     let (ranked, answer) = fallback(&no_code);
     assert_eq!((ranked, answer.get("suspects")), (0, None));
-    assert_eq!(calls(&no_code), "--entities . --json\n");
+    assert_eq!(calls(&no_code), "--files .\n--entities . --json\n");
 
     let loud = workspace("fallback-ranked", &format!("{CATALOG}{CODE}{EVERYTHING}"), &[("logs.jsonl", &logs()), ("errors.jsonl", &errors())]);
     harvest(&loud);

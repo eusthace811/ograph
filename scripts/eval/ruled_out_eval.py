@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Do rejections on similar past incidents improve root-cause ranking? The experiment that
 decided against `ruled_out_weight` and against a "ruled out" mark in `ograph chains`. Both
-were removed after it, so this script needs ograph built from the commit that added it, titled
-"Experiment: past verdicts as a ranking input in chains".
+were removed after it, so this script needs ograph built from commit 5f3ea74, titled
+"Experiment: past verdicts as a ranking input in chains"; with any other build it says so and
+exits 0. docs/evidence/ruled-out.txt is the record of the run.
 
 All 90 RCAEval cases in one store. Wherever the rank-1 chain is wrong it is rejected. Each
 incident is then ranked with `ruled_out_weight` from a grid, seeing earlier incidents only (the
@@ -15,13 +16,23 @@ must beat the weight-0 baseline with no case made wrong.
 
 Usage: ruled_out_eval.py --bin target/release/ograph --cases CASES --out WORKDIR [--jobs 3]
 """
-import argparse
+import argparse, subprocess, sys, tempfile
 from precedent_eval import Bench, store
+
+def has_setting(binary, name):
+    with tempfile.TemporaryDirectory() as root:
+        subprocess.run([binary, "--root", root, "init"], capture_output=True)
+        p = subprocess.run([binary, "--root", root, "replay", "--set", f"{name}=0"], capture_output=True, text=True)
+        return f"no setting {name}" not in p.stderr
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--bin", required=True); ap.add_argument("--cases", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--jobs", type=int, default=3)
     a = ap.parse_args()
+    if not has_setting(a.bin, "ruled_out_weight"):
+        print("ruled_out_eval.py needs ograph built from commit 5f3ea74 (\"Experiment: past verdicts as a ranking input in chains\"),\n"
+              f"which has the ruled_out_weight setting; {a.bin} does not. The result of that run is docs/evidence/ruled-out.txt.")
+        sys.exit(0)
     labels, og = store(a, "rejections")
     b = Bench(labels, og, a.jobs)
     base = b.ranked({})
