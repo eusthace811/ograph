@@ -884,6 +884,6 @@ Two comparisons in gate 1 are not byte for byte. A chain's root carries `id`, th
 
 - `ograph suspects` and the `chains` fallback ask `ogrep --suspects`, which walks ogrep's own dependency model with today's edges.
 - `serve` and MCP `blast` take no time; `--at` is on the command line only.
-- An existing workspace keeps its copy of the ontology, so its dated facts are quarantined as unknown terms until `.ograph/ontology.ttl` and `shapes.ttl` are updated to 1.4.
+- An existing workspace keeps its copy of the ontology, so its dated facts are quarantined as unknown terms until `.ograph/ontology.ttl` and `shapes.ttl` are updated to 1.4. On gate 1's repository with the 1.3 files, the catalog harvest quarantines 5 of 13 facts and `chains INC-A` ranks `fraud` first, as without dates.
 - An edge that only changed provenance or file keeps its date; a service renamed in the files is a new service, so its edges come with it and are undated.
 - A dependency removed from the repository is gone from the catalog, so an incident before the removal does not see it: valid time here has a start, not an end.
