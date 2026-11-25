@@ -828,3 +828,23 @@ The first rerun of `known_at_gate.py` failed because a time 0.1 s before the his
 The following outputs are the same as before the fixes, apart from timings: `rcaeval_score.py` (chain AC@1 0.93), `similar_eval.py` (82/89 = 0.92), `known_at_gate.py`, `incident_conflicts_eval.py`, `ontology_diff_eval.py` (14 mutations, 0 mismatched), `lab_check.py`, `lab_browser.mjs`, `resolve_eval.py`, `hook_eval.py` (slowest 27.6 ms) and the pi and MCP contract. The 90-case lab page is 34 bytes longer because each run records verdict times of a different length.
 
 **Not run.** `action_gate.py`, `coverage_decline_eval.py`, `agent_rca_eval.py` and `llm_gate.py` need the model. `ruled_out_eval.py` needs `ruled_out_weight`, which lane A1 dropped; it now says so and exits 0, and `ruled-out.txt` keeps the run from commit 5f3ea74.
+
+## Phase 13, lane N: ambiguous application names (`ambiguous-census.txt`)
+
+The idea, from semantica, was to settle an ambiguous application name with context: when a record's name matches two catalog applications about equally, a dependency, host, owner or trace peer in the same record that only one of them has would pick it. semantica's version is soft. `calculate_relationship_similarity` (`semantica/deduplication/similarity_calculator.py:444`) is the Jaccard overlap of two entities' relationships, blended into a weighted score with no bound on wrong merges. ograph's gateway promises precision 1.000, so only a hard rule could have come in. The lane measured first, with the rule that it builds nothing if ambiguous ties are rare or absent on real data.
+
+**What context could settle.** The gateway quarantines a catalog name as ambiguous for three reasons, and all share the reason `names a sibling or ties another entity` or `only fuzzily matches`. Context can settle only a tie, two applications within 0.03 of each other at 0.93 or above. A sibling (`inventory-service-uk` against `inventory-service-eu`) names an application the catalog does not have, and context that points at `inventory-service-eu` would turn a refusal into a wrong match. A score from 0.80 to 0.93 has one candidate, so there is nothing to choose between. `scripts/eval/ambiguous_census.py` harvests each corpus and classifies every quarantined name by the rationale `ograph resolve` gives for it.
+
+| Corpus | Quarantined facts | Ambiguous application name | Of which ties |
+|---|---|---|---|
+| demo, regenerated, model command disabled (31 threads had no cached answer) | 34 | 0 | 0 |
+| 4 demo stores holding every model answer (main checkout and three Phase 12 lanes) | 3 each | 0 | 0 |
+| 90 RCAEval cases | 666 | 74, all `frontend-external` (0.90 to `frontend`), in 42 cases | 0 |
+| gateway gate (synthetic, built to be ambiguous) | 120 | 18 siblings, 9 low scores | 0 |
+| `resolve_eval.py`'s 228 typo and near-twin mentions (`resolve.txt`) | | its 4 missed same-application mentions are low scores; it prints no rationale for the others | 0 among the 4 |
+
+The 74 RCAEval facts come from one metrics column, `frontend-external_workload`, the Kubernetes Service in front of `frontend`. It has one candidate, so context has no choice to make. The catalog's own alias rule (ogrep 0.3 reads such a Service as an alias) is the fix for it, not a tie-breaker.
+
+The catalogs also show why ties do not happen. The closest pair of distinct applications is `ordersapi` / `paymentsapi` at 0.670 in the demo and `emailservice` / `paymentservice` at 0.816 in the online-boutique fixture. A tie needs one mention at 0.93 or above to both names, which needs two catalog names far closer than these (inferred from the scores, not proved: Jaro-Winkler is not a metric).
+
+**Verdict: DROP.** Zero ties on every corpus, so the gate written for the feature (recall gain on ambiguous mentions with a deciding fact) could only be run on mentions made up for it. Nothing was built. The census stays in `run_all.sh` so a corpus that does produce ties shows them.
