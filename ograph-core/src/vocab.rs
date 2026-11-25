@@ -68,6 +68,7 @@ ns!(inc, "https://ograph.dev/inc#", {
     MITIGATION = "mitigation",
     CAUSE = "cause",
     FAULT_TYPE = "faultType",
+    FAULT_CLASS = "faultClass",
 });
 
 ns!(disc, "https://ograph.dev/disc#", {

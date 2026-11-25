@@ -37,7 +37,7 @@ deduplicated union of every harvest; `GRAPH ?g { }` reaches the named graphs. Up
 | `evt:signal`, `evt:severity`, `evt:value`, `evt:count` | event → kind, severity, value, count |
 | `evt:version`, `evt:template`, `evt:metric`, `evt:summary`, `evt:sourceRecord` | event details and the raw record |
 | `evt:mentions` | news item → vendor |
-| `inc:id`, `inc:title`, `inc:status`, `inc:resolvedAt`, `inc:mitigation`, `inc:cause`, `inc:faultType` | incident fields |
+| `inc:id`, `inc:title`, `inc:status`, `inc:resolvedAt`, `inc:mitigation`, `inc:cause`, `inc:faultType`, `inc:faultClass` | incident fields |
 | `disc:about`, `disc:category`, `disc:sentiment`, `disc:channel`, `disc:at` | thread fields |
 | `corr:leadsTo`, `corr:rootCause`, `corr:link`, `corr:candidateApp`, `corr:confidence`, `corr:rank` | chain fields |
 | `rca:onChain`, `rca:state`, `rca:by`, `rca:evidence`, `rca:at`, `rca:rootOn`, `rca:rootAt` | verdict fields |

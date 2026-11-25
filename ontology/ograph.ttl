@@ -75,6 +75,7 @@ inc:resolvedAt a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xs
 inc:mitigation a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string ; rdfs:comment "What was done to mitigate or fix the incident." .
 inc:cause a owl:ObjectProperty ; rdfs:domain inc:Incident ; rdfs:range og:Thing ; rdfs:comment "An accepted cause, written only by a verdict: an event, or once its telemetry is gone, the event the verdict describes." .
 inc:faultType a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string ; rdfs:comment "The kind of fault that caused the incident." .
+inc:faultClass a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string ; rdfs:comment "The class of fault the incident's title states, from a closed vocabulary. Proposed by the model when an incidents source sets classify = true; UNKNOWN when the title states no fault." .
 
 # ---------- SLACK: discussion threads ----------
 disc:Thread a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A chat discussion thread (Slack or Teams) about operations." .
@@ -164,5 +165,23 @@ disc:category og:vocabulary
   [ og:value "DATA" ; rdfs:comment "Bad, missing or corrupt data, a migration or a schema mismatch." ],
   [ og:value "SECURITY" ; rdfs:comment "An attack, a leaked credential or an access-control problem." ],
   [ og:value "UNKNOWN" ; rdfs:comment "The thread does not say what caused it." ] .
+
+inc:faultClass og:vocabulary
+  [ og:value "CPU" ; rdfs:comment "CPU saturation or throttling." ],
+  [ og:value "MEMORY" ; rdfs:comment "Memory ran out or leaked: out-of-memory kills, a heap or container memory limit reached." ],
+  [ og:value "DISK" ; rdfs:comment "A disk or volume filled up, or disk reads and writes failed or slowed." ],
+  [ og:value "CONNECTION_POOL" ; rdfs:comment "A pool of connections or threads was exhausted and requests waited for one." ],
+  [ og:value "QUEUE" ; rdfs:comment "A message queue or stream backed up: consumer lag, a growing backlog, messages dropped or expired." ],
+  [ og:value "NETWORK_LATENCY" ; rdfs:comment "Packets between hosts were delayed: added network latency, slow links." ],
+  [ og:value "NETWORK_LOSS" ; rdfs:comment "Packets were lost or connections reset or refused between hosts, or a host was unreachable." ],
+  [ og:value "DNS" ; rdfs:comment "Name resolution failed or returned wrong or stale records." ],
+  [ og:value "CERTIFICATE" ; rdfs:comment "A TLS certificate expired, was invalid or was not trusted, so handshakes failed." ],
+  [ og:value "CONFIG" ; rdfs:comment "A setting, feature flag, limit or secret was changed or wrong." ],
+  [ og:value "DEPLOYMENT" ; rdfs:comment "A code rollout or rollback of our own service." ],
+  [ og:value "DEPENDENCY" ; rdfs:comment "Another service or vendor we call was down, slow or returned errors while our own resources were fine." ],
+  [ og:value "RATE_LIMIT" ; rdfs:comment "Requests were throttled by a quota or rate limit." ],
+  [ og:value "DATA" ; rdfs:comment "Bad, missing or corrupt data, a migration or a schema mismatch." ],
+  [ og:value "CRASH" ; rdfs:comment "A process crashed, panicked or restarted in a loop because of a defect in its code." ],
+  [ og:value "UNKNOWN" ; rdfs:comment "The title does not say what kind of fault it was." ] .
 
 disc:sentiment og:vocabulary [ og:value "calm" ], [ og:value "concerned" ], [ og:value "urgent" ] .

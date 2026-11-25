@@ -169,6 +169,49 @@ fn cosine(a: &FxHashMap<(String, String), f64>, b: &FxHashMap<(String, String), 
     if na == 0.0 || nb == 0.0 { 0.0 } else { dot / (na * nb) }
 }
 
+/// One closed-vocabulary fact an incident states about itself.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Stated {
+    On(Id),
+    FaultType(Id),
+    FaultClass(Id),
+}
+
+/// An incident's stated signature: the application it is on, its stated fault type and the
+/// fault class proposed from its title. Every value is an application of the catalog or a
+/// closed-vocabulary literal, so equal means the same. Accepted causes are left out: an
+/// incident's own verdict would then pick the past incidents that share its answer.
+fn statement(s: &Snapshot, ids: &Ids, i: Id) -> anyhow::Result<FxHashSet<Stated>> {
+    let mut out = FxHashSet::default();
+    if let Some(a) = s.object(i, ids.on)? {
+        out.insert(Stated::On(a));
+    }
+    if let Some(p) = s.iri(inc::FAULT_TYPE)? {
+        out.extend(s.objects(i, p)?.into_iter().map(Stated::FaultType));
+    }
+    if let Some(p) = s.iri(inc::FAULT_CLASS)? {
+        let unknown = s.id(&oxrdf::Literal::new_simple_literal("UNKNOWN").into())?;
+        out.extend(s.objects(i, p)?.into_iter().filter(|v| Some(*v) != unknown).map(Stated::FaultClass));
+    }
+    Ok(out)
+}
+
+fn overlap(a: &FxHashSet<Stated>, b: &FxHashSet<Stated>) -> f64 {
+    if a.is_empty() || b.is_empty() { 0.0 } else { a.intersection(b).count() as f64 / ((a.len() * b.len()) as f64).sqrt() }
+}
+
+/// Reciprocal rank fusion (Cormack et al. 2009, k = 60) of two scores per item. Equal scores
+/// share a rank, so a ranking that cannot tell items apart leaves the other's order alone.
+fn fuse(scores: &[(f64, f64)]) -> Vec<f64> {
+    let rank = |pick: fn(&(f64, f64)) -> f64| {
+        let mut sorted: Vec<f64> = scores.iter().map(pick).collect();
+        sorted.sort_by(|x, y| y.total_cmp(x));
+        move |v: f64| 1.0 + sorted.partition_point(|&w| w > v) as f64
+    };
+    let (ra, rb) = (rank(|x| x.0), rank(|x| x.1));
+    scores.iter().map(|&(a, b)| 1.0 / (60.0 + ra(a)) + 1.0 / (60.0 + rb(b))).collect()
+}
+
 /// The application of a cause: from its telemetry, or from the verdict that judged it once the
 /// telemetry is gone.
 fn cause_app(s: &Snapshot, ids: &Ids, e: Id) -> anyhow::Result<Option<Id>> {
@@ -186,15 +229,20 @@ fn cause_app(s: &Snapshot, ids: &Ids, e: Id) -> anyhow::Result<Option<Id>> {
     Ok(None)
 }
 
-/// Q3: past incidents that resemble this one, with their accepted causes and mitigations.
+/// Q3: past incidents that resemble this one, with their accepted causes and mitigations. An
+/// incident with telemetry is compared by its telemetry signature, and the stated signature
+/// reorders the matches by rank fusion; one without telemetry is compared by what it states.
+/// `similarity` is the cosine of the signature that chose the candidates.
 pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> anyhow::Result<Vec<Similar>> {
     let ids = Ids::new(s)?;
     let i = lookup(s, incident)?;
     let (_, t) = correlate::incident_anchor(s, &ids, i)?;
     let mine = signature(s, &ids, i, st)?;
+    let stated = statement(s, &ids, i)?;
     let Some(c) = ids.incident else { return Ok(vec![]) };
     let (cause_p, mit_p, title_p) = (s.iri(inc::CAUSE)?, s.iri(inc::MITIGATION)?, s.iri(inc::TITLE)?);
     let mut out = Vec::new();
+    let mut scores = Vec::new();
     for other in s.subjects(ids.ty, c)? {
         if other == i {
             continue;
@@ -203,10 +251,13 @@ pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> any
         if at >= t {
             continue;
         }
-        let similarity = (cosine(&mine, &signature(s, &ids, other, st)?).max(0.0) * 1000.0).round() / 1000.0;
+        let round = |x: f64| (x.max(0.0) * 1000.0).round() / 1000.0;
+        let told = round(overlap(&stated, &statement(s, &ids, other)?));
+        let similarity = if mine.is_empty() { told } else { round(cosine(&mine, &signature(s, &ids, other, st)?)) };
         if similarity == 0.0 {
             continue;
         }
+        scores.push((similarity, told));
         let causes: Vec<Id> = cause_p.map(|p| s.objects(other, p)).transpose()?.unwrap_or_default();
         out.push(Similar {
             incident: vocab::compact(&literal(s, other).unwrap_or_default()),
@@ -219,9 +270,9 @@ pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> any
             title: title_p.and_then(|p| s.object(other, p).ok().flatten()).and_then(|v| literal(s, v)),
         });
     }
-    out.sort_by(|a, b| b.similarity.total_cmp(&a.similarity).then(b.at.cmp(&a.at)));
-    out.truncate(limit);
-    Ok(out)
+    let mut ranked: Vec<(f64, Similar)> = fuse(&scores).into_iter().zip(out).collect();
+    ranked.sort_by(|(fx, x), (fy, y)| fy.total_cmp(fx).then(y.similarity.total_cmp(&x.similarity)).then(y.at.cmp(&x.at)));
+    Ok(ranked.into_iter().take(limit).map(|(_, x)| x).collect())
 }
 
 #[derive(Serialize)]

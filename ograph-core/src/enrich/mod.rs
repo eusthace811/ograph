@@ -47,7 +47,12 @@ pub enum Source {
         since: String,
     },
     Alerts { path: PathBuf },
-    Incidents { path: PathBuf },
+    /// `classify` asks the model for the fault class of each incident title these files state.
+    Incidents {
+        path: PathBuf,
+        #[serde(default)]
+        classify: bool,
+    },
     Logs { path: PathBuf },
     Metrics { path: PathBuf },
     Traces { path: PathBuf },
@@ -94,7 +99,7 @@ impl Source {
             | Source::ConfigChanges { path }
             | Source::Code { path, .. }
             | Source::Alerts { path }
-            | Source::Incidents { path }
+            | Source::Incidents { path, .. }
             | Source::Logs { path }
             | Source::Metrics { path }
             | Source::Traces { path }
@@ -202,7 +207,7 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
     match source {
         Source::Catalog { path, inferred } => return vec![catalog::harvest(ctx.root, path, *inferred)],
         Source::Code { path, since } => return vec![code::harvest(ctx.root, path, since)],
-        Source::Incidents { path } => return vec![incidents(&[path], &[], ctx)],
+        Source::Incidents { path, classify } => return vec![incidents(&[(path, *classify)], &[], ctx)],
         _ => {}
     }
     let (files, unreadable) = walk(ctx.root, source.path());
@@ -251,10 +256,11 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
 
 /// The files of every incident source as one batch (see [`records::incidents`]). A source path
 /// or a directory below it that cannot be listed fails the batch.
-/// `held` are the files the last incidents harvest read.
-pub fn incidents(paths: &[&Path], held: &[String], ctx: &Ctx<'_>) -> Batch {
+/// `held` are the files the last incidents harvest read. Each path says whether its titles
+/// are classified.
+pub fn incidents(paths: &[(&Path, bool)], held: &[String], ctx: &Ctx<'_>) -> Batch {
     let (mut files, mut degraded) = (Vec::new(), Vec::new());
-    for path in paths {
+    for &(path, classify) in paths {
         let (found, unreadable) = walk(ctx.root, path);
         // A directory that held incident files and now lists none is more likely an unmounted
         // share than an empty export, and every incident shares one graph, so it fails the batch.
@@ -262,13 +268,14 @@ pub fn incidents(paths: &[&Path], held: &[String], ctx: &Ctx<'_>) -> Batch {
         if found.is_empty() && unreadable.is_empty() && ctx.root.join(path).is_dir() && held.iter().any(|f| f.starts_with(&format!("{dir}/"))) {
             degraded.push(format!("{dir} lists no files; keeping the incidents it held"));
         }
-        files.extend(found.into_iter().map(|f| (rel(ctx.root, &f), f)));
+        files.extend(found.into_iter().map(|f| (rel(ctx.root, &f), f, classify)));
         degraded.extend(unreadable.iter().map(|d| format!("cannot read directory {}", rel(ctx.root, d))));
     }
-    files.sort();
-    files.dedup();
-    let mut b = records::incidents(&files.iter().map(|(key, f)| (f.clone(), key.clone())).collect::<Vec<_>>(), degraded);
-    b.files = files.into_iter().map(|(key, _)| key).collect();
+    // A file under two sources is classified when either asks.
+    files.sort_by(|x, y| (&x.0, y.2).cmp(&(&y.0, x.2)));
+    files.dedup_by(|x, y| x.0 == y.0);
+    let mut b = records::incidents(&files.iter().map(|(key, f, c)| (f.clone(), key.clone(), *c)).collect::<Vec<_>>(), degraded, ctx);
+    b.files = files.into_iter().map(|(key, ..)| key).collect();
     b
 }
 

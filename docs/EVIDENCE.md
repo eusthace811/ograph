@@ -381,3 +381,32 @@ These are the reasons, each measured above:
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.
+
+## Phase 12, lane C2: similar incidents without telemetry (`similar-writeups.txt`, `similar-writeups-ab.txt`)
+
+Phase 10 left `ograph similar` with nothing to say for an incident that has no telemetry, because its signature was only the applications and signals before the incident. This lane gives every incident a second signature, built from what it states: the application it is on, its stated `fault`, and `inc:faultClass`. `inc:faultClass` is new. It is a closed vocabulary in `ontology.ttl` of 15 fault classes and UNKNOWN, which the model proposes from the incident title when an incidents source sets `classify = true`. As with discussion categories, a class needs a quote from the title, or it becomes UNKNOWN, and the call goes through pi and its cache. An incident with no telemetry is ranked by the stated signature. An incident with telemetry keeps its telemetry matches, and the two rankings are merged by reciprocal rank fusion with k = 60, the rule in semantica's `vector_store/hybrid_search.py` (lines 181 to 219). Equal scores share a rank, so a signature that cannot tell the candidates apart leaves the other's order alone. Measured on 2026-11-25 with ogrep 0.2.0 and `pi:openai/gpt-6-luna`.
+
+The gate was written before the model was run. `scripts/eval/similar_writeups_eval.py` uses code_eval's write-up set (G): six services of the OpenTelemetry demo at `8f6908eae154` by six faults. Each fault gets a past incident titled with its write-up's heading, and a new incident on the same service that words the fault differently, as code_eval's G incidents do. No incident has telemetry. The metric is whether the first answer of `ograph similar` for each new incident is the past incident with the same service and fault. Chance is a uniform pick among the incidents opened before it. The pass condition was top-1 of at least 0.83, the lexical write-up match of Phase 10, and above chance given the application.
+
+| Configuration | Some answer | Top-1 same service and fault | Chance | Chance given the application |
+|---|---|---|---|---|
+| Binary before this lane | 0/36 | 0/36 | 0.019 | 0.123 |
+| Stated signature, no model (the application only) | 36/36 | 0/36 | 0.019 | 0.123 |
+| With `classify = true` | 36/36 | 36/36 (1.00) | 0.019 | 0.123 |
+| The same burst of the same error on every incident's service, no model | 36/36 | 0/36 | 0.019 | 0.123 |
+| That burst, with `classify = true` (fusion) | 36/36 | 36/36 (1.00) | 0.019 | 0.123 |
+
+- **The model's classes.** All 72 titles got the intended class, in each of three runs with an empty cache: 36 write-up headings and 36 new titles, six per fault. That includes the DNS fault, whose new title ("DNS lookups failing, name not resolved") shares no word with its write-up ("resolver returned stale records after a zone change"). It is the only fault whose two titles share no word, so it is the one fault on which Phase 10's lexical match missed 6 of 36.
+- **Without the model the stated signature only narrows to the application.** Ties among one service's incidents fall back to the most recent one, which in this set is always an earlier new incident with another fault. So the 0/36 is a tie broken against the eval, not a ranking. The expected value of a random tie-break is the 0.123 in the last column. Deterministic fields cannot do better here, because a new incident states no fault.
+- **Fusion.** When telemetry cannot tell one service's incidents apart, the fault class picks the right one in 36 of 36 cases. The binary from before this lane gives the same 0/36 as the new one without a model on that workspace.
+- **Would embeddings have been needed?** Not on this set. The closed vocabulary with a model classified 72 of 72 titles correctly and matched 36 of 36. Lexical matching through ogrep got 30 of 36. The vocabulary was written before the run, but by someone who knew the six faults, and each title states its fault plainly. A title that names only a symptom ("checkout errors") gets UNKNOWN by design, and no signature helps there. Embeddings would only be worth measuring for faults that the vocabulary has no class for.
+
+### What it does not change
+
+`scripts/eval/ab_compare.sh` with the binary from before this lane and the new one: 12 of 12 outputs byte-identical. These are the demo's harvest and eight queries, the 90 RCAEval rankings (chain AC@1 0.93) and `similar_eval.py` at 0.92 top-1 (82 of 89). RCAEval's incidents state no fault and are all on `frontend`, so their stated signatures are equal and fusion keeps the telemetry order. Query latency was 103 to 133 ms for both binaries, with old and new within 9 ms of each other in either direction. Other work shared the machine, so this run cannot resolve the 0.5 ms that Phase 10 could (its queries took 23 ms).
+
+### What was tried and removed
+
+The first stated signature also held the applications of an incident's accepted causes. On `similar_eval.py` it raised top-1 from 0.92 to 0.94 (84 of 89), but that gain was a leak. The eval accepts every incident's true chain before it queries, so the query's own verdict picked the past incidents that share its answer. Accepted causes are no longer part of the signature, and the score is 0.92 again.
+
+Not measured: titles that word a fault more vaguely than code_eval's do, a fault outside the vocabulary, a model other than pi's default, and classifying the text of a write-up rather than a title.
