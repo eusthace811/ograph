@@ -1,0 +1,70 @@
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix ops:  <https://ograph.dev/ops#> .
+@prefix evt:  <https://ograph.dev/evt#> .
+@prefix inc:  <https://ograph.dev/inc#> .
+@prefix disc: <https://ograph.dev/disc#> .
+@prefix corr: <https://ograph.dev/corr#> .
+@prefix rca:  <https://ograph.dev/rca#> .
+@prefix shape: <https://ograph.dev/shape/> .
+
+# Hand-written shapes: what must be present. Domain, range, vocabularies and functional
+# properties are derived from ograph.ttl in code, so they are not repeated here.
+
+shape:Event a sh:NodeShape ;
+  sh:targetClass evt:Deployment, evt:ConfigChange, evt:Alert, evt:LogError, evt:MetricAnomaly, evt:TraceFailed, evt:TraceSlow, evt:Commit, evt:Exception, evt:OperatorAction, inc:Incident ;
+  sh:property [ sh:path evt:at ; sh:minCount 1 ; sh:message "an event needs a time" ] ;
+  sh:property [ sh:path evt:on ; sh:minCount 1 ; sh:message "an event needs the application it happened on" ] .
+
+shape:OperatorAction a sh:NodeShape ;
+  sh:targetClass evt:OperatorAction ;
+  sh:property [ sh:path evt:actionKind ; sh:minCount 1 ; sh:message "an action needs its kind" ] .
+
+shape:News a sh:NodeShape ;
+  sh:targetClass evt:NewsItem ;
+  sh:property [ sh:path evt:at ; sh:minCount 1 ] ;
+  sh:property [ sh:path evt:summary ; sh:minCount 1 ] .
+
+shape:Application a sh:NodeShape ;
+  sh:targetClass ops:Application ;
+  sh:property [ sh:path ops:name ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path ops:ownedBy ; sh:maxCount 1 ] .
+
+shape:Dependency a sh:NodeShape ;
+  sh:targetClass ops:Dependency ;
+  sh:property [ sh:path ops:caller ; sh:minCount 1 ; sh:message "a dated dependency needs the application that depends" ] ;
+  sh:property [ sh:path ops:callee ; sh:minCount 1 ; sh:message "a dated dependency needs the application depended on" ] ;
+  sh:property [ sh:path ops:validFrom ; sh:minCount 1 ; sh:message "a dated dependency needs its date" ] .
+
+shape:Incident a sh:NodeShape ;
+  sh:targetClass inc:Incident ;
+  sh:property [ sh:path inc:id ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path inc:status ; sh:maxCount 1 ] .
+
+shape:Thread a sh:NodeShape ;
+  sh:targetClass disc:Thread ;
+  sh:property [ sh:path disc:category ; sh:maxCount 1 ] ;
+  sh:property [ sh:path disc:sentiment ; sh:maxCount 1 ] .
+
+shape:Chain a sh:NodeShape ;
+  sh:targetClass corr:Chain ;
+  sh:property [ sh:path corr:leadsTo ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path corr:rootCause ; sh:minCount 1 ; sh:maxCount 1 ; sh:message "a chain has exactly one root cause" ] ;
+  sh:property [ sh:path corr:confidence ; sh:maxCount 1 ; sh:minInclusive 0 ; sh:maxInclusive 1 ] .
+
+shape:Verdict a sh:NodeShape ;
+  sh:targetClass rca:Verdict ;
+  sh:property [ sh:path rca:onChain ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path rca:state ; sh:minCount 1 ; sh:maxCount 1 ] ;
+  sh:property [ sh:path rca:evidence ; sh:minCount 1 ] ;
+  sh:property [ sh:path rca:supersededBy ; sh:maxCount 1 ] .
+
+# Time order. The start is what places a node on the timeline, so a violation quarantines the
+# end time alone (the gateway drops the sh:lessThanOrEquals side) and the node keeps its start.
+shape:EpisodeOrder a sh:NodeShape ;
+  sh:targetSubjectsOf evt:until ;
+  sh:property [ sh:path evt:at ; sh:lessThanOrEquals evt:until ; sh:message "an episode cannot end before it starts" ] .
+
+shape:IncidentOrder a sh:NodeShape ;
+  sh:targetSubjectsOf inc:resolvedAt ;
+  sh:property [ sh:path evt:at ; sh:lessThanOrEquals inc:resolvedAt ; sh:message "an incident cannot be resolved before it opened" ] .

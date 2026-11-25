@@ -154,6 +154,14 @@ Inside SPARQL, escape a `/` in a prefixed name, and the dots of a version (`id:a
    citation; a stale chain means the graph changed since you read it.
 12. The graph keeps episodes and pointers, not raw detail. For a config change's old and new
    value, a log line or a metric curve, open the event's `source_record` (`--json`) in its file.
+13. When rank 1 differs from an earlier answer, run `ograph chains INC --since T`. Report only the
+   files it names.
+14. When a source turns out wrong, `ograph uses FILE[#n]` lists the facts, chains and verdicts
+   that rest on it; check those verdicts again.
+15. `chains` and `before` skip dependencies the catalog dates after the incident opened and list
+   them as `withheld`; use `blast APP --at INC` for the blast radius as it was then.
+16. If chat names apps by short names and `disc:about` misses them, see `known_apps` in
+   references/sources-and-harvest.md.
 
 Report what [references/investigation.md](references/investigation.md) lists under "What to report".
 
