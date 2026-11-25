@@ -27,13 +27,13 @@ catalog: proposed 27 accepted 27 quarantined 0
 end times kept on good episodes and incidents, with start <= end: 6/6
 model-proposed edge the catalog declares, committed: true
 
-batch: proposed 377 facts, accepted 251, quarantined 126, fuzzy catalog matches 3, 19 ms
+batch: proposed 377 facts, accepted 251, quarantined 126, fuzzy catalog matches 3, 18 ms
 bad subjects with a committed fact: 18; good events missing: 0/50; full SHACL audit violations: 0
 re-submit: removed 0 added 0 (an unchanged batch writes nothing: 0 and 0)
 bad facts (the faulty fact of each case) committed: 0
 GATEWAY GATE: PASS
 
-# scripts/eval/shapes_regression.py --base <ontology/shapes.ttl at 25f2bc7> --new ontology/shapes.ttl
+# scripts/eval/shapes_regression.py --base <ontology/shapes.ttl at 25f2bc7> --new ontology/shapes.ttl --demo <demo on ontology 1.2>
 workspaces: 91 (demo + 90 RCAEval cases)
 facts quarantined: baseline 669, candidate 669
 workspaces whose quarantine changed: 0

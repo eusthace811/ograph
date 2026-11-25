@@ -32,7 +32,7 @@ workspaces: 91
 workspaces with a BREAKING change or a predicted quarantine: 0; stored facts that would be quarantined: 0
 DIFF STORES: PASS
 
-# ontology_lint_eval.py on ontology 1.2. In part 4 the one store with warnings is the demo copy, whose .ograph/ontology.ttl is still 1.1.
+# ontology_lint_eval.py on ontology 1.2, demo on ontology 1.2
 1. shipped ontology, empty store
    expected from the sources, unwritten: []
    expected from the sources, untimed:   []
@@ -49,5 +49,5 @@ DIFF STORES: PASS
    validate: matched nothing ['shape:Paged', 'shape:Verdict']
    check exit 1; reported by check and validate: True
 4. 91 harvested stores: shapes matching nothing {'shape:IncidentOrder': 90, 'shape:News': 90, 'shape:Thread': 90, 'shape:Verdict': 91}
-   check warnings by kind (stores with it) {'declared but no code writes it': 1, 'declared but the store has none': 91, 'event class no shape requires an evt:at of': 1}
+   check warnings by kind (stores with it) {'declared but the store has none': 91}
 ONTOLOGY LINT GATE: PASS

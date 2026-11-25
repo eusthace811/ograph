@@ -208,7 +208,7 @@ ograph stats                    # store size and contents
 ograph compact                  # shrink the store file
 ograph export --out all.trig    # every graph as TriG, for archive or another triple store
 ograph ontology check           # after upgrading ograph
-ograph ontology diff new.ttl    # before changing the ontology; BREAKING lines need care
+ograph ontology diff new.ttl    # before changing the ontology: BREAKING lines and the facts a re-harvest would quarantine
 ```
 
 ## Troubleshooting

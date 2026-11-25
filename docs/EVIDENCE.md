@@ -381,3 +381,53 @@ These are the reasons, each measured above:
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.
+
+## Phase 12, lane B: ontology tooling (`time_order.txt`, `ontology_diff.txt`, `ontology_lint.txt`, `coverage_decline.txt`, `lane-b-regression.txt`)
+
+### Time order (`time_order.txt`)
+
+`shapes.ttl` now requires `evt:at <= evt:until` on every node with an end, and `evt:at <= inc:resolvedAt` on every incident with a resolution. A violation quarantines the end time alone. The start is what places the node on the timeline, and the `evt:at` minimum count would reject the whole node if the start were dropped instead.
+
+| Gate | Result |
+|---|---|
+| `gateway_eval`: 3 metric episodes that end before they start, 3 incidents resolved before they opened | 3 of 3 and 3 of 3 end times quarantined, each with its reason; the 6 nodes kept their other facts |
+| `gateway_eval`: 3 ordered episodes and 3 ordered incidents | 6 of 6 end times kept |
+| `shapes_regression.py`: demo and 90 RCAEval cases, harvested under the old and the new `shapes.ttl` | 669 facts quarantined under both; 0 workspaces changed |
+
+On RCAEval the episode shape has metric episodes to check. No RCAEval incident has a resolution time, so only the demo's 3 incidents and the fixtures exercise the incident shape (`ontology_lint.txt`, part 4).
+
+### Ontology diff against stored data (`ontology_diff.txt`, `scripts/eval/ontology_diff_eval.py`)
+
+`ograph ontology diff` used to load the newer ontology with the built-in shapes and never read the store. Now each stored harvest graph goes through the ontology checks and SHACL under both versions, against the rest of the store. The facts that only the newer version rejects are what a re-harvest would quarantine. The gate applies 14 edits of `ograph.ttl` or `shapes.ttl` to the demo. For each edit it compares that prediction with an actual re-harvest under the edited files.
+
+| Gate | Result |
+|---|---|
+| Predicted facts quarantined, per graph, equal the re-harvest's new quarantines | 14 of 14 edits, for example 21 of 21 deployment facts when `evt:Deployment` loses `evt:Event`, and 8 of 8 incident facts when a shape requires `inc:mitigation` |
+| No BREAKING change on a term the store never uses | 0 of 4 edits on unused terms (a class, a property, a superclass edge, a vocabulary) marked BREAKING; each says `(unused)` |
+| A domain or range moved to a superclass | `evt:on` to `og:Thing` reported as widened, nothing quarantined |
+
+### Lints in `ontology check`, shape coverage in `validate` (`ontology_lint.txt`, `scripts/eval/ontology_lint_eval.py`)
+
+| Gate | Result |
+|---|---|
+| On ontology 1.1, the warnings for terms no code writes and event classes no shape requires a time of, against the script's own reading of the enrichers, `ograph.ttl` and `shapes.ttl` | Equal: `evt:E2EFailure`, `evt:Experiment` and the signal values `DEPENDENCY_CHANGE`, `DISCUSSION`, `E2E_FAILURE`, `EXPERIMENT` unwritten; `evt:Experiment` untimed |
+| A sample `proposed.ttl` merged in | 3 of 3 proposed terms flagged as still proposed and unwritten; the 2 properties also flagged for no domain and no range |
+| `sh:targetClass evt:Aletr` in `shapes.ttl` | `check` exits 1 naming `shape:Paged` and `evt:Aletr`; `validate` lists `shape:Paged` among the shapes that matched nothing and still exits 0 |
+
+The four signal values the lint found beyond the two classes had no writer either. `diff_stores.py` ran ontology 1.2, which deletes all six terms, against the 91 stores harvested under 1.1. Every removal was `(unused)` and no stored fact would be quarantined. `ontology check` on 1.2 has no warnings, so any new warning is a regression. On the 91 stores, `shape:Verdict` matches nothing in all of them (no verdicts recorded), and `shape:News`, `shape:Thread` and `shape:IncidentOrder` match nothing in the 90 RCAEval stores, which have no news, chat or resolution times.
+
+### Declined proposals in `ontology coverage` (`coverage_decline.txt`, `scripts/eval/coverage_decline_eval.py`)
+
+The gate as specified is three uncached runs with three demo gaps declined, against three uncached runs without. It is not measured. Every model call returned a usage-limit refusal. The first version of the script passed on those 21 unanswered questions; it now reports `NOT MEASURED` when any question gets no answer. One live run made earlier, on ontology 1.1 before the limit, was replayed from its cache (`--cached`):
+
+| Check | Result |
+|---|---|
+| Declined `ops:KubernetesCluster`, `ops:Revenue`, `ops:Customers` | None in `proposed.ttl`; each reported as declined by `eval`; the same questions' other gaps (`runs`, `lost`, `affectedBy`) still proposed |
+| The 7 other gap questions | 7 of 7 still gaps, the same as without `declined.ttl` |
+| Exit code with undeclined gaps left | 1 |
+
+The replay checks the matching on real model output. It cannot show whether a declined gap stays declined when an uncached run words it differently. That is what the three uncached runs are for. The matching rule handles one kind of change in wording: a different span in the same question ("cluster" against "Kubernetes cluster"). The unit tests cover that rule.
+
+### What it does not change (`lane-b-regression.txt`, `scripts/eval/ab_readonly.py`)
+
+`ab_readonly.py` compares the binary at 25f2bc7 with this lane's binary, both on ontology 1.2. The comparison covers the demo's harvest and eight queries, the 90 RCAEval per-case rankings (chain AC@1 0.93) and the `similar_eval.py` output (top-1 0.92). All are identical except `validate`, whose output is meant to change. `ab_compare.sh` itself writes stores into the eval data directory, so it was not run.

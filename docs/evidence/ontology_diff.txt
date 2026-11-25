@@ -1,3 +1,4 @@
+# scripts/eval/ontology_diff_eval.py --demo <demo on ontology 1.2>
 | mutation | BREAKING lines | predicted facts quarantined (per graph) | re-harvest quarantined | match |
 |---|---|---|---|---|
 | remove used class evt:ConfigChange | BREAKING class removed: evt:ConfigChange (2 uses) | config/config.jsonl 12 | config/config.jsonl 12 | yes |
