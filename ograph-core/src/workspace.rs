@@ -179,8 +179,9 @@ impl Workspace {
         let read = |n: &str, d: &str| std::fs::read_to_string(dir.join(n)).unwrap_or_else(|_| d.to_owned());
         let ontology = Ontology::load(&read("ontology.ttl", crate::ontology::DEFAULT_TTL), &read("shapes.ttl", crate::ontology::DEFAULT_SHAPES))?;
         let path = dir.join("store.redb");
+        // A store from before the history tables cannot be read until an open has added them.
         let store = match read_only.then(|| Store::open_read_only(&path)) {
-            Some(Ok(s)) => s,
+            Some(Ok(s)) if s.snapshot().is_ok() => s,
             _ => Store::open(&path)?,
         };
         Ok(Self { root: root.to_owned(), dir, config, ontology, store })
