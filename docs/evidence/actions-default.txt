@@ -114,3 +114,14 @@ call failed or was refused. Total $0.141 by total_cost_usd (282 calls for criter
    that did not set `actions`, once; one that sets `actions = false` asks nothing.
 
 VERDICT: KEEP. `actions` is on by default; `actions = false` turns it off.
+
+FOLLOW-UP (integration, 2026-11-25)
+-----------------------------------
+examples/demo pins `actions = false` on its `discussions` source until one harvest with the demo's
+model refreshes its cache (pi is out of quota). The `chat-actions` source keeps `actions = true` as
+before, so the demo shows actions exactly as it did. With the pin, on this branch's binary, a fresh
+copy of examples/demo harvested once and then scripts/eval/llm_gate.py: 16/16 threads classified
+as labeled, replay 185 -> 185 cache lines (0 model calls), MODEL GATE: PASS.
+The extra `similar INC-5377` mitigation for INC-4120 is correct and stays: it comes from the demo
+thread "... Raised pool size to 200, latency recovered. INC-4120", which is INC-4120's recorded
+mitigation; the demo data only dates that message 19 days after the incident.
