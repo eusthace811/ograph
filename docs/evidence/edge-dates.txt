@@ -1,0 +1,63 @@
+edge_dates_eval.py, ogrep edge-dates 9ce4230, 2026-11-25, load average { 15.43 11.11 7.40 }
+
+microservices-demo: HEAD c7cb6d5b of 2026-10-27, 2581 first-parent commits, 502 change an operations file
+  --entities         0.05, 0.06, 0.04 s (median 0.05)
+  --entities --dated 1.31, 1.43, 1.23 s (median 1.31)
+  dependencies (pairs): 17; 13 came with their service, 0 have no commit, 4 were added to a service already declared
+    2024-04-08  frontend -> shoppingassistantservice 2932624
+    2018-08-23  frontend -> adservice f35fdbc
+    2018-06-26  checkoutservice -> cartservice f3fe6d4
+    2018-06-22  checkoutservice -> currencyservice 7d1d1d6
+  RCAEval incidents opened 2024-01-15 to 2024-02-21 (90): 1 dated edges are later than the first, 1 later than the last
+    frontend -> shoppingassistantservice: withheld from 90 of 90 incidents
+  an incident 30 days before HEAD: 0 of 17 dependencies withheld
+  an incident 90 days before HEAD: 0 of 17 dependencies withheld
+  an incident 365 days before HEAD: 0 of 17 dependencies withheld
+
+online-boutique: HEAD aa18ed8 of 2026-11-22, 1 first-parent commits, 1 change an operations file
+  --entities         0.02, 0.02, 0.03 s (median 0.02)
+  --entities --dated 0.06, 0.06, 0.06 s (median 0.06)
+  dependencies (pairs): 15; 15 came with their service, 0 have no commit, 0 were added to a service already declared
+  RCAEval incidents opened 2024-01-15 to 2024-02-21 (90): 0 dated edges are later than the first, 0 later than the last
+  an incident 30 days before HEAD: 0 of 15 dependencies withheld
+  an incident 90 days before HEAD: 0 of 15 dependencies withheld
+  an incident 365 days before HEAD: 0 of 15 dependencies withheld
+
+opentelemetry-demo: HEAD 53a319e2 of 2026-11-25, 2530 first-parent commits, 802 change an operations file
+  --entities         0.04, 0.04, 0.04 s (median 0.04)
+  --entities --dated 1.86, 1.76, 2.06 s (median 1.86)
+  dependencies (pairs): 80; 50 came with their service, 0 have no commit, 30 were added to a service already declared
+    2026-09-16  agent -> flagd 3cb06d3
+    2026-09-16  load-generator -> agent 3cb06d3
+    2026-09-04  product-catalog -> opamp-server 8c47d47
+    2026-09-01  frontend-proxy -> load-generator 7459c1a
+    2026-08-20  chatbot -> opamp-server 60a6322
+    2026-08-04  cart -> opamp-server 1a9412e
+    2026-07-22  mcp -> otel-collector d8dfb6f
+    2026-07-08  frontend-proxy -> opamp-server 0f9e8cb
+    2026-07-08  otel-collector -> opamp-server 0f9e8cb
+    2026-06-24  frontend-proxy -> chatbot 78e00fd
+    2026-05-23  shipping -> flagd 4ec9379
+    2026-05-16  frontend-proxy -> firepit 49a7631
+    2026-04-13  frontend-proxy -> telemetry-docs 5b70741
+    2026-04-08  product-catalog -> astronomy-db b29c662
+    2025-09-05  email -> flagd 7830d56
+    2025-01-14  load-generator -> frontend-proxy ea8456f
+    2025-01-10  frontend -> checkout 0a39d44
+    2025-01-10  frontend -> product-catalog 8cb101d
+    2025-01-10  recommendation -> product-catalog 8cb101d
+    2024-12-23  frontend -> recommendation 2210b5b
+    2024-12-22  frontend -> currency e3548c6
+    2024-12-22  frontend -> image-provider d5c0efe
+    2024-12-19  frontend -> shipping fca8fd1
+    2024-12-19  frontend -> cart 4f8ddef
+    2024-12-19  frontend -> ad d6efe7f
+    2024-12-19  frontend -> quote 5dbe836
+    2024-12-16  accounting -> otel-collector 9b7cfad
+    2024-12-16  frontend -> otel-collector 9b7cfad
+    2024-05-13  frontend -> flagd f909932
+    2022-12-25  jaeger -> prometheus b9b5cd9
+  an incident 30 days before HEAD: 0 of 80 dependencies withheld
+  an incident 90 days before HEAD: 4 of 80 dependencies withheld
+  an incident 365 days before HEAD: 14 of 80 dependencies withheld
+
