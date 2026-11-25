@@ -27,3 +27,73 @@ Command (from the lane-r-uses worktree):
     --cases "/Volumes/External Disk/Github/graph-rag/data/rcaeval-cases" --work target/uses-gate-haiku \
     --model --llm-label claude:claude-haiku-5-5 \
     --llm '["python3", "<worktree>/scripts/eval/claude_model.py", "--model", "claude-haiku-5-5", "--cost-log", "<worktree>/target/uses-gate-haiku-cost.jsonl"]'
+
+RESULT (2026-11-25): PASS, on claude-haiku-5-5
+-----------------------------------------------
+The demo base harvest asked Haiku 47 times (every thread of discussions/ops.json and
+chat-actions/actions.json; 0 failed calls, every call answered by claude-haiku-5-5), $0.027 by
+claude's total_cost_usd. The base store holds 25 committed evt:OperatorAction facts, 2 of them
+with evt:during on an incident; the cached run of uses.txt had none. chat-actions/actions.json
+now feeds 2510 facts (126 in uses.txt) and incidents.json 58 (42): the operator-action cascade
+is in the trials. Over the 25 in-scope files, precision and recall are 1.000 on facts
+(4180/4180/4180), chains (95/95/95) and verdicts (19/19/19). Naming sources as before (out of
+scope, reported apart). Verdict for lane R unchanged: KEEP. This measures Haiku's answers, not
+gpt-6-luna's. Full output below.
+
+seed 13; RCAEval cases: c-18804bdd7f c-2cd85ef30d c-2e930efa74 c-3bb38f3165 c-50e3775f48 c-52eb6b0c94 c-648fd48698 c-6e97052d57 c-e425dee775 c-e5abfe8ebd c-ec15cb00cd c-f07bba6dfd
+demo: accepted the rank-1 chain of 4 incidents
+rca: accepted the rank-1 chain of 12 incidents
+demo/alerts.json [in scope] uses 5 ms  facts 56/56m/56p  chains 6/6m/6p  verdicts 3/3m/3p  new 3/3m/3p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+demo/catalog/catalog-info.yaml [catalog] uses 5 ms  facts 0/0m/0p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+demo/chat-actions/actions.json [in scope] uses 15 ms  facts 2510/2510m/2510p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+demo/config.jsonl [in scope] uses 5 ms  facts 14/14m/14p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+demo/deployments.jsonl [in scope] uses 6 ms  facts 21/21m/21p  chains 1/1m/1p  verdicts 1/1m/1p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+demo/discussions/ops.json [in scope] uses 8 ms  facts 474/474m/474p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 2/2m/2p  shared-incident triples left out 0  EXACT
+demo/incidents.json [in scope] uses 19 ms  facts 58/58m/58p  chains 7/7m/7p  verdicts 4/4m/4p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+demo/logs.jsonl [in scope] uses 6 ms  facts 9/9m/9p  chains 1/1m/1p  verdicts 1/1m/1p  new 0/0m/0p  moved 1/1m/1p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+demo/metrics.csv [in scope] uses 6 ms  facts 27/27m/27p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+demo/news.jsonl [in scope] uses 5 ms  facts 15/15m/15p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+demo/ownership.jsonl [ownership] uses 8 ms  facts 24/24m/24p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+demo/runbooks/payments.md [docs] uses 6 ms  facts 2/9m/2p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 1/1m/1p  shared-incident triples left out 0  MISMATCH
+    missed facts: ('id:ev/alert-pay-gw-paygwqueuedepth-1794608800000', 'evt:at', '2026-11-13T22:26:40Z')
+    missed facts: ('id:ev/alert-pay-gw-paygwqueuedepth-1794608800000', 'evt:on', 'id:app/payments-api')
+    missed facts: ('id:ev/alert-pay-gw-paygwqueuedepth-1794608800000', 'evt:severity', 'SEV3')
+demo/runbooks/platform.md [docs] uses 6 ms  facts 1/8m/1p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  MISMATCH
+    missed facts: ('id:ev/alert-finder-finderslowqueries-1794522400000', 'evt:at', '2026-11-12T22:26:40Z')
+    missed facts: ('id:ev/alert-finder-finderslowqueries-1794522400000', 'evt:on', 'id:app/search-api')
+    missed facts: ('id:ev/alert-finder-finderslowqueries-1794522400000', 'evt:severity', 'SEV3')
+rca/c-18804bdd7f/incidents.json [in scope] uses 11 ms  facts 9/9m/9p  chains 6/6m/6p  verdicts 1/1m/1p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-18804bdd7f/metrics.csv [in scope] uses 14 ms  facts 198/198m/198p  chains 6/6m/6p  verdicts 1/1m/1p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-2cd85ef30d/incidents.json [in scope] uses 8 ms  facts 9/9m/9p  chains 9/9m/9p  verdicts 1/1m/1p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-2cd85ef30d/traces.jsonl [in scope] uses 4 ms  facts 0/0m/0p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-2e930efa74/incidents.json [in scope] uses 9 ms  facts 9/9m/9p  chains 7/7m/7p  verdicts 1/1m/1p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-3bb38f3165/incidents.json [in scope] uses 9 ms  facts 9/9m/9p  chains 10/10m/10p  verdicts 1/1m/1p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-3bb38f3165/traces.jsonl [in scope] uses 11 ms  facts 35/35m/35p  chains 2/2m/2p  verdicts 0/0m/0p  new 2/2m/2p  moved 2/2m/2p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-50e3775f48/incidents.json [in scope] uses 9 ms  facts 9/9m/9p  chains 8/8m/8p  verdicts 1/1m/1p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-50e3775f48/metrics.csv [in scope] uses 10 ms  facts 297/297m/297p  chains 8/8m/8p  verdicts 1/1m/1p  new 1/1m/1p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-648fd48698/logs.jsonl [in scope] uses 5 ms  facts 0/0m/0p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-648fd48698/traces.jsonl [in scope] uses 12 ms  facts 7/7m/7p  chains 2/2m/2p  verdicts 0/0m/0p  new 1/1m/1p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-e425dee775/metrics.csv [in scope] uses 10 ms  facts 144/144m/144p  chains 6/6m/6p  verdicts 1/1m/1p  new 2/2m/2p  moved 0/0m/0p  quarantine 9/9m/9p  shared-incident triples left out 0  EXACT
+rca/c-e5abfe8ebd/incidents.json [in scope] uses 9 ms  facts 9/9m/9p  chains 8/8m/8p  verdicts 1/1m/1p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-e5abfe8ebd/metrics.csv [in scope] uses 10 ms  facts 261/261m/261p  chains 8/8m/8p  verdicts 1/1m/1p  new 0/0m/0p  moved 0/0m/0p  quarantine 9/9m/9p  shared-incident triples left out 0  EXACT
+rca/c-ec15cb00cd/logs.jsonl [in scope] uses 4 ms  facts 0/0m/0p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+rca/c-ec15cb00cd/traces.jsonl [in scope] uses 5 ms  facts 0/0m/0p  chains 0/0m/0p  verdicts 0/0m/0p  new 0/0m/0p  moved 0/0m/0p  quarantine 0/0m/0p  shared-incident triples left out 0  EXACT
+
+in scope: precision / recall per category (correct / measured / predicted)
+  facts       precision 1.000  recall 1.000  (4180 / 4180 / 4180)
+  chains      precision 1.000  recall 1.000  (95 / 95 / 95)
+  verdicts    precision 1.000  recall 1.000  (19 / 19 / 19)
+  new         precision 1.000  recall 1.000  (9 / 9 / 9)
+  moved       precision 1.000  recall 1.000  (3 / 3 / 3)
+  quarantine  precision 1.000  recall 1.000  (20 / 20 / 20)
+
+naming sources: precision / recall per category (correct / measured / predicted)
+  facts       precision 1.000  recall 0.659  (27 / 41 / 27)
+  chains      precision 1.000  recall 1.000  (0 / 0 / 0)
+  verdicts    precision 1.000  recall 1.000  (0 / 0 / 0)
+  new         precision 1.000  recall 1.000  (0 / 0 / 0)
+  moved       precision 1.000  recall 1.000  (0 / 0 / 0)
+  quarantine  precision 1.000  recall 1.000  (1 / 1 / 1)
+
+gate (in scope; facts, chains, verdicts at 1.000): PASS
+exit 0
