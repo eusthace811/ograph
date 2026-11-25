@@ -8,6 +8,13 @@ Each case is one incident with a known root-cause application. Each arm answers 
   raw     headless pi with bash and read over the raw source files; no store, no `ograph`
   chains  no agent: rank 1 of `ograph chains`, the floor
 
+--runner claude runs the agent arms in headless Claude Code (`claude -p`) instead of pi, with
+the same tools and text per arm: mcp gets only ograph's MCP server (`ograph serve --mcp`, the
+server pi's extension wraps) and scripts/agent/SKILL.md appended to the system prompt; skill and
+raw get Bash and Read, and skill the same <available_skills> block pi writes for --skill. No user
+or project settings, memory, hooks, skills, slash commands or other MCP servers load; the init
+event of every run is checked for that, and a run that shows anything else is voided.
+
 Every agent arm gets the same prompt and ends its reply with `ROOT: <application>`. A run passes
 when that application is the labeled root cause (AC@1). Per run the script also records tool
 calls, wall time, the tokens and cost pi reports, and whether the reply calls the cause a
@@ -34,6 +41,7 @@ Usage:
       [--reference rcaeval_score.json] [--misses] [--parallel 4] [--work DIR] [--fresh]
       [--guidance parent=REV,candidate=REV --arms mcp@parent,mcp@candidate,chains]
       [--holdout 25 --holdout-seed 13 --skip-sample]
+      [--runner claude --model claude-haiku-5-5 --run-budget 1.0]
   agent_rca_eval.py --mirror-cases data/rcaeval-cases target/rcaeval-ref
       (a writable copy of the cases by symlink, to run rcaeval_score.py for --reference)
 
@@ -100,6 +108,7 @@ class Arm:
 class Ctx:
     """Paths one run of the harness shares. Everything an agent may open sits under `work`."""
     halt = None  # why no further model call is worth making: the provider's usage limit
+    backed_off = False  # claude: the one back-off after a limit refusal has been spent
 
     def __init__(self, a):
         self.a = a
@@ -320,6 +329,127 @@ def digest(stdout):
     return events, text, tokens, cost, dict(tools)
 
 
+CLAUDE_TOOL = {"Bash": "bash", "Read": "read"}
+
+
+def claude_tool(name):
+    """Claude Code's tool names as pi's, so the arm rules, counts and transcripts compare:
+    mcp__ograph__chains is ograph_chains, Bash is bash."""
+    if name.startswith("mcp__ograph__"): return "ograph_" + name[len("mcp__ograph__"):]
+    return CLAUDE_TOOL.get(name, name)
+
+
+def claude_digest(stdout):
+    """Claude Code's stream-json reduced to what `digest` returns for pi, plus the init event and
+    the result event. Every tool_use and every tool_result becomes an event the leak check reads."""
+    events, text, tokens, cost, tools, init, result = [], "", 0, 0.0, collections.Counter(), None, None
+    names = {}
+    for line in stdout.splitlines():
+        try: e = json.loads(line)
+        except ValueError: continue
+        kind = e.get("type")
+        if kind == "system" and e.get("subtype") == "init": init = e
+        elif kind == "assistant":
+            said = ""
+            for c in (e.get("message") or {}).get("content") or []:
+                if c.get("type") == "tool_use":
+                    name = names[c.get("id")] = claude_tool(c.get("name", "?"))
+                    tools[name] += 1
+                    events.append({"type": "tool_execution_start", "toolName": name, "args": c.get("input") or {}})
+                elif c.get("type") == "text": said += c.get("text", "")
+            if said: text = said; events.append({"type": "assistant", "text": said})
+        elif kind == "user":
+            content = (e.get("message") or {}).get("content")
+            for c in content if isinstance(content, list) else []:
+                if c.get("type") != "tool_result": continue
+                body = c.get("content")
+                parts = [{"type": "text", "text": body}] if isinstance(body, str) else [x for x in body or [] if isinstance(x, dict)]
+                events.append({"type": "tool_execution_end", "toolName": names.get(c.get("tool_use_id"), "?"), "result": {"content": parts}, "isError": bool(c.get("is_error"))})
+        elif kind == "result":
+            result = e
+            if isinstance(e.get("result"), str) and e["result"].strip() and not e.get("is_error"): text = e["result"]
+            usage = e.get("usage") or {}
+            tokens = sum(usage.get(k, 0) or 0 for k in ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+            cost = e.get("total_cost_usd") or 0.0
+    return events, text, tokens, cost, dict(tools), init, result
+
+
+BUILTIN_PLUGIN = re.compile(r"@builtin$")
+
+
+def isolation_breach(init, want_tools, mcp):
+    """What a Claude Code run loaded beyond its arm: the tools, MCP servers, skills, slash
+    commands, plugins (only Claude Code's built-in ones may load) and memory it reports at init."""
+    if not init: return ["no init event"]
+    found = []
+    if sorted(init.get("tools") or []) != sorted(want_tools): found.append(f"tools {init.get('tools')}")
+    servers = [(s.get("name"), s.get("status")) for s in init.get("mcp_servers") or []]
+    if servers != ([("ograph", "connected")] if mcp else []): found.append(f"mcp_servers {servers}")
+    if init.get("skills"): found.append(f"skills {init['skills']}")
+    # ograph's own MCP prompts (`investigate`) show as slash commands; the agent has no tool to run one.
+    other = [c for c in init.get("slash_commands") or [] if not (mcp and c.startswith("mcp__ograph__"))]
+    if other: found.append(f"slash_commands {other}")
+    extra = [p.get("source") for p in init.get("plugins") or [] if not BUILTIN_PLUGIN.search(p.get("source") or "")]
+    if extra: found.append(f"plugins {extra}")
+    if init.get("memory_paths"): found.append(f"memory {init['memory_paths']}")
+    return found
+
+
+LIMIT = re.compile(r"usage limit|hit your limit|rate.?limit|limit reached|out of extra usage", re.I)
+
+
+def claude_answer(flags, first_on_path, want_tools, mcp=False):
+    """An arm that asks headless Claude Code. `flags(ctx)` are the arm's own claude flags (its
+    tools and appended system prompt); the isolation flags, the retry and the limit stop are
+    shared. The prompt goes on stdin: --allowedTools and --mcp-config take several values."""
+    def answer(ctx, case, ws):
+        cmd = [shutil.which("claude"), "-p", "--output-format", "stream-json", "--verbose", "--model", ctx.a.model,
+               "--setting-sources", "", "--settings", json.dumps({"autoMemoryEnabled": False}), "--strict-mcp-config",
+               "--disable-slash-commands", "--no-session-persistence", "--permission-mode", "dontAsk",
+               "--max-budget-usd", str(ctx.a.run_budget), *flags(ctx)]
+        if ctx.halt: return Answer("error", why=f"not run: {ctx.halt}")
+        env = {k: v for k, v in ctx.env(first_on_path(ctx)).items() if not k.startswith("CLAUDE") and k != "AI_AGENT"}
+        why = ""
+        for attempt in range(3):
+            if ctx.halt: return Answer("error", why=f"not run: {ctx.halt}")
+            t = time.time()
+            try:
+                p = subprocess.run(cmd, cwd=ws, env=env, input=PROMPT.format(incident=case.incident), capture_output=True, text=True, timeout=ctx.a.timeout)
+                out, timed_out = p.stdout, False
+            except subprocess.TimeoutExpired as e:
+                out, timed_out = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or ""), True
+            events, text, tokens, cost, tools, init, result = claude_digest(out)
+            if init: events.insert(0, {"type": "init", **{k: init.get(k) for k in ("model", "tools", "mcp_servers", "skills", "slash_commands", "plugins", "agents", "memory_paths", "permissionMode", "claude_code_version")}})
+            got = Answer("", parse_root(text), "", text, sum(tools.values()), tools, time.time() - t, tokens, cost, events)
+            breach = isolation_breach(init, want_tools(ctx), mcp) if init or not timed_out else []
+            if breach:
+                got.status, got.why = "leak", "isolation: " + "; ".join(breach)[:500]; return got
+            if timed_out and tools:
+                got.why = f"no answer within {ctx.a.timeout} s"; return got
+            if result and result.get("subtype") == "error_max_budget_usd" and tools:
+                got.why = f"over the per-run budget ${ctx.a.run_budget}"; return got
+            if not timed_out and p.returncode == 0 and result and not result.get("is_error") and text.strip(): return got
+            said = "" if timed_out else (p.stderr or "") + " " + json.dumps((result or {}).get("result", "")) + " " + out[-500:]
+            why = f"no reply within {ctx.a.timeout} s" if timed_out else f"exit {p.returncode}: {said.strip()[-200:]}"
+            if not timed_out and LIMIT.search(said):
+                with ctx.lock:
+                    if not ctx.backed_off:
+                        ctx.backed_off = True
+                        print(f"claude refused on a limit; backing off {ctx.a.backoff} s once: {why}", file=sys.stderr, flush=True)
+                        time.sleep(ctx.a.backoff); continue
+                    ctx.halt = "the provider's usage limit is reached"
+                break
+            if attempt < 2: time.sleep(30 * (attempt + 1))
+        return Answer("error", why=f"claude failed 3 times, last: {why}" if not ctx.halt else f"claude refused: {why}")
+    return answer
+
+
+def agent_answer(pi_flags, claude_flags, first_on_path, claude_tools, mcp=False):
+    """The arm's answer on the runner --runner names: the same tools and text on either."""
+    on_pi, on_claude = pi_answer(pi_flags, first_on_path), claude_answer(claude_flags, first_on_path, claude_tools, mcp)
+    return lambda ctx, case, ws: (on_claude if ctx.a.runner == "claude" else on_pi)(ctx, case, ws)
+
+
 def pi_answer(flags, first_on_path):
     """An arm that asks headless pi. `flags(ctx)` are the arm's own pi flags; the rest, and the
     retry on a provider failure, follow sparql_agent_eval.py."""
@@ -365,7 +495,7 @@ def extension_tools(ctx, guide=""):
 
 
 def mcp_unavailable(ctx, guide=""):
-    if not shutil.which("pi"): return "pi is not on PATH"
+    if (why := needs_runner(ctx)): return why
     if guide not in ctx.guides: return f"no --guidance {guide}=REV"
     ext = ctx.extension_of(guide)
     seed = ext.parent / "seed"
@@ -376,19 +506,50 @@ def mcp_unavailable(ctx, guide=""):
     return None if extension_tools(ctx, guide) else "the generated extension registers no tools"
 
 
-def needs_pi(ctx):
-    return None if shutil.which("pi") else "pi is not on PATH"
+def needs_runner(ctx):
+    runner = getattr(ctx.a, "runner", "pi") or "pi"
+    return None if shutil.which(runner) else f"{runner} is not on PATH"
+
+
+needs_pi = needs_runner
+
+
+def agent_instructions(ctx, guide=""):
+    """scripts/agent/SKILL.md without its front matter: what install.py puts in pi's extension."""
+    return (ctx.agent_of(guide) / "SKILL.md").read_text().split("---", 2)[2].strip()
+
+
+def skill_prompt(ctx, guide=""):
+    """The block pi appends to its system prompt for --skill (formatSkillsForPrompt): the skill's
+    name, description and SKILL.md path, which the agent reads with its read tool."""
+    front = (ctx.skill_of(guide) / "SKILL.md").read_text().split("---", 2)[1]
+    field = lambda k: re.search(rf"^{k}:\s*(.*)$", front, re.M)[1].strip()
+    esc = lambda x: x.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&apos;")
+    return "\n".join(["The following skills provide specialized instructions for specific tasks.",
+                      "Use the read tool to load a skill's file when the task matches its description.",
+                      "Resolve relative paths against the skill's directory (parent of SKILL.md). Use absolute paths in tool calls.",
+                      "", "<available_skills>", "  <skill>", f"    <name>{esc(field('name'))}</name>",
+                      f"    <description>{esc(field('description'))}</description>",
+                      f"    <location>{esc(str(ctx.skill_of(guide) / 'SKILL.md'))}</location>", "  </skill>", "</available_skills>"])
+
+
+def mcp_config(ctx):
+    return json.dumps({"mcpServers": {"ograph": {"type": "stdio", "command": str(ctx.bin), "args": ["serve", "--mcp"]}}})
 
 
 def mcp_arm(guide=""):
     return Arm("mcp" + (f"@{guide}" if guide else ""), "pi with only the ograph tools (scripts/agent extension)", True,
-               pi_answer(lambda ctx: ["--extension", str(ctx.extension_of(guide)), "--tools", ",".join("ograph_" + t for t in extension_tools(ctx, guide))], lambda ctx: ctx.nobin),
+               agent_answer(lambda ctx: ["--extension", str(ctx.extension_of(guide)), "--tools", ",".join("ograph_" + t for t in extension_tools(ctx, guide))],
+                            lambda ctx: ["--tools", "", "--mcp-config", mcp_config(ctx), "--allowedTools", "mcp__ograph", "--append-system-prompt", agent_instructions(ctx, guide)],
+                            lambda ctx: ctx.nobin, lambda ctx: ["mcp__ograph__" + t for t in extension_tools(ctx, guide)], mcp=True),
                lambda ctx: mcp_unavailable(ctx, guide), lambda name, args: None if name.startswith("ograph_") else "not an ograph tool", guide)
 
 
 def skill_arm(guide=""):
     return Arm("skill" + (f"@{guide}" if guide else ""), "pi with skills/ograph, bash and read", True,
-               pi_answer(lambda ctx: ["--skill", str(ctx.skill_of(guide)), "--tools", "bash,read"], lambda ctx: ctx.bin.parent),
+               agent_answer(lambda ctx: ["--skill", str(ctx.skill_of(guide)), "--tools", "bash,read"],
+                            lambda ctx: ["--tools", "Bash,Read", "--allowedTools", "Bash,Read", "--append-system-prompt", skill_prompt(ctx, guide)],
+                            lambda ctx: ctx.bin.parent, lambda ctx: ["Bash", "Read"]),
                lambda ctx: needs_pi(ctx) or (None if guide in ctx.guides else f"no --guidance {guide}=REV"), guide=guide)
 
 
@@ -405,7 +566,8 @@ ARMS = {arm.name: arm for arm in (
     mcp_arm(),
     skill_arm(),
     Arm("raw", "pi with bash and read over the raw files, no ograph", False,
-        pi_answer(lambda ctx: ["--tools", "bash,read"], lambda ctx: ctx.nobin),
+        agent_answer(lambda ctx: ["--tools", "bash,read"], lambda ctx: ["--tools", "Bash,Read", "--allowedTools", "Bash,Read"],
+                     lambda ctx: ctx.nobin, lambda ctx: ["Bash", "Read"]),
         needs_pi, lambda name, args: "uses ograph" if re.search(r"\bograph\b", args) else None),
     Arm("chains", "no agent: `ograph chains` rank 1", True, chains_answer),
 )}
@@ -415,7 +577,7 @@ ARMS = {arm.name: arm for arm in (
 
 def judge(ctx, case, arm, ws, got):
     """Fill in the run's status. A leak outranks the answer: the run is void either way."""
-    if got.status == "error": return got
+    if got.status in ("error", "leak"): return got
     leaks = leaks_in_transcript(ctx, ws, got.events, arm)
     if leaks: got.status, got.why = "leak", "; ".join(leaks)[:600]
     elif not got.root: got.status, got.why = "fail", got.why or "no ROOT line in the reply"
@@ -439,7 +601,8 @@ def sign_test(wins, losses):
 def transcript(case, arm, n, row, events):
     out = [f"# {case.key} arm {arm.name} run {n}: {row['status']}, answered {row['root'] or '-'}, labeled {case.root}", ""]
     for e in events:
-        if e["type"] == "tool_execution_start": out.append(f"$ {e['toolName']} {json.dumps(e['args'], ensure_ascii=False)}")
+        if e["type"] == "init": out.append("init " + json.dumps({k: v for k, v in e.items() if k != "type"}, ensure_ascii=False) + "\n")
+        elif e["type"] == "tool_execution_start": out.append(f"$ {e['toolName']} {json.dumps(e['args'], ensure_ascii=False)}")
         elif e["type"] == "tool_execution_end":
             body = "".join(c.get("text", "") for c in (e.get("result") or {}).get("content", []) if isinstance(c, dict))
             out.append(("! " if e.get("isError") else "") + (body if len(body) <= 3000 else body[:3000] + f"\n... [{len(body) - 3000} more characters]") + "\n")
@@ -459,7 +622,8 @@ def one(ctx, case, arm, n, out):
         if ws and not ctx.a.keep: shutil.rmtree(ws.parent, ignore_errors=True)
     row = {"case": case.key, "arm": arm.name, "run": n, "status": got.status, "root": got.root, "label": case.root, "why": got.why,
            "hypothesis": bool(HYPOTHESIS.search(got.text)), "tool_calls": got.tool_calls, "tools": got.tools,
-           "wall_s": round(got.wall_s, 1), "tokens": got.tokens, "cost": round(got.cost, 4)}
+           "wall_s": round(got.wall_s, 1), "tokens": got.tokens, "cost": round(got.cost, 4),
+           **({"runner": ctx.a.runner, "model": ctx.a.model} if arm.name != "chains" and getattr(ctx.a, "runner", None) else {})}
     if got.events:
         path = out / "transcripts" / arm.name / f"{case.key.replace('/', '_')}-{n}.txt"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -486,7 +650,7 @@ def report(cases, arms, skipped, rows, runs, reference, model):
                   f"| {v['stable_pass']} | {v['flaky']} | {v['stable_fail']} | {v['error'] + v['missing']} "
                   f"| {hedged} | {med([r['tool_calls'] for r in scored]):g} | {med([r['wall_s'] for r in scored]):.1f} "
                   f"| {med([r['tokens'] for r in scored]):.0f} | {sum(r['cost'] for r in mine):.2f} |")
-        print("\nmedians per scored run; cost is the arm's total as pi prices it")
+        print("\nmedians per scored run; cost is the arm's total as the runner reports it (pi's list price, or claude's total_cost_usd)")
         def rate(arm, c):
             s = [r["status"] == "pass" for r in by[(arm, c.key)] if r["status"] in ("pass", "fail")]
             return sum(s) / len(s) if s else None
@@ -548,7 +712,10 @@ def main(argv=None):
     ap.add_argument("--bin"); ap.add_argument("--cases"); ap.add_argument("--demo"); ap.add_argument("--out")
     ap.add_argument("--sample", type=int, default=30); ap.add_argument("--seed", type=int, default=12)
     ap.add_argument("--runs", type=int, default=3); ap.add_argument("--arms", default=",".join(ARMS))
-    ap.add_argument("--model", default="openai/gpt-5.6-terra"); ap.add_argument("--parallel", type=int, default=4)
+    ap.add_argument("--model", help="default openai/gpt-5.6-terra on pi, claude-haiku-5-5 on claude"); ap.add_argument("--parallel", type=int, default=4)
+    ap.add_argument("--runner", choices=("pi", "claude"), default="pi", help="the agent CLI the model arms run in")
+    ap.add_argument("--run-budget", type=float, default=1.0, help="claude: --max-budget-usd for each run, a safety cap")
+    ap.add_argument("--backoff", type=int, default=240, help="claude: seconds to wait once after a limit refusal before stopping")
     ap.add_argument("--timeout", type=int, default=600); ap.add_argument("--work"); ap.add_argument("--reference")
     ap.add_argument("--misses", action="store_true", help="add the cases --reference ranks wrong, as suite rcaeval-miss")
     ap.add_argument("--holdout", type=int, default=0, help="add N cases outside the sample and the misses, as suite rcaeval-heldout")
@@ -561,6 +728,7 @@ def main(argv=None):
     ap.add_argument("--fresh", action="store_true"); ap.add_argument("--keep", action="store_true", help="keep each run's workspace")
     ap.add_argument("--strict", action="store_true", help="an arm that cannot run fails the harness instead of being skipped")
     a = ap.parse_args(argv)
+    a.model = a.model or ("claude-haiku-5-5" if a.runner == "claude" else "openai/gpt-5.6-terra")
     if a.mirror_cases: return mirror(*a.mirror_cases)
     if not a.bin or not a.out or not (a.cases or a.demo): ap.error("--bin, --out and one of --cases or --demo are required")
     unknown = [n for n in a.arms.split(",") if not arm_named(n)]
@@ -604,7 +772,7 @@ def main(argv=None):
     if not a.work: shutil.rmtree(ctx.work, ignore_errors=True)
     for label, rev in ctx.guides.items():
         if rev: print(f"guidance {label} = {rev} ({subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--short', rev], capture_output=True, text=True).stdout.strip()})")
-    ok = report(cases, arms, skipped, [done[k] for k in sorted(done) if k in wanted], a.runs, a.reference, a.model)
+    ok = report(cases, arms, skipped, [done[k] for k in sorted(done) if k in wanted], a.runs, a.reference, f"{a.model} on {a.runner}")
     return 0 if ok else 1
 
 

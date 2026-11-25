@@ -172,6 +172,66 @@ class EndToEnd(unittest.TestCase):
         code, text, rows = self.harness("--arms", "raw,chains", "--report-only")
         self.assertIn("| raw | 0/0 (0.00) | 0 | 0 | 0 | 2 |", text)
 
+    def test_the_claude_runner_maps_each_arm_and_reads_its_stream(self):
+        fake = self.root / "fakebin"; fake.mkdir()
+        init = {"type": "system", "subtype": "init", "tools": ["Bash", "Read"], "mcp_servers": [], "skills": [], "slash_commands": [],
+                "plugins": [{"name": "cc-plugin-privacy", "source": "cc-plugin-privacy@builtin"}], "model": "claude-haiku-5-5"}
+        stream = [init,
+                  {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ograph chains INC-1"}}]}},
+                  {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": [{"type": "text", "text": "rank 1 cart"}]}]}},
+                  {"type": "assistant", "message": {"content": [{"type": "text", "text": "A hypothesis.\nROOT: cart"}]}},
+                  {"type": "result", "subtype": "success", "is_error": False, "result": "A hypothesis.\nROOT: cart", "total_cost_usd": 0.0125,
+                   "usage": {"input_tokens": 10, "output_tokens": 5, "cache_read_input_tokens": 100, "cache_creation_input_tokens": 0}}]
+        (fake / "stream.jsonl").write_text("".join(json.dumps(e) + "\n" for e in stream))
+        (fake / "claude").write_text(f"#!/bin/sh\nprintf '%s\\0' \"$@\" > {self.root}/argv\ncat > {self.root}/stdin\nenv > {self.root}/env\ncat {fake}/stream.jsonl\n")
+        (fake / "claude").chmod(0o755)
+        path = os.environ["PATH"]
+        os.environ["PATH"] = f"{fake}{os.pathsep}{path}"
+        os.environ["CLAUDECODE"] = "1"
+        try: code, text, rows = self.harness("--arms", "skill,chains", "--runner", "claude", "--runs", "1", "--parallel", "1")
+        finally: os.environ["PATH"] = path; os.environ.pop("CLAUDECODE")
+        skill = [r for r in rows if r["arm"] == "skill"]
+        self.assertEqual([(r["status"], r["root"], r["cost"], r["tokens"], r["tools"], r["model"], r["runner"]) for r in skill],
+                         [("pass", "cart", 0.0125, 115, {"bash": 1}, "claude-haiku-5-5", "claude"), ("fail", "cart", 0.0125, 115, {"bash": 1}, "claude-haiku-5-5", "claude")])
+        argv = (self.root / "argv").read_text().split("\0")
+        for flag in ("--setting-sources", "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence", "--max-budget-usd"):
+            self.assertIn(flag, argv)
+        self.assertEqual(argv[argv.index("--setting-sources") + 1], "")
+        self.assertEqual(argv[argv.index("--tools") + 1], "Bash,Read")
+        skill_text = argv[argv.index("--append-system-prompt") + 1]
+        self.assertIn("<available_skills>", skill_text)
+        self.assertIn(f"<location>{self.root / 'work' / 'skills' / 'ograph' / 'SKILL.md'}</location>", skill_text)
+        self.assertIn("Incident INC-2 is open.", (self.root / "stdin").read_text(), "the prompt goes on stdin")
+        self.assertNotIn("CLAUDECODE=", (self.root / "env").read_text(), "the eval agent does not inherit this session's Claude Code variables")
+        self.assertIn("model claude-haiku-5-5 on claude", text)
+        # A run whose init shows anything beyond its arm is voided.
+        init["skills"] = ["ograph"]; init["plugins"].append({"name": "x", "source": "x@user-marketplace"})
+        (fake / "stream.jsonl").write_text("".join(json.dumps(e) + "\n" for e in stream))
+        os.environ["PATH"] = f"{fake}{os.pathsep}{path}"
+        try: code, text, rows = self.harness("--arms", "skill,chains", "--runner", "claude", "--runs", "1", "--fresh")
+        finally: os.environ["PATH"] = path
+        self.assertEqual({(r["status"], r["why"]) for r in rows if r["arm"] == "skill"}, {("leak", "isolation: skills ['ograph']; plugins ['x@user-marketplace']")})
+
+    def test_claude_stream_names_mcp_tools_as_pi_does(self):
+        out = "\n".join(json.dumps(e) for e in [
+            {"type": "system", "subtype": "init", "tools": ["mcp__ograph__chains"], "mcp_servers": [{"name": "ograph", "status": "connected"}]},
+            {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "a", "name": "mcp__ograph__chains", "input": {"incident": "INC-1"}}]}},
+            {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "a", "content": "RCAEval cart", "is_error": True}]}},
+            {"type": "result", "result": "ROOT: cart", "total_cost_usd": 0.5, "usage": {}}])
+        events, text, tokens, cost, tools, init, result = h.claude_digest(out)
+        self.assertEqual(tools, {"ograph_chains": 1})
+        self.assertEqual(events[1], {"type": "tool_execution_end", "toolName": "ograph_chains", "result": {"content": [{"type": "text", "text": "RCAEval cart"}]}, "isError": True})
+        self.assertEqual((text, cost), ("ROOT: cart", 0.5))
+        self.assertEqual(h.isolation_breach(init, ["mcp__ograph__chains"], True), [])
+        self.assertEqual(h.isolation_breach(init, ["mcp__ograph__chains", "Bash"], True), ["tools ['mcp__ograph__chains']"])
+        self.assertEqual(h.isolation_breach({**init, "memory_paths": {"auto": "/m"}}, ["mcp__ograph__chains"], True), ["memory {'auto': '/m'}"])
+        self.assertEqual(h.isolation_breach({**init, "slash_commands": ["mcp__ograph__investigate"]}, ["mcp__ograph__chains"], True), [])
+        self.assertEqual(h.isolation_breach({**init, "slash_commands": ["mcp__ograph__investigate", "review"]}, ["mcp__ograph__chains"], True), ["slash_commands ['review']"])
+        ctx = types.SimpleNamespace(secret=[pathlib.Path("/repo")])
+        self.assertEqual(h.leaks_in_transcript(types.SimpleNamespace(**vars(ctx), bin=pathlib.Path("/w/bin/ograph"), nobin=pathlib.Path("/w/nobin"), work=pathlib.Path("/w"), guides={"": None},
+                                                                       skill_of=lambda g: pathlib.Path("/w/skills/ograph")), pathlib.Path("/w/runs/r/ops"), events, h.ARMS["mcp"]),
+                         ["ograph_chains: output contains 'rcaeval'"])
+
     def test_strict_fails_on_a_missing_arm(self):
         with self.assertRaisesRegex(SystemExit, "arm absent cannot run: its backend is not installed"): self.harness("--strict")
 
