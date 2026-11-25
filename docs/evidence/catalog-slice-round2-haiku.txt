@@ -1,0 +1,36 @@
+Phase 13 lane P, round 2 of the catalog slice gate, on Haiku in Claude Code.
+
+GATE AMENDMENT, written and committed before any Haiku run (2026-11-25)
+-----------------------------------------------------------------------
+Why. pi's usage limit stopped round 2 before its first call (catalog-slice-round2.txt), and pi
+has no Anthropic login. Round 2 runs on Haiku in headless Claude Code instead.
+
+What changes: the model and the runner, nothing else. Both binaries harvest with the
+[llm.extract] command
+  ["python3", "<worktree>/scripts/eval/claude_model.py", "--model", "claude-haiku-5-5", "--cost-log", ...]
+and model name "claude:claude-haiku-5-5" (catalog_slice_gate.py --llm, --llm-label), in place of
+the demo's pi command (openai/gpt-6-luna). claude_model.py calls `claude -p` (v2.1.332) with no
+tools, no settings, no memory, no MCP servers, no skills or slash commands, no saved session,
+thinking off and a neutral working directory, the counterpart of pi's --no-tools --no-session
+--no-extensions --no-skills --no-context-files --thinking off. The model ID claude-haiku-5-5 is
+what `claude --model claude-haiku-5-5` resolves to.
+
+Unchanged: binaries (parent target/lane-p/ograph-parent from 5179213; candidate
+target/lane-p/ograph-candidate-efc41b5, efc41b5), the demo and its labels, 3 runs each,
+interleaved, fresh workspaces with no cache, and the pass conditions as written in
+catalog_slice_gate.py and docs/EVIDENCE.md, decided on held-out set B only (--decide heldout):
+mean recall of the candidate above the parent's, with the candidate's lowest run at least the
+parent's highest; mean precision not lower; mean false positives not higher; B (cache keys)
+passes. Set A and the other groups are reported, not decided on.
+
+Round 1's numbers are gpt-6-luna's and are not compared with these. A fresh output directory,
+target/lane-p/gate2-haiku; nothing of target/lane-p/gate2 (pi's) is read. A model refusal on a
+limit is retried once after a few minutes; if it refuses again the result is NOT MEASURED. Run
+once. The verdict follows the written rule: the list goes on by default only if this run passes;
+otherwise it stays KEEP-OFF. The result is Haiku's, not gpt-6-luna's.
+
+Command (from the lane-p-catalog-slice worktree):
+  python3 scripts/eval/catalog_slice_gate.py --parent target/lane-p/ograph-parent \
+    --candidate target/lane-p/ograph-candidate-efc41b5 --demo examples/demo --out target/lane-p/gate2-haiku \
+    --decide heldout --runs 3 --llm-label claude:claude-haiku-5-5 \
+    --llm '["python3", "<worktree>/scripts/eval/claude_model.py", "--model", "claude-haiku-5-5", "--cost-log", "<worktree>/target/lane-p/gate2-haiku-cost.jsonl"]'
