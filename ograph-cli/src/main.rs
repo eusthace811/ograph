@@ -453,7 +453,12 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 let questions: Vec<String> = std::fs::read_to_string(file)?.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_owned).collect();
                 let catalog = ograph_core::gateway::Catalog::from_snapshot(&ws.store.snapshot()?, None)?;
                 let is_entity = |t: &str| matches!(catalog.resolve(ograph_core::vocab::ops::APPLICATION, t), ograph_core::gateway::Resolution::Exact(_));
-                let report = ograph_core::coverage::report(&ws.ontology, &llm, &questions, is_entity);
+                let mut report = ograph_core::coverage::report(&ws.ontology, &llm, &questions, is_entity);
+                let declined = ws.dir.join("declined.ttl");
+                if declined.exists() {
+                    let d = ograph_core::coverage::declines(&std::fs::read_to_string(&declined)?).map_err(|e| e.context(declined.display().to_string()))?;
+                    ograph_core::coverage::decline(&mut report, &d);
+                }
                 let path = out.unwrap_or_else(|| ws.dir.join("proposed.ttl"));
                 std::fs::write(&path, ograph_core::coverage::proposals(&report))?;
                 let gaps = report.iter().filter(|c| !c.gaps.is_empty() || c.failed.is_some()).count();
@@ -461,13 +466,17 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                     for c in r {
                         let names: Vec<&str> = c.covered.iter().filter_map(|n| n.name.as_deref()).collect();
                         let missing: Vec<&str> = c.gaps.iter().map(|n| n.text.as_str()).collect();
-                        let state = if c.failed.is_some() { "FAILED " } else if missing.is_empty() { "covered" } else { "GAP    " };
+                        let state = if c.failed.is_some() { "FAILED  " } else if !missing.is_empty() { "GAP     " } else if !c.declined.is_empty() { "DECLINED" } else { "covered " };
                         println!("{state} {}\n    uses {}{}", c.question, names.join(" "), if missing.is_empty() { String::new() } else { format!("\n    missing: {}", missing.join("; ")) });
+                        for d in &c.declined {
+                            println!("    declined by {}: \"{}\" ({}: {})", d.by, d.need.text, d.term, d.reason);
+                        }
                         for n in c.notes.iter().chain(&c.failed) {
                             println!("    note: {n}");
                         }
                     }
-                    println!("{} of {} questions need something the ontology lacks; proposals in {}", gaps, r.len(), path.display());
+                    let judged = r.iter().filter(|c| !c.declined.is_empty()).count();
+                    println!("{} of {} questions need something the ontology lacks; {judged} have declined gaps; proposals in {}", gaps, r.len(), path.display());
                 });
                 return Ok(gaps == 0);
             }

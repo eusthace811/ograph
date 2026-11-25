@@ -538,6 +538,7 @@ mod tests {
             gaps: vec![need("cluster", "class"), need("runs on cluster", "property")],
             notes: vec![],
             failed: None,
+            declined: vec![],
         }];
         let ont = Ontology::load(&format!("{DEFAULT_TTL}\n{}", crate::coverage::proposals(&report)), DEFAULT_SHAPES).unwrap();
         let lints = ont.lints(None);
