@@ -1,0 +1,72 @@
+Lane T: chronic signals. Tell the agent, in ograph's own outputs, when a signal is background.
+
+GATE, written and committed before any code of this lane (2026-11-25)
+=====================================================================
+Problem (diagnosed on the seen sample only, docs/evidence/agent-rca-haiku.txt and
+phase12-haiku.txt): on claude-haiku-5-5 the mcp arm reaches 26/90 AC@1 on the RCAEval sample and
+answers redis on 54 of 90 runs. redis's disk series is flat zero with steps; its first episode in
+the window scores severity 1.00 and is the earliest strong event, and it fires again and again
+before most incidents. `before`, `why`, `chains` and the MCP tools show it exactly like a fault's
+onset.
+
+Change (planned): mark each event whose series (same application, signal kind and metric or log
+template) fired repeatedly in the correlation window before the incident as chronic, with the
+count, in `before`, `chains`, `why`, the MCP tools and the lab. Only data known at the incident's
+open time is used, and the views follow --known-at as every view does. No service name and
+nothing RCAEval-specific. Chain scoring is not changed unless the deterministic gate still
+passes with it; the first candidate leaves it as it is.
+
+Binaries
+  Parent     target/lane-t/ograph-parent, `cargo build --release` at 74b3696 (integrate-phase-13).
+  Candidate  target/lane-t/ograph-candidate-<sha>, the lane's final commit.
+
+Deterministic gate (all must hold)
+  D1 `rcaeval_score.py --bin <Candidate> --cases target/rcaeval-cases --modes chain` on the 90
+     cases (target/rcaeval-cases from mirror_cases.py over
+     /Volumes/External Disk/Github/graph-rag/data/rcaeval-cases, read only): chain AC@1 >= 0.93,
+     and no case whose rank 1 is right under Parent (the same script on Parent, which is how
+     target/rcaeval-ref.json was produced on the integrate branch) turns wrong.
+  D2 similar_eval.py: 82/89 = 0.92, unchanged.
+  D3 replay: replay_gate.py over the mirror, 0 disagreements.
+  D4 demo: `ograph chains` rank 1 of the four demo incidents identical to Parent's.
+  D5 shacl_suite.py (W3C core) as before; the SPARQL suite (every reference query of
+     examples/demo/sparql-questions.json returns the same rows under Parent and Candidate);
+     lab gates (lab_check.py and lab_browser.mjs on the demo and the 90-case merged store);
+     `cargo test --workspace` passes; `cargo clippy --workspace --all-targets` clean.
+
+Agent gate, on Haiku
+  agent_rca_eval.py --runner claude --model claude-haiku-5-5, its isolation checks as on this
+  branch. Two invocations into one --out (target/lane-t/agent-gate), separate --work dirs under
+  /private/tmp/claude-501/lane-t-work (outside the repository):
+    Parent:    --bin <Parent>    --guidance p=74b3696 --arms mcp@p,skill@p,chains
+    Candidate: --bin <Candidate> --guidance c=<sha>   --arms mcp@c,skill@c,chains
+  Both read the current skill text (74b3696); the Candidate's revision carries only what this
+  lane adds to describe the new field. Common flags:
+    --cases "/Volumes/External Disk/Github/graph-rag/data/rcaeval-cases"
+    --reference target/lane-t/rcaeval-ref.json (rcaeval_score.py --modes chain on Parent)
+    --sample 30 --seed 12 --skip-sample --holdout 55 --holdout-seed 13 --misses --runs 3
+  Held-out set: the 55 cases outside the seen sample and outside the misses (rcaeval-heldout),
+  plus the misses (rcaeval-miss, 5 cases). Run exactly once.
+  Dev set for iteration: the seen sample (--sample 30 --seed 12) and the demo ONLY. No held-out
+  or misses transcript is read before the verdict, and nothing is changed after held-out
+  numbers are seen.
+
+  Pass criteria (all on the held-out set; per case, the passes out of 3 runs):
+    A1 mcp AC@1 Candidate > Parent on rcaeval-heldout, paired per case, exact two-sided sign
+       test p < 0.05.
+    A2 skill AC@1 Candidate >= Parent (rcaeval-heldout + rcaeval-miss).
+    A3 Departures from chains rank 1 that name the label (rcaeval-heldout + rcaeval-miss, mcp
+       and skill pooled per binary): Candidate fraction >= Parent fraction.
+    A4 Misses recovered (rcaeval-miss runs naming the label, mcp and skill): Candidate >= Parent.
+  Reported, not gated: wrong answers naming the chronic application (an application all of whose
+  events in the window are chronic, per Candidate's `before --window 30m`); cost; tool calls per
+  run.
+
+Verdict
+  KEEP      every deterministic and agent check passes.
+  KEEP-OFF  deterministic checks pass, agent gate not significant: the marking goes behind a
+            config flag, off by default.
+  DROP      otherwise.
+
+Budget: $30 by claude's total_cost_usd for the lane (dev runs included). A limit refusal backs
+off once; a second stops the run and what did not finish is NOT MEASURED.
