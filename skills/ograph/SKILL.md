@@ -45,7 +45,13 @@ ograph news                            # all news; --since 24h, 7d counts back f
 ograph why INC-5377                    # every fact: graph, source, extractor, time, model provenance
 ograph why id:app/ledger-db            # also lists quarantined proposals about the node
 ograph why id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000
+ograph changes --since 2d              # facts the sources added, removed or changed since then
+ograph chains INC-5377 --known-at 2026-11-20T09:00:00Z   # the answer the store gave then; also on before, blast, sparql
 ```
+
+`--known-at` and `--since` take a dateTime with a zone or how long ago (`90m`, `2d`). The time is
+when ograph recorded a fact, not when it became true. A view holds only what a harvest recorded
+and the history still keeps; standard error says how far back that goes.
 
 ### Record (only after a person confirms)
 
@@ -73,7 +79,7 @@ ograph validate             # full SHACL audit, expect "0 violations"
 ograph stats                # store size, graphs, triples
 ograph lab --out lab.html   # one HTML page over incidents, causes, timelines
 ograph export --out all.trig
-ograph compact
+ograph compact              # drop history older than history_days, shrink the file
 ```
 
 ## Output

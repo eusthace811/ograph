@@ -524,7 +524,7 @@ pub fn submit(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64) -> anyh
 /// [`submit`] with a choice of durability and a catalog shared across batches. A harvest
 /// submits non-durably and flushes once, and builds the catalog again only after a batch that
 /// can change it.
-pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, durable: bool, catalog: &mut Option<Catalog>) -> anyhow::Result<Outcome> {
+pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, _durable: bool, catalog: &mut Option<Catalog>) -> anyhow::Result<Outcome> {
     let graph = batch.graph();
     let qgraph = batch.quarantine_graph();
     let snap = store.snapshot()?;
@@ -593,7 +593,7 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, du
     if !batch.failed() && unchanged(store, &graph, &triples, &qgraph, &quarantine)? {
         return Ok(outcome(0, 0));
     }
-    let (removed, added) = store.transact_with(durable, |tx| {
+    let (removed, added) = store.transact_at(now_ms, |tx| {
         let gid = tx.intern(&graph.clone().into())?;
         let qid = tx.intern(&qgraph.clone().into())?;
         let mut ids = Vec::with_capacity(triples.len());

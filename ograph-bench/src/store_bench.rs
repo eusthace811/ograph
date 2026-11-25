@@ -392,8 +392,45 @@ fn main() -> anyhow::Result<()> {
     }).collect();
     let (r, a, d) = replace(&changed)?;
     println!("re-harvest with changed timestamps: removed {r}, added {a} in {} ms", ms(d));
+    let held = {
+        let snap = store.snapshot()?;
+        let native = Native { s: &snap };
+        let mut held: Vec<Rows> = picked.iter().map(|i| native.w2(i)).collect();
+        held.extend([native.w1(), native.w3(&world.apps[hub])]);
+        held
+    };
+    std::thread::sleep(Duration::from_millis(5));
+    let between = ograph_core::store::now_ms();
+    std::thread::sleep(Duration::from_millis(5));
     let (r, a, d) = replace(&day)?;
     println!("re-harvest back to the original: removed {r}, added {a} in {} ms", ms(d));
+    let t = Instant::now();
+    let then = store.snapshot()?.known_at(between)?;
+    let built = t.elapsed();
+    let view = Native { s: &then };
+    let mut queries: Vec<String> = picked.iter().map(|i| w2_q(i)).collect();
+    queries.extend([w1_q(), w3_q(&world.apps[hub])]);
+    let mut answers: Vec<Rows> = picked.iter().map(|i| view.w2(i)).collect();
+    answers.extend([view.w1(), view.w3(&world.apps[hub])]);
+    let stale = answers.iter().zip(&held).filter(|(a, b)| a != b).count()
+        + queries.iter().zip(&held).filter(|(q, b)| canonical(sparql::solutions(&then, q).unwrap()) != **b).count();
+    let (hidden, restored) = then.as_of_counts().unwrap();
+    let table = |name: &str| then.stats().unwrap().into_iter().find(|t| t.0 == name).map(|t| (t.1, (t.2 + t.3) as f64 / 1024.0)).unwrap();
+    let ((h_rows, h_kib), (a_rows, a_kib)) = (table("history"), table("added"));
+    println!("\nhistory after the two replaces: {h_rows} rows in `history` ({h_kib:.0} KiB), {a_rows} in `added` ({a_kib:.0} KiB)");
+    println!("view of the store between them: built in {} ms, hides {hidden} quads, restores {restored}; {stale} mismatches over {} answers (native and SPARQL on the view against the native answers saved then)", ms(built), 2 * held.len());
+    println!("\n| workload on the view | native p50 (ms) | SPARQL p50 (ms) |\n|---|---|---|");
+    for (name, nat, q) in [
+        ("W1", Box::new(|| view.w1().len()) as Box<dyn Fn() -> usize>, w1_q()),
+        ("W2, one incident", Box::new(|| view.w2(picked[0]).len()), w2_q(picked[0])),
+        ("W3 blast radius, hub app", Box::new(|| view.w3(&world.apps[hub]).len()), w3_q(&world.apps[hub])),
+    ] {
+        println!("| {name} | {} | {} |", ms(median(nat).0), ms(median(|| sparql::solutions(&then, &q).unwrap().len()).0));
+    }
+    drop(then);
+    if stale > 0 {
+        std::process::exit(1);
+    }
     let snap = store.snapshot()?;
     let native = Native { s: &snap };
     let again: usize = picked.iter().map(|i| native.w2(i).len()).sum();

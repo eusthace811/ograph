@@ -23,7 +23,11 @@ pub struct Config {
     pub detect: Detect,
     pub correlation: Settings,
     pub llm: Option<LlmSection>,
+    /// How many days of removed facts `ograph compact` keeps for `--known-at` and `changes`.
+    pub history_days: Option<u32>,
 }
+
+pub const HISTORY_DAYS: u32 = 90;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -32,6 +36,11 @@ pub struct LlmSection {
 }
 
 pub const DEFAULT_CONFIG: &str = r#"# ograph configuration. Paths are relative to the directory holding .ograph/.
+
+# Days of removed facts that `ograph compact` keeps, for --known-at and `ograph changes`.
+# A top-level key: keep it above the first [[source]].
+history_days = 90
+
 # One [[source]] per input; harvest runs them in a fixed layer order whatever the order here.
 
 # [[source]]
@@ -82,8 +91,15 @@ pub fn find(start: &Path) -> Option<PathBuf> {
     None
 }
 
-pub fn now_ms() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
+pub use crate::store::now_ms;
+
+/// A time as `--known-at` and `--since` take it: an `xsd:dateTime` with a zone, or how long ago.
+pub fn when_ms(s: &str) -> anyhow::Result<i64> {
+    if let Some(ms) = term::parse_millis(s) {
+        return Ok(ms);
+    }
+    let ago = crate::query::duration_s(s).map_err(|_| anyhow::anyhow!("{s:?} is not a time: write 2026-11-25T09:30:00Z, or how long ago, such as 90m or 2d"))?;
+    Ok(now_ms() - ago * 1000)
 }
 
 impl Workspace {
@@ -108,6 +124,34 @@ impl Workspace {
         let ontology = Ontology::load(&read("ontology.ttl", crate::ontology::DEFAULT_TTL), &read("shapes.ttl", crate::ontology::DEFAULT_SHAPES))?;
         let store = Store::open(&dir.join("store.redb"))?;
         Ok(Self { root: root.to_owned(), dir, config, ontology, store })
+    }
+
+    pub fn history_days(&self) -> u32 {
+        self.config.history_days.unwrap_or(HISTORY_DAYS)
+    }
+
+    /// The store as it was at `when`, and a line that says what the view hides, what it brings
+    /// back and how far back it can go. A time before the history starts is an error, since the
+    /// answer would silently lack what was removed before then.
+    pub fn known_at(&self, when: &str) -> anyhow::Result<(crate::store::Snapshot, String)> {
+        let t = when_ms(when)?;
+        let snap = self.store.snapshot()?;
+        let since = snap.history_since()?.ok_or_else(|| anyhow::anyhow!("this store has no history yet; it starts with the next harvest"))?;
+        anyhow::ensure!(
+            t >= since,
+            "no record of what was known at {}: the history of this store starts at {} (history_days = {})",
+            term::format_millis(t),
+            term::format_millis(since),
+            self.history_days()
+        );
+        let snap = snap.known_at(t)?;
+        let (hidden, restored) = snap.as_of_counts().unwrap_or_default();
+        let note = format!(
+            "as known at {}: {hidden} quads recorded since are hidden, {restored} removed since are restored; the history starts at {}, and only episodes a harvest recorded and the history still holds are seen",
+            term::format_millis(t),
+            term::format_millis(since)
+        );
+        Ok((snap, note))
     }
 
     pub fn llm(&self) -> Option<Llm> {
@@ -587,6 +631,66 @@ mod tests {
         assert!(crate::query::before(&ws.store.snapshot().unwrap(), "INC-1", 1800, 4).unwrap().events.is_empty());
         assert!(sparql(&root, "SELECT ?c WHERE { ?c corr:rank ?r }").is_empty());
         assert_eq!(violations(&root), 0);
+    }
+
+    fn chains(root: &Path, known_at: Option<i64>) -> String {
+        let ws = Workspace::open(root).unwrap();
+        let snap = match known_at {
+            Some(t) => ws.known_at(&crate::term::format_millis(t)).unwrap().0,
+            None => ws.store.snapshot().unwrap(),
+        };
+        let ids = crate::correlate::Ids::new(&snap).unwrap();
+        let a = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+        serde_json::to_string(&a).unwrap()
+    }
+
+    fn pause() -> i64 {
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let t = super::now_ms();
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        t
+    }
+
+    #[test]
+    fn chains_known_at_an_earlier_time_are_the_chains_of_that_time() {
+        let alerts = |more: &str| format!("[{}{more}]", alert("payments-api", "ErrorRate", T - 300));
+        let root = fixture("known-at", &[("alerts", "alerts.json", &alerts("")), ("ownership", "ownership.jsonl", "{\"app\":\"ledger-db\",\"process\":\"billing\"}\n")]);
+        let t0 = pause();
+        harvest(&root, None);
+        let then = chains(&root, None);
+        assert!(then.contains("alert-payments-api-errorrate"), "{then}");
+        let t1 = pause();
+        std::fs::write(root.join("alerts.json"), alerts(&format!(",{}", alert("ledger-db", "PoolSaturated", T - 600)))).unwrap();
+        std::fs::write(root.join("ownership.jsonl"), "{\"app\":\"ledger-db\",\"process\":\"settlement\"}\n").unwrap();
+        harvest(&root, None);
+        assert_ne!(chains(&root, None), then);
+        assert_eq!(chains(&root, Some(t1)), then);
+
+        let ws = Workspace::open(&root).unwrap();
+        let changes = crate::query::changes(&ws.known_at(&crate::term::format_millis(t1)).unwrap().0, &ws.store.snapshot().unwrap()).unwrap();
+        let ev = format!("id:ev/alert-ledger-db-poolsaturated-{}000", T - 600);
+        let listed: Vec<(&str, &str, &str, &str, Option<&str>)> = changes.iter().map(|c| (c.change, c.subject.as_str(), c.predicate.as_str(), c.object.as_str(), c.was.as_deref())).collect();
+        assert_eq!(listed[0], ("changed", "id:app/ledger-db", "ops:supports", "id:process/settlement", Some("id:process/billing")));
+        assert!(listed.contains(&("added", ev.as_str(), "evt:on", "id:app/ledger-db", None)), "{listed:?}");
+        assert!(listed.iter().all(|c| c.1 == "id:app/ledger-db" || c.1 == "id:process/settlement" || c.1 == "id:process/billing" || c.1 == ev), "{listed:?}");
+        assert_eq!((changes[0].source.as_deref(), changes[0].extractor.is_some()), (Some("ownership"), true));
+
+        let too_early = ws.known_at(&crate::term::format_millis(t0)).err().unwrap().to_string();
+        assert!(too_early.starts_with("no record of what was known at "), "{too_early}");
+    }
+
+    /// The other side of `a_judged_root_that_left_the_sources_is_no_longer_a_candidate`: the
+    /// view of a time when the telemetry was held still ranks its root.
+    #[test]
+    fn a_root_that_left_the_sources_is_a_candidate_as_known_before_it_left() {
+        let root = fixture("known-retired", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        let then = chains(&root, None);
+        let t1 = pause();
+        std::fs::write(root.join("alerts.json"), "[]").unwrap();
+        harvest(&root, None);
+        assert!(!chains(&root, None).contains("poolsaturated"));
+        assert_eq!(chains(&root, Some(t1)), then);
     }
 
     #[test]

@@ -27,6 +27,8 @@ $B/purekg_bench $C "$(python3 -c "import json;print(json.load(open('$C/incidents
 [ -d data/opentelemetry-demo ] && python3 scripts/eval/code_eval.py --bin $B/ograph --repo data/opentelemetry-demo --work target/code-eval > $E/code.txt
 [ -d data/opentelemetry-demo ] && python3 scripts/eval/code_history_eval.py --bin $B/ograph --repo data/opentelemetry-demo --work target/code-history-eval > $E/code-history.txt
 python3 scripts/eval/lognew_eval.py --bin $B/ograph --cases data/rcaeval-cases > $E/log-new.txt
+python3 scripts/eval/known_at_gate.py --bin $B/ograph --work target/known-at-gate --cases target/known-at-cases --cases-from data/rcaeval-cases > $E/known-at.txt
+# Against the store bench of an earlier build: python3 scripts/eval/store_ab.py OLD/store_bench $B/store_bench > $E/store-ab.txt
 # The catalog gate needs a git repository holding release/kubernetes-manifests.yaml of
 # GoogleCloudPlatform/microservices-demo (git init, add the file, commit).
 [ -d data/online-boutique-manifests ] && python3 scripts/eval/catalog_eval.py --bin $B/ograph --cases data/rcaeval-cases --manifests data/online-boutique-manifests --work target/catalog-eval --edges data/opentelemetry-demo > $E/catalog.txt
