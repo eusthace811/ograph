@@ -856,7 +856,7 @@ Pass: precision and recall 1.000 on facts, chains and verdicts over the in-scope
 
 ### Results
 
-**Gate: PASS** (`uses.txt`). Over the 25 in-scope trials (11 demo files, 14 RCAEval files), precision and recall are 1.000 in every category:
+**Gate: PASS** (`uses.txt`). Over the 25 in-scope trials (9 demo files, 16 RCAEval files), precision and recall are 1.000 in every category:
 
 | Category | Correct / measured / predicted |
 |---|---|
@@ -869,7 +869,7 @@ Pass: precision and recall 1.000 on facts, chains and verdicts over the in-scope
 
 No sampled incident was stated in two files, so the shared-incident exclusion left out 0 triples; `uses_lists_what_a_file_feeds_and_the_chains_and_verdicts_that_rest_on_it` covers that case. Of the naming sources, `ownership.jsonl` and the catalog file were exact. Each runbook missed the facts of an alert in another file whose application it had named by alias (`pay-gw`, `finder`): facts recall 0.659 (27 of 41), precision 1.000. That is the out-of-scope cascade, and `uses` marks such a file with `naming`.
 
-Three RCAEval trace files changed chains through no event of their own: 2 relinked, 3 new and 2 moved. Following links to the file's events alone would have missed these. Ranking again over the store without the file's facts found them.
+In this sample, every chain that went or was relinked had a root, link or incident from the file (a non-empty `uses`). The 9 new chains and 3 rank moves came from ranking again: following links to the file's events finds the chains that go, but not the chains that move up to take their place.
 
 `uses` on the 90-case merged store from `similar_eval.py`, 12 files: median 0.26 s, max 0.61 s. Most of that time ranks all 90 incidents twice.
 
