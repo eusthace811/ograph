@@ -12,12 +12,20 @@ use std::path::Path;
 
 const UNKNOWN: &str = "UNKNOWN";
 
-pub fn prompt(ont: &Ontology) -> String {
-    let mut p = String::from(
+/// The thread prompt. With `actions` it also asks for what people did, and the messages arrive
+/// numbered. Without, it is the prompt from before actions existed, so cached answers hold.
+pub fn prompt(ont: &Ontology, actions: bool) -> String {
+    let shape = if actions {
+        ", \"actions\": [{\"kind\": <one action value>, \"app\": <the application acted on>, \"message\": <the number n of the [mn] message that reports it>, \"quote\": <the words of that message that say it was done, copied exactly>}]"
+    } else {
+        ""
+    };
+    let mut p = format!(
         "You classify an operations chat thread. Reply with one JSON object and nothing else:\n\
-         {\"category\": <one value>, \"cause_quote\": <the words of the thread that state the cause, copied exactly, or null>, \"sentiment\": <one value>, \"apps\": [<application names the thread is about>], \"calls\": [{\"from\": <application>, \"to\": <application it calls or depends on>, \"quote\": <the words that say so, copied exactly>}], \"actions\": [{\"kind\": <one action value>, \"app\": <the application acted on>, \"message\": <the number n of the [mn] message that reports it>, \"quote\": <the words of that message that say it was done, copied exactly>}], \"confidence\": <0 to 1>}\n\n",
+         {{\"category\": <one value>, \"cause_quote\": <the words of the thread that state the cause, copied exactly, or null>, \"sentiment\": <one value>, \"apps\": [<application names the thread is about>], \"calls\": [{{\"from\": <application>, \"to\": <application it calls or depends on>, \"quote\": <the words that say so, copied exactly>}}]{shape}, \"confidence\": <0 to 1>}}\n\n",
     );
-    for (prop, label) in [(disc::CATEGORY, "category"), (disc::SENTIMENT, "sentiment"), (evt::ACTION_KIND, "action")] {
+    let all = [(disc::CATEGORY, "category"), (disc::SENTIMENT, "sentiment"), (evt::ACTION_KIND, "action")];
+    for &(prop, label) in &all[..if actions { 3 } else { 2 }] {
         p.push_str(&format!("Allowed {label} values:\n"));
         for t in ont.vocabulary(prop).unwrap_or_default() {
             match &t.definition {
@@ -30,11 +38,16 @@ pub fn prompt(ont: &Ontology) -> String {
     p.push_str(
         "Use only these values. When the thread does not state what caused a problem (a question, a plan, or symptoms only), \
          answer UNKNOWN with cause_quote null; do not guess. Name only applications the thread names. List a call only when \
-         the thread says one application calls, connects to or depends on another. List an action only when a message says \
-         someone already did it to an application the thread names: a question (\"should we roll back?\"), a proposal, a plan, \
-         something not done or something only considered is not an action. Each message starts with its number, such as [m2]. \
-         The thread:\n",
+         the thread says one application calls, connects to or depends on another. ",
     );
+    if actions {
+        p.push_str(
+            "List an action only when a message says someone already did it to an application the thread names: a question \
+             (\"should we roll back?\"), a proposal, a plan, something not done or something only considered is not an action. \
+             Each message starts with its number, such as [m2]. ",
+        );
+    }
+    p.push_str("The thread:\n");
     p
 }
 
@@ -43,7 +56,7 @@ fn incident_refs() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"\b(INC|SEV|PD|IR)-?\d{2,}\b").unwrap())
 }
 
-pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
+pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>, actions: bool) -> anyhow::Result<Batch> {
     let mut b = Batch::new("discussions", key, "threads-v1");
     let rule = Extraction::Rule { extractor: "thread-regex".into() };
     // A thread is its channel and root timestamp: two channels can share a timestamp. Each
@@ -79,11 +92,11 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
         incidents.sort_by_key(|r| crate::model::slug(r));
         incidents.dedup_by_key(|r| crate::model::slug(r));
         let during = (incidents.len() == 1).then(|| crate::model::entity("inc", incidents[0]));
-        texts.push(msgs.iter().enumerate().map(|(n, m)| format!("[m{}] {}", n + 1, m.1)).collect::<Vec<_>>().join("\n"));
+        texts.push(if actions { msgs.iter().enumerate().map(|(n, m)| format!("[m{}] {}", n + 1, m.1)).collect::<Vec<_>>().join("\n") } else { text.clone() });
         threads_out.push(Thread { node, ev, name, text, msgs, during });
     }
     let Some(llm) = ctx.llm else { return Ok(b) };
-    let p = prompt(ctx.ontology);
+    let p = prompt(ctx.ontology, actions);
     let prompt_hash = crate::llm::hash(&p);
     for (th, answer) in threads_out.into_iter().zip(llm.ask_all(&p, &texts)) {
         let Thread { node, ev, name, text, msgs, during } = th;
@@ -121,7 +134,7 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
         for a in v.get("apps").and_then(|x| x.as_array()).into_iter().flatten().filter_map(|x| x.as_str()) {
             b.add(node.clone(), disc::ABOUT, Object::Entity(app(a)), &ev, &m);
         }
-        for a in v.get("actions").and_then(|x| x.as_array()).into_iter().flatten() {
+        for a in v.get("actions").and_then(|x| x.as_array()).into_iter().flatten().filter(|_| actions) {
             action(&mut b, key, a, text, &msgs, during.as_ref(), &m);
         }
     }

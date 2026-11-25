@@ -396,3 +396,19 @@ Incident records used to merge silently, the last record winning. The open time 
 The demo and the 90 RCAEval cases hold one record per incident, so they have 0 conflict entries. The 90 RCAEval rankings are identical to the binary before this lane (`lane-c1-rcaeval.txt`), at chain AC@1 0.93.
 
 The status is not a conflict field. Five behavior tests in `ograph-core/tests/harvest.rs` encode a later export moving an incident from open to resolved, and quarantining that would flag every normal lifecycle. A severity that escalates across exports is flagged, and `severity = "max"` keeps the escalated value.
+
+## Phase 12, lane C1: operator actions from chat (`action-gate.txt`)
+
+Netflix's TIMELINE namespace, what people did, had no class. `evt:OperatorAction` with a closed `evt:actionKind` (ROLLBACK, RESTART, SCALE, FAILOVER, FLAG, CONFIG, DEPLOY) now holds it. A `discussions` source with `actions = true` sends each thread with numbered messages, and the model reports each action with its kind, application, message number and quote. The time is that message's time and the evidence is that message's record; the model never gives a time. Code refuses an action whose message is not in the thread, whose quote is not in that message, whose application the thread does not name, whose clause is a question or holds a proposal, plan or condition word before the action or a negation right before it, or whose quote has no word that states the kind. The gateway then checks the kind and the catalog.
+
+Actions are no root-cause candidates. `before` lists them, and `similar` lists them as mitigations of the incidents they were taken in. An action before an incident opens is mostly a response to its first symptoms, and a rollback or deploy that changed code already has a deployment record. The 90 RCAEval rankings are identical to the binary before this lane (`lane-c1-rcaeval.txt`), and so are the similar-incident scores (0.92).
+
+`scripts/eval/action_gate.py` scores 31 labeled threads in `examples/demo/chat-actions/actions.json` (25 actions; 8 threads only ask, propose or plan). The pass conditions, fixed before any model run: precision at least 0.9 and recall at least 0.8 on (kind, application, time), no action on a proposal-only thread, every time equal to its message's, and no committed action from `bad_model.py`.
+
+| Check | Result |
+|---|---|
+| Broken model, which reports only invented actions | 0 committed; refusals cover every rule: words not in the message, kind outside the vocabulary, unnamed application, missing message, question, proposal, symptom quoted as a restart, low confidence. Audit 0 violations |
+| Existing model gate (`llm_gate.py`) | PASS: 16/16 categories, from the cache, since the prompt without `actions` is byte-identical to the one before |
+| Real model accuracy | Not measured. Every call failed with "the ChatGPT user has reached their Subscription Sharing usage limit" during this lane, so `action-gate.txt` reports 0 committed and FAIL |
+
+Until the accuracy run passes, `actions` is off by default. Rerun `action_gate.py` after a demo harvest once the model answers, and turn it on only if it passes. The labels and the refusal rules were written by the same author, so the rules' recall on real chat is unmeasured even then. One rule changed after a broken-model run, before any real-model run: a kind's cue must start a word, because `kill` matched `OOMKilled`.

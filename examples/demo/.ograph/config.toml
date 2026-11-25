@@ -29,6 +29,10 @@ path = "metrics.csv"
 kind = "discussions"
 path = "discussions"
 [[source]]
+kind = "discussions"
+path = "chat-actions"
+actions = true
+[[source]]
 kind = "news"
 path = "news.jsonl"
 

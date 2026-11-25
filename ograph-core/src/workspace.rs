@@ -871,7 +871,8 @@ mod tests {
         std::fs::write(root.join("answer.json"), answer).unwrap();
         let cfg = root.join(".ograph/config.toml");
         let model = format!("[llm.extract]\ncommand = [\"sh\", \"-c\", \"cat >/dev/null; cat '{}'\"]\nmodel = \"fixture\"\n", root.join("answer.json").display());
-        std::fs::write(&cfg, std::fs::read_to_string(&cfg).unwrap() + &model).unwrap();
+        let config = std::fs::read_to_string(&cfg).unwrap().replace("path = \"ops.json\"\n", "path = \"ops.json\"\nactions = true\n");
+        std::fs::write(&cfg, config + &model).unwrap();
         let out = harvest(&root, None);
         let mut reasons: Vec<String> = out.iter().find(|o| o.graph.contains("/discussions/")).unwrap().quarantined.iter().map(|r| r.reason.clone()).collect();
         reasons.sort();

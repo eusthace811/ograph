@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operator-action gate on examples/demo (discussions/actions.json, labels in actions-labels.json).
+"""Operator-action gate on examples/demo (chat-actions/actions.json, labels in actions-labels.json).
 
 1. Accuracy: the configured model's committed evt:OperatorAction facts from actions.json against
    the labels, matched on (kind, application, time). Precision must be at least 0.9 and recall
@@ -33,9 +33,10 @@ def secs(iso):
 
 def records(root):
     out = {}
-    for f in (root / "discussions").iterdir():
-        for i, m in enumerate(json.loads(f.read_text())):
-            out[f"discussions/{f.name}#{i + 1}"] = m
+    for d in ("discussions", "chat-actions"):
+        for f in (root / d).iterdir():
+            for i, m in enumerate(json.loads(f.read_text())):
+                out[f"{d}/{f.name}#{i + 1}"] = m
     return out
 
 def check(binp, root):
@@ -68,7 +69,7 @@ def main():
     trap_roots = {r for r, acts in labels.items() if not acts}
     got, bad = check(binp, demo)
     recs = records(demo)
-    mine = [(k, app, secs(at), q, rec) for k, app, at, q, rec in got if rec.startswith("discussions/actions.json")]
+    mine = [(k, app, secs(at), q, rec) for k, app, at, q, rec in got if rec.startswith("chat-actions/actions.json")]
     found = {(k, app, t) for k, app, t, _, _ in mine}
     tp = found & gold
     precision = len(tp) / max(len(found), 1); recall = len(tp) / len(gold)
@@ -78,7 +79,7 @@ def main():
     on_traps = [x for x in mine if recs[x[4]].get("thread_ts", recs[x[4]]["ts"]) in trap_roots]
     print(f"   actions committed on threads that only ask, propose or plan: {len(on_traps)} {on_traps}")
     print(f"   committed actions breaking a rule: {len(bad)} {bad}")
-    other = [x for x in got if not x[4].startswith("discussions/actions.json")]
+    other = [x for x in got if not x[4].startswith("chat-actions/actions.json")]
     print(f"   actions from the 16 unlabeled category threads (ops.json), not scored: {len(other)}")
     for x in sorted(other): print(f"     {x[0]} {x[1]} at {x[2]}: {x[3]}")
     reasons = collections.Counter(r.split('"')[-1].strip() if r.startswith('"') else r.split(":")[0] for _, r in rows(binp, demo, QUARANTINE))

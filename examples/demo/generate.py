@@ -165,7 +165,8 @@ for root, (texts, acts) in zip(roots, ACTION_THREADS):
     ts = [f"{root + k * 120}.000200" for k in range(len(texts))]
     amsgs += [{"ts": t, "thread_ts": ts[0], "channel": "incidents", "user": f"U{k + 2}", "text": x} for k, (t, x) in enumerate(zip(ts, texts))]
     alabels[ts[0]] = [{"kind": k, "app": a, "ts": ts[m - 1]} for k, a, m in acts]
-pathlib.Path("discussions/actions.json").write_text(json.dumps(amsgs, indent=1))
+pathlib.Path("chat-actions").mkdir(exist_ok=True)
+pathlib.Path("chat-actions/actions.json").write_text(json.dumps(amsgs, indent=1))
 pathlib.Path("actions-labels.json").write_text(json.dumps(alabels, indent=1))
 news = [
     {"at": NOW - 7200, "title": "CardRail reports elevated authorization latency", "summary": "CardRail says authorizations are slow for some merchants in North America", "mentions": ["CardRail"]},

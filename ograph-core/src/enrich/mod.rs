@@ -53,7 +53,13 @@ pub enum Source {
     Traces { path: PathBuf },
     /// JSON or JSON lines from an error tracker: one exception per record, with its stack trace.
     Errors { path: PathBuf },
-    Discussions { path: PathBuf },
+    /// `actions` also asks the model for what people did (`evt:OperatorAction`). Off by
+    /// default: it is another prompt, so it calls the model again for every thread.
+    Discussions {
+        path: PathBuf,
+        #[serde(default)]
+        actions: bool,
+    },
     News { path: PathBuf },
 }
 
@@ -99,7 +105,7 @@ impl Source {
             | Source::Metrics { path }
             | Source::Traces { path }
             | Source::Errors { path }
-            | Source::Discussions { path }
+            | Source::Discussions { path, .. }
             | Source::News { path } => path,
         }
     }
@@ -238,7 +244,7 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
             }),
             Source::Metrics { .. } => signals::metrics(&file, &key, ctx.detect),
             Source::Traces { .. } => signals::traces(&file, &key, ctx.detect),
-            Source::Discussions { .. } => discussions::harvest(&file, &key, ctx),
+            Source::Discussions { actions, .. } => discussions::harvest(&file, &key, ctx, *actions),
         };
         out.push(result.unwrap_or_else(|e| {
             let mut b = Batch::new(source.name(), &key, "failed");
