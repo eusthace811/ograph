@@ -275,7 +275,6 @@ impl Workspace {
         let read = only.is_none().then(|| crate::status::inputs(self));
         let llm = self.llm();
         let code = self.code_repos();
-        let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology, code: &code, merge: &self.config.incidents.merge };
         let mut sources = self.config.sources.clone();
         sources.sort();
         let ran: Vec<&Source> = sources.iter().filter(|s| only.is_none_or(|o| o == s.name() || o == kind(s))).collect();
@@ -284,45 +283,7 @@ impl Workspace {
             names.dedup();
             anyhow::bail!("no source of kind {o:?} is configured; configured kinds: {}, correlation", names.join(", "));
         }
-        // A source whose path cannot be listed (a mistyped path, an unmounted disk), or a
-        // directory that lists no files while the store holds graphs under it (an empty mount
-        // point), reports one failed batch and keeps every graph under its path.
         let graphs = self.graph_names()?;
-        let mut batches = Vec::new();
-        // Every incident source is one batch, so an incident's fields merge across all of them.
-        let incidents: Vec<(&Path, bool)> = ran.iter().filter_map(|s| match s { Source::Incidents { path, classify } => Some((path.as_path(), *classify)), _ => None }).collect();
-        let mut incidents_done = false;
-        for src in &ran {
-            if let Source::Incidents { .. } = src {
-                if !std::mem::replace(&mut incidents_done, true) {
-                    batches.push(enrich::incidents(&incidents, &self.incident_files()?, &ctx));
-                }
-                continue;
-            }
-            let p = self.root.join(src.path());
-            let failed = |why: String| {
-                let mut b = Batch::new(src.name(), &enrich::rel(&self.root, &p), "failed");
-                b.degraded.push(why);
-                b
-            };
-            if !p.is_file() && std::fs::read_dir(&p).is_err() {
-                batches.push(failed(format!("cannot read {}", p.display())));
-                continue;
-            }
-            let found = enrich::harvest(src, &ctx);
-            let held = || {
-                let key = failed(String::new());
-                let below = [key.graph(), key.quarantine_graph()].map(|g| format!("{}/", g.as_str()));
-                graphs.iter().any(|n| below.iter().any(|b| n.as_str().starts_with(b.as_str())))
-            };
-            if found.is_empty() && p.is_dir() && held() {
-                batches.push(failed(format!("{} lists no files; keeping what it held", p.display())));
-            } else {
-                batches.extend(found);
-            }
-        }
-        let mut kept: HashSet<NamedNode> = batches.iter().flat_map(|b| [b.graph(), b.quarantine_graph()]).collect();
-        let kept_below: Vec<String> = batches.iter().filter(|b| b.failed()).flat_map(|b| [b.graph(), b.quarantine_graph()].map(|g| format!("{}/", g.as_str()))).collect();
         // A full harvest owns every harvest graph but the verdicts; `--only` owns its kind's.
         let mut names: Vec<String> = match only {
             None => prunable_sources(&graphs),
@@ -333,18 +294,34 @@ impl Workspace {
         if only.is_some() {
             names.push("correlation".to_owned());
         }
-        // Input graphs whose files are gone are pruned before any batch or correlation reads
-        // them, and chains after correlation writes them, so one harvest leaves the store as
-        // two would.
         let (chains, inputs): (Vec<String>, Vec<String>) = names.into_iter().partition(|n| n == "correlation");
-        self.prune(&inputs, &kept, &kept_below)?;
+        let mut kept: HashSet<NamedNode> = HashSet::new();
+        let mut kept_below: Vec<String> = Vec::new();
         let mut out = Vec::new();
         let mut catalog = None;
-        for batch in batches {
-            let t = std::time::Instant::now();
-            let o = gateway::submit_with(&self.store, &self.ontology, &batch, now_ms(), false, &mut catalog)?;
-            progress(&o, t.elapsed().as_secs_f64());
-            out.push(o);
+        let mut apps = Vec::new();
+        // The sources that name applications commit first, so the enrichers after them read the
+        // catalog this harvest leaves, and one harvest asks the model what two would.
+        for naming in [true, false] {
+            if !naming {
+                apps = gateway::applications(&self.store.snapshot()?)?;
+            }
+            let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology, code: &code, merge: &self.config.incidents.merge, apps: &apps };
+            let layer: Vec<&Source> = ran.iter().copied().filter(|s| gateway::NAMING_SOURCES.contains(&s.name()) == naming).collect();
+            let batches = self.enrich(&layer, &graphs, &ctx)?;
+            kept.extend(batches.iter().flat_map(|b| [b.graph(), b.quarantine_graph()]));
+            kept_below.extend(batches.iter().filter(|b| b.failed()).flat_map(|b| [b.graph(), b.quarantine_graph()].map(|g| format!("{}/", g.as_str()))));
+            // Input graphs whose files are gone are pruned before any batch or correlation reads
+            // them, and chains after correlation writes them, so one harvest leaves the store as
+            // two would.
+            let owned: Vec<String> = inputs.iter().filter(|n| gateway::NAMING_SOURCES.contains(&n.as_str()) == naming).cloned().collect();
+            self.prune(&owned, &kept, &kept_below)?;
+            for batch in batches {
+                let t = std::time::Instant::now();
+                let o = gateway::submit_with(&self.store, &self.ontology, &batch, now_ms(), false, &mut catalog)?;
+                progress(&o, t.elapsed().as_secs_f64());
+                out.push(o);
+            }
         }
         for (o, b) in self.correlate_all()? {
             progress(&o, 0.0);
@@ -358,6 +335,46 @@ impl Workspace {
             std::fs::write(self.dir.join(HARVESTED), lines.join("\n") + "\n")?;
         }
         Ok(out)
+    }
+
+    /// The batches of `ran`. A source whose path cannot be listed (a mistyped path, an unmounted
+    /// disk), or a directory that lists no files while the store holds graphs under it (an empty
+    /// mount point), reports one failed batch and keeps every graph under its path.
+    fn enrich(&self, ran: &[&Source], graphs: &[NamedNode], ctx: &Ctx<'_>) -> anyhow::Result<Vec<Batch>> {
+        let mut batches = Vec::new();
+        // Every incident source is one batch, so an incident's fields merge across all of them.
+        let incidents: Vec<(&Path, bool)> = ran.iter().filter_map(|s| match s { Source::Incidents { path, classify } => Some((path.as_path(), *classify)), _ => None }).collect();
+        let mut incidents_done = false;
+        for src in ran {
+            if let Source::Incidents { .. } = src {
+                if !std::mem::replace(&mut incidents_done, true) {
+                    batches.push(enrich::incidents(&incidents, &self.incident_files()?, ctx));
+                }
+                continue;
+            }
+            let p = self.root.join(src.path());
+            let failed = |why: String| {
+                let mut b = Batch::new(src.name(), &enrich::rel(&self.root, &p), "failed");
+                b.degraded.push(why);
+                b
+            };
+            if !p.is_file() && std::fs::read_dir(&p).is_err() {
+                batches.push(failed(format!("cannot read {}", p.display())));
+                continue;
+            }
+            let found = enrich::harvest(src, ctx);
+            let held = || {
+                let key = failed(String::new());
+                let below = [key.graph(), key.quarantine_graph()].map(|g| format!("{}/", g.as_str()));
+                graphs.iter().any(|n| below.iter().any(|b| n.as_str().starts_with(b.as_str())))
+            };
+            if found.is_empty() && p.is_dir() && held() {
+                batches.push(failed(format!("{} lists no files; keeping what it held", p.display())));
+            } else {
+                batches.extend(found);
+            }
+        }
+        Ok(batches)
     }
 
     /// The files the last incidents harvest read.

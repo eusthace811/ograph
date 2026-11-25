@@ -94,7 +94,7 @@ const CATALOG_CLASSES: [&str; 2] = [ops::APPLICATION, ops::TEAM];
 
 /// The sources whose batches write catalog entities, names or aliases. Every other batch of a
 /// harvest checks against one catalog built once.
-const NAMING_SOURCES: [&str; 3] = ["catalog", "ownership", "docs"];
+pub const NAMING_SOURCES: [&str; 3] = ["catalog", "ownership", "docs"];
 
 impl Catalog {
     /// The catalog in `snap`, without what only the `replaced` graph says.
@@ -211,6 +211,45 @@ impl Catalog {
         };
         Match { resolution, why, candidates }
     }
+}
+
+/// A catalog application as a prompt names it: its first name, then its other names and aliases.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KnownApp {
+    pub name: String,
+    pub aliases: Vec<String>,
+}
+
+/// Every application in `snap`, by name.
+pub fn applications(snap: &Snapshot) -> crate::store::Result<Vec<KnownApp>> {
+    let (Some(ty), Some(class)) = (snap.iri(RDF_TYPE)?, snap.iri(ops::APPLICATION)?) else { return Ok(vec![]) };
+    let literals = |e: Id, p: Option<Id>| -> crate::store::Result<Vec<String>> {
+        let mut out = Vec::new();
+        for v in p.map(|p| snap.objects(e, p)).transpose()?.unwrap_or_default() {
+            if let Term::Literal(l) = snap.term(v)? {
+                out.push(l.value().to_owned());
+            }
+        }
+        out.sort();
+        Ok(out)
+    };
+    let (name, alias) = (snap.iri(ops::NAME)?, snap.iri(ops::ALIAS)?);
+    let mut apps = Vec::new();
+    for e in snap.subjects(ty, class)? {
+        let Term::NamedNode(n) = snap.term(e)? else { continue };
+        let mut names = literals(e, name)?;
+        if names.is_empty() {
+            names.push(n.as_str().rsplit('/').next().unwrap_or_default().to_owned());
+        }
+        let first = names.remove(0);
+        names.extend(literals(e, alias)?);
+        names.retain(|x| norm(x) != norm(&first));
+        names.sort();
+        names.dedup();
+        apps.push(KnownApp { name: first, aliases: names });
+    }
+    apps.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(apps)
 }
 
 /// How a name resolved against the catalog, why, and the best-scoring entities (at most three).

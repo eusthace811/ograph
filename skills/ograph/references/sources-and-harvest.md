@@ -109,3 +109,9 @@ With an `[llm.extract]` table, chat threads also get a category, sentiment, rela
 and proposed dependencies from a model run through a command (by default headless `pi`).
 ograph holds no credentials. Answers are cached by content hash in `.ograph/cache/`, so a
 re-harvest makes no model calls. A model's dependency needs a catalog or trace edge behind it.
+
+If people in chat call applications by short names (`auth`, `notif service`, `the ledger`), and
+`disc:about` misses them with `only fuzzily matches` or `not in the catalog` in quarantine, set
+`known_apps = true` on that `discussions` source. Each thread then goes to the model with the
+catalog names it may mean. It is off by default because it is not yet proven not to add wrong
+applications; check new `disc:about` links after turning it on.

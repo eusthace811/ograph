@@ -222,3 +222,36 @@ fn ids_that_differ_only_in_case_are_one_incident() {
     assert!(out.iter().all(|o| o.quarantined.is_empty()), "{out:?}");
     assert_eq!(values(&root, STATUS), ["resolved"]);
 }
+
+/// What a fixture model was asked about each thread of a first harvest, sorted.
+fn asked(name: &str, discussions: &str) -> Vec<String> {
+    let sources = format!("[[source]]\nkind = \"docs\"\npath = \"runbooks\"\n[[source]]\nkind = \"discussions\"\npath = \"chat\"\n{discussions}");
+    let threads = r#"[{"ts": "1795242400.000100", "text": "the gateway is down again"}, {"ts": "1795246000.000100", "text": "CardRail is down"}]"#;
+    let root = workspace(name, &sources, &[("runbooks/pay.md", "pay (aka pay-gateway) takes card payments.\n"), ("chat/ops.json", threads)]);
+    let log = root.join("asked.txt");
+    let answer = r#"{"category": "UNKNOWN", "sentiment": "calm", "apps": [], "confidence": 0.9}"#;
+    let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
+    let script = root.join("model.sh");
+    std::fs::write(&script, format!("#!/bin/sh\ncat >> '{}'\nprintf '\\n=====\\n' >> '{}'\necho '{answer}'\n", log.display(), log.display())).unwrap();
+    let model = format!("[llm.extract]\ncommand = [\"sh\", \"{}\"]\nmodel = \"fixture\"\nparallel = 1\n", script.display());
+    std::fs::write(root.join(".ograph/config.toml"), format!("{config}{model}")).unwrap();
+    harvest(&root, None);
+    let text = std::fs::read_to_string(&log).unwrap();
+    let mut inputs: Vec<String> = text.split("\n=====\n").filter(|x| !x.trim().is_empty()).map(|x| x.rsplit("The thread:\n").next().unwrap().trim_start().to_owned()).collect();
+    inputs.sort();
+    inputs
+}
+
+#[test]
+fn the_first_harvest_tells_the_model_the_catalog_names_a_thread_shares_a_word_with() {
+    let inputs = asked("known-apps", "known_apps = true\n");
+    assert_eq!(inputs.len(), 2, "{inputs:?}");
+    assert_eq!(inputs[0], "CardRail is down");
+    assert!(inputs[1].starts_with("the gateway is down again\n\nKnown applications ("), "{}", inputs[1]);
+    assert!(inputs[1].ends_with(":\n- pay (pay-gateway)\n"), "{}", inputs[1]);
+}
+
+#[test]
+fn without_known_apps_a_thread_goes_to_the_model_alone() {
+    assert_eq!(asked("known-apps-off", ""), ["CardRail is down", "the gateway is down again"]);
+}

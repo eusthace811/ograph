@@ -1,0 +1,31 @@
+# llm_gate.py on examples/demo (known_apps off), lane P binary
+1. accuracy: 16/16 threads classified as labeled (16 classified); misses (gold -> model): []
+   model-proposed calls committed: 0, of them declared in the catalog: 0; quarantined as unconfirmed: []
+2. replay: cache lines 185 -> 185 (new model calls: 0); harvest/discussions/chat-actions/actions.json: 126 proposed, 126 accepted, 0 quarantined, +0 -0 quads, DEGRADED: model call failed for thread incidents-1792708000-000200: model command failed: The ChatGPT user has reached their Subscription Sharing usage limit. Ask the user to try again after their usage limit resets or use an API key instead.; model call failed for thread incidents-1792715200-000200: model command failed: The ChatGPT user 
+3. broken model harvest: ['harvest/discussions/chat-actions/actions.json: 508 proposed, 170 accepted, 338 quarantined, +1772 -0 quads, DEGRADED: model answer was not JSON: Sure! The category is probably capacity.; model answer was not JSON: Sure! The category is probably capacity.; model answer was not JSON: Sure! The category is probably capacity.; model answer was not JSON: Sure! The category is probably capacity.; model answer was not JSON: Sure! The category is probably capacity. (0.02 s)', 
+   committed: categories ['UNKNOWN'], out-of-vocabulary [], invented apps [], low-confidence model facts 0, invented calls []
+   quarantined 337: "INC-4120 payments failing" does not say what a RESTART does; "INC-4388 checkout 500s after v4.1.0" does not say what a RESTART does; "OUTAGE" is not in the closed vocabulary of disc:category; "REBOOT" is not in the closed vocabulary of evt:actionKind; "auth-service login errors" does not say what a RESTART does; "auth-service p99 jumped after enabling new_token_cache" does not say ; "auth-service rate limit too low for the sale" does not say what a RES; "checkout 5xx after t
+   audit: 0 violations (0.0 s)
+   failure modes exercised: {'not JSON': True, 'out of vocabulary': True, 'invented app': True, 'low confidence': True, 'unconfirmed call': True}
+MODEL GATE: PASS
+
+# llm_gate.py on a copy of examples/demo with known_apps = true on the discussions source
+1. accuracy: 15/16 threads classified as labeled (15 classified); misses (gold -> model): []
+   model-proposed calls committed: 0, of them declared in the catalog: 0; quarantined as unconfirmed: []
+2. replay: cache lines 185 -> 185 (new model calls: 0); harvest/discussions/chat-actions/actions.json: 126 proposed, 126 accepted, 0 quarantined, +0 -0 quads, DEGRADED: model call failed for thread incidents-1792708000-000200: model command failed: The ChatGPT user has reached their Subscription Sharing usage limit. Ask the user to try again after their usage limit resets or use an API key instead.; model call failed for thread incidents-1792715200-000200: model command failed: The ChatGPT user 
+3. broken model harvest: ['harvest/discussions/chat-actions/actions.json: 508 proposed, 170 accepted, 338 quarantined, +1772 -0 quads, DEGRADED: model answer was not JSON: Sure! The category is probably capacity.; model answer was not JSON: Sure! The category is probably capacity.; model answer was not JSON: Sure! The category is probably capacity.; model answer was not JSON: Sure! The category is probably capacity.; model answer was not JSON: Sure! The category is probably capacity. (0.02 s)', 
+   committed: categories ['UNKNOWN'], out-of-vocabulary [], invented apps [], low-confidence model facts 0, invented calls []
+   quarantined 337: "INC-4120 payments failing" does not say what a RESTART does; "INC-4388 checkout 500s after v4.1.0" does not say what a RESTART does; "OUTAGE" is not in the closed vocabulary of disc:category; "REBOOT" is not in the closed vocabulary of evt:actionKind; "auth-service login errors" does not say what a RESTART does; "auth-service p99 jumped after enabling new_token_cache" does not say ; "auth-service rate limit too low for the sale" does not say what a RES; "checkout 5xx after t
+   audit: 0 violations (0.0 s)
+   failure modes exercised: {'not JSON': True, 'out of vocabulary': True, 'invented app': True, 'low confidence': True, 'unconfirmed call': True}
+MODEL GATE: PASS
+
+# alias_eval.py, lane P binary
+without runbooks: aliases from runbooks []; alias-named alert facts quarantined 14; alias-named alerts resolved to []; top causes [('ledger-db', 0.9444), ('payments-api', 0.9295), ('checkout', 0.9)]
+with runbooks: aliases from runbooks [('ledger-db', 'ledger-pg'), ('payments-api', 'pay-gw'), ('search-api', 'finder')]; alias-named alert facts quarantined 0; alias-named alerts resolved to ['id:app/payments-api', 'id:app/search-api']; top causes [('ledger-db', 0.9444), ('payments-api', 0.9295), ('checkout', 0.9)]
+   runbook proposal quarantined: ops:Application?"orders-api" ops:alias "checkout" -- alias "checkout" already names id:app/checkout
+
+1. aliases: 3/3 expected committed, unexpected [], missed [], decoys committed []
+2. alias-named alerts: quarantined 14 facts without runbooks, 0 with; resolved to ['id:app/payments-api', 'id:app/search-api']
+3. INC-5377 top causes unchanged: True
+ALIAS GATE: PASS

@@ -25,6 +25,10 @@ already name by a whole name or alias. It was built after held-out set B (the `h
 group, 30 threads) was written, and it passes only on B, with --decide heldout and the same
 conditions. Set A (`mentions`) is development data for it and is reported, not decided on.
 
+The candidate workspaces set `known_apps = true` on each discussions source; the parent's do not.
+A run whose model calls fail stops the gate as NOT MEASURED (exit 3) and keeps the finished
+runs, so a rerun resumes.
+
 Usage: catalog_slice_gate.py --parent BIN --candidate BIN --demo examples/demo --out DIR [--runs 3]
        catalog_slice_gate.py --candidate BIN --demo examples/demo --out DIR --keys-only
 """
@@ -42,12 +46,14 @@ def og(binp, root, *args):
 def rows(binp, root, q):
     return json.loads(og(binp, root, "--json", "sparql", q))["rows"]
 
-def workspace(demo, d, model=None):
+def workspace(demo, d, known=False, model=None):
     if d.exists(): shutil.rmtree(d)
     shutil.copytree(demo, d, ignore=shutil.ignore_patterns("store.redb", "cache"))
     cfg = d / ".ograph" / "config.toml"
     text = re.sub(r'\[\[source\]\]\nkind = "discussions"\npath = "discussions"\n\[\[source\]\]\nkind = "discussions"\npath = "chat-actions"\nactions = true\n', SOURCES, cfg.read_text())
     assert SOURCES in text, "demo config changed shape"
+    if known:
+        text = text.replace(SOURCES, SOURCES.replace('path = "discussions"\n', 'path = "discussions"\nknown_apps = true\n').replace('path = "chat-actions"\n', 'path = "chat-actions"\nknown_apps = true\n').replace('path = "chat-mentions"\n', 'path = "chat-mentions"\nknown_apps = true\n'))
     if model:
         text = text.split("[llm.extract]")[0] + f'[llm.extract]\ncommand = {json.dumps(model)}\nmodel = "echo"\nparallel = 4\n'
     cfg.write_text(text)
@@ -90,8 +96,13 @@ def accuracy(a, labels):
             d = out / f"run{r}-{name}"
             done = d / "score.json"
             if not done.exists():
-                workspace(pathlib.Path(a.demo).resolve(), d)
+                workspace(pathlib.Path(a.demo).resolve(), d, known=name == "candidate")
                 (d / "harvest.out").write_text(og(getattr(a, name), d, "harvest"))
+                if "model call failed" in (d / "harvest.out").read_text():
+                    why = re.search(r"model call failed for thread [^:]+: (.{0,120})", (d / "harvest.out").read_text()).group(1)
+                    print(f"run {r} {name}: NOT MEASURED, model calls failed: {why}")
+                    shutil.rmtree(d)
+                    sys.exit(3)
                 done.write_text(json.dumps(score(getattr(a, name), d, labels), indent=1))
             s = json.loads(done.read_text())
             res[name].append(s)
@@ -121,7 +132,7 @@ def accuracy(a, labels):
 def keys(a):
     out = pathlib.Path(a.out).resolve(); d = out / "keys"; log = out / "keys.log"
     log.unlink(missing_ok=True)
-    workspace(pathlib.Path(a.demo).resolve(), d, ["python3", str(HERE / "echo_model.py"), str(log)])
+    workspace(pathlib.Path(a.demo).resolve(), d, known=True, model=["python3", str(HERE / "echo_model.py"), str(log)])
     og(a.candidate, d, "harvest")
     first = [json.loads(l) for l in log.read_text().splitlines()]
     with open(d / "catalog" / "catalog-info.yaml", "a") as f:

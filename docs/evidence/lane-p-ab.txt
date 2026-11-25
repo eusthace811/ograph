@@ -1,0 +1,20 @@
+identical  before_INC-5377.json
+identical  blast_ledger-db.json
+identical  chains_INC-5377.json
+identical  chains_INC-5377_--rank_propagation.json
+identical  news.json
+identical  rcaeval.json
+identical  similar_INC-5377.json
+identical  validate.json
+identical  why_INC-5377.json
+identical  harvest.txt
+identical  rcaeval.txt
+identical  similar.txt
+12 of 12 outputs identical
+| chain | 0.93 | 0.99 | 0.98 |
+top-1 similar past incident shares the root cause: 82/89 = 0.92; any of top 3: 0.94; chance about 0.20
+latency, median of 150 runs each, the binaries taking turns:
+  before INC-5377    old 12.39 ms   new 12.39 ms
+  chains INC-5377    old 12.94 ms   new 13.09 ms
+  similar INC-5377   old 15.29 ms   new 14.90 ms
+  blast ledger-db    old 16.70 ms   new 16.53 ms
