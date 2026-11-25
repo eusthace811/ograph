@@ -1,0 +1,162 @@
+Agent root-cause eval (scripts/eval/agent_rca_eval.py), Phase 12 lane F, on claude-haiku-5-5 in headless
+Claude Code 2.1.332 (--runner claude). NOT gpt-5.6-terra: agent-rca.txt's numbers are another model
+and are not compared. Gate amendment: phase12-haiku.txt.
+
+Command (integrate-phase-13 worktree, ee48efb binary):
+  agent_rca_eval.py --runner claude --model claude-haiku-5-5 --bin target/release/ograph
+    --cases <data>/rcaeval-cases --demo examples/demo --reference target/rcaeval-ref.json --misses
+    --sample 30 --runs 3 --parallel 4 --work /private/tmp/claude-501/haiku-gates/agent-rca-f
+    --out docs/evidence/agent-rca-haiku
+The full plan ran: 39 cases x 3 runs x 4 arms, 468 rows, 0 errors, 0 limit refusals, 0 isolation
+voids. The leak check voided 25 runs (14 skill, 11 raw), each for writing helper scripts outside
+its workspace or climbing out with `..`. Cost by claude's total_cost_usd: $3.68.
+Harness gates: chains reproduces rcaeval_score.py, PASS (35/35); leak check active (25 voided).
+Rows: agent-rca-haiku/runs.jsonl; transcripts: agent-rca-haiku/transcripts.tar.gz.
+
+model claude-haiku-5-5 on claude; 39 cases x 3 runs; arms mcp, skill, raw, chains
+
+demo (4 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 9/12 (0.75) | 3 | 0 | 1 | 0 | 8/12 | 7.5 | 12.4 | 42710 | 0.03 |
+| skill | 12/12 (1.00) | 4 | 0 | 0 | 0 | 7/12 | 7 | 49.2 | 129886 | 0.09 |
+| raw | 10/10 (1.00) | 3 | 0 | 0 | 1 | 1/10 | 7 | 24.6 | 100656 | 0.10 |
+| chains | 9/12 (0.75) | 3 | 0 | 1 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as the runner reports it (pi's list price, or claude's total_cost_usd)
+mcp wrong answers: search-api x3
+mcp departs from chains rank 1 on 0 of 12 runs: right on 0 of them, and rank 1 was right on 0
+skill departs from chains rank 1 on 3 of 12 runs: right on 3 of them, and rank 1 was right on 0
+raw departs from chains rank 1 on 3 of 10 runs: right on 3 of them, and rank 1 was right on 0
+chains wrong answers: search-api x3
+mcp against skill: better on 0 cases, worse on 1, equal on 3 (sign test p = 1.000)
+mcp against raw: better on 0 cases, worse on 1, equal on 3 (sign test p = 1.000)
+mcp against chains: better on 0 cases, worse on 0, equal on 4 (sign test p = 1.000)
+skill against raw: better on 0 cases, worse on 0, equal on 4 (sign test p = 1.000)
+skill against chains: better on 1 cases, worse on 0, equal on 3 (sign test p = 1.000)
+raw against chains: better on 1 cases, worse on 0, equal on 3 (sign test p = 1.000)
+
+| case | label | mcp | skill | raw | chains |
+|---|---|---|---|---|---|
+| INC-4120 | ledger-db | stable_pass: ledger-db, ledger-db, ledger-db | stable_pass: ledger-db, ledger-db, ledger-db | stable_pass: ledger-db, ledger-db, ledger-db | stable_pass: ledger-db, ledger-db, ledger-db |
+| INC-4388 | checkout | stable_pass: checkout, checkout, checkout | stable_pass: checkout, checkout, checkout | error: checkout, ledger-db, checkout | stable_pass: checkout, checkout, checkout |
+| INC-4501 | elasticsearch | stable_fail: search-api, search-api, search-api | stable_pass: elasticsearch, elasticsearch, elasticsearch | stable_pass: elasticsearch, elasticsearch, elasticsearch | stable_fail: search-api, search-api, search-api |
+| INC-5377 | ledger-db | stable_pass: ledger-db, ledger-db, ledger-db | stable_pass: ledger-db, ledger-db, ledger-db | stable_pass: ledger-db, ledger-db, ledger-db | stable_pass: ledger-db, ledger-db, ledger-db |
+
+rcaeval (30 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 26/90 (0.29) | 5 | 7 | 18 | 0 | 79/90 | 7 | 15.6 | 55072 | 0.38 |
+| skill | 53/79 (0.67) | 8 | 13 | 0 | 9 | 39/79 | 11 | 48.5 | 274805 | 1.22 |
+| raw | 74/83 (0.89) | 18 | 6 | 0 | 6 | 7/83 | 11 | 52.6 | 261647 | 1.27 |
+| chains | 87/90 (0.97) | 29 | 0 | 1 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as the runner reports it (pi's list price, or claude's total_cost_usd)
+mcp wrong answers: redis x54, currencyservice x4, cartservice x2, paymentservice x2, productcatalogservice x1, recommendationservice x1
+mcp departs from chains rank 1 on 64 of 90 runs: right on 0 of them, and rank 1 was right on 61
+skill wrong answers: redis x25, recommendationservice x1
+skill departs from chains rank 1 on 27 of 79 runs: right on 1 of them, and rank 1 was right on 24
+raw wrong answers: recommendationservice x3, paymentservice x2, checkoutservice x2, productcatalogservice x2
+raw departs from chains rank 1 on 11 of 83 runs: right on 2 of them, and rank 1 was right on 9
+chains wrong answers: cartservice x3
+mcp against skill: better on 4 cases, worse on 23, equal on 3 (sign test p = 0.000)
+mcp against raw: better on 2 cases, worse on 24, equal on 4 (sign test p = 0.000)
+mcp against chains: better on 0 cases, worse on 24, equal on 6 (sign test p = 0.000)
+skill against raw: better on 4 cases, worse on 15, equal on 11 (sign test p = 0.019)
+skill against chains: better on 1 cases, worse on 17, equal on 12 (sign test p = 0.000)
+raw against chains: better on 1 cases, worse on 7, equal on 22 (sign test p = 0.070)
+
+| case | label | mcp | skill | raw | chains |
+|---|---|---|---|---|---|
+| c-c9e38942cb | checkoutservice | stable_fail: redis, redis, redis | flaky: checkoutservice, redis, redis | error: checkoutservice, checkoutservice, checkoutservice | stable_pass: checkoutservice, checkoutservice, checkoutservice |
+| c-98649a36b0 | productcatalogservice | flaky: redis, productcatalogservice, productcatalogservice | flaky: productcatalogservice, redis, productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice |
+| c-498b272d09 | productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice |
+| c-b9ecf644af | emailservice | stable_pass: emailservice, emailservice, emailservice | flaky: redis, redis, emailservice | stable_pass: emailservice, emailservice, emailservice | stable_pass: emailservice, emailservice, emailservice |
+| c-e375de9cb8 | checkoutservice | stable_fail: redis, redis, redis | flaky: checkoutservice, checkoutservice, redis | flaky: checkoutservice, checkoutservice, paymentservice | stable_pass: checkoutservice, checkoutservice, checkoutservice |
+| c-177092bf56 | recommendationservice | flaky: redis, productcatalogservice, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice |
+| c-3a0809d8d0 | currencyservice | stable_fail: redis, redis, redis | flaky: redis, redis, currencyservice | error: currencyservice, currencyservice, currencyservice | stable_fail: cartservice, cartservice, cartservice |
+| c-8610a6ecab | currencyservice | flaky: currencyservice, recommendationservice, currencyservice | stable_pass: currencyservice, currencyservice, currencyservice | error: checkoutservice, currencyservice, currencyservice | stable_pass: currencyservice, currencyservice, currencyservice |
+| c-bdf8aad8af | productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice | error: recommendationservice, redis, productcatalogservice | flaky: productcatalogservice, recommendationservice, recommendationservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice |
+| c-5930118bc1 | checkoutservice | stable_fail: redis, redis, redis | flaky: redis, checkoutservice, checkoutservice | error: frontend, checkoutservice, checkoutservice | stable_pass: checkoutservice, checkoutservice, checkoutservice |
+| c-6e0dc58425 | currencyservice | stable_fail: redis, cartservice, cartservice | error: currencyservice, currencyservice, currencyservice | stable_pass: currencyservice, currencyservice, currencyservice | stable_pass: currencyservice, currencyservice, currencyservice |
+| c-ec9e76a45d | emailservice | stable_fail: redis, redis, redis | error: emailservice, emailservice, redis | stable_pass: emailservice, emailservice, emailservice | stable_pass: emailservice, emailservice, emailservice |
+| c-4d387bea1c | currencyservice | stable_fail: redis, redis, redis | flaky: redis, redis, currencyservice | stable_pass: currencyservice, currencyservice, currencyservice | stable_pass: currencyservice, currencyservice, currencyservice |
+| c-e9781b0ed5 | recommendationservice | stable_fail: redis, redis, redis | stable_pass: recommendationservice, recommendationservice, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice |
+| c-963cb0c461 | productcatalogservice | flaky: productcatalogservice, productcatalogservice, redis | flaky: redis, redis, productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice |
+| c-ec15cb00cd | emailservice | stable_fail: redis, redis, redis | stable_pass: emailservice, emailservice, emailservice | stable_pass: emailservice, emailservice, emailservice | stable_pass: emailservice, emailservice, emailservice |
+| c-648fd48698 | emailservice | stable_fail: redis, redis, redis | error: emailservice, checkoutservice, emailservice | error: checkoutservice, emailservice, emailservice | stable_pass: emailservice, emailservice, emailservice |
+| c-2951888112 | productcatalogservice | flaky: productcatalogservice, currencyservice, productcatalogservice | error: productcatalogservice, productcatalogservice, productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice |
+| c-c91fd2df9f | currencyservice | flaky: redis, redis, currencyservice | error: currencyservice, redis, currencyservice | flaky: currencyservice, currencyservice, checkoutservice | stable_pass: currencyservice, currencyservice, currencyservice |
+| c-cc8c3892e2 | recommendationservice | stable_fail: redis, redis, redis | flaky: redis, redis, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice |
+| c-ce14e33b0b | checkoutservice | stable_fail: redis, redis, redis | flaky: checkoutservice, redis, checkoutservice | flaky: checkoutservice, checkoutservice, paymentservice | stable_pass: checkoutservice, checkoutservice, checkoutservice |
+| c-3cc10cccb6 | checkoutservice | stable_fail: redis, redis, redis | flaky: checkoutservice, redis, redis | error: checkoutservice, checkoutservice, checkoutservice | stable_pass: checkoutservice, checkoutservice, checkoutservice |
+| c-52eb6b0c94 | recommendationservice | stable_fail: redis, redis, redis | flaky: recommendationservice, redis, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice |
+| c-a0cadd712c | emailservice | stable_fail: redis, redis, redis | error: emailservice, emailservice, redis | stable_pass: emailservice, emailservice, emailservice | stable_pass: emailservice, emailservice, emailservice |
+| c-17329102bc | recommendationservice | stable_fail: redis, redis, redis | stable_pass: recommendationservice, recommendationservice, recommendationservice | flaky: productcatalogservice, recommendationservice, productcatalogservice | stable_pass: recommendationservice, recommendationservice, recommendationservice |
+| c-e26fc30ca6 | currencyservice | stable_pass: currencyservice, currencyservice, currencyservice | error: redis, redis, currencyservice | stable_pass: currencyservice, currencyservice, currencyservice | stable_pass: currencyservice, currencyservice, currencyservice |
+| c-92c08bd0d2 | recommendationservice | stable_fail: currencyservice, currencyservice, currencyservice | stable_pass: recommendationservice, recommendationservice, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice | stable_pass: recommendationservice, recommendationservice, recommendationservice |
+| c-54eaff8bb0 | productcatalogservice | flaky: paymentservice, productcatalogservice, paymentservice | error: productcatalogservice, productcatalogservice, productcatalogservice | flaky: productcatalogservice, productcatalogservice, recommendationservice | stable_pass: productcatalogservice, productcatalogservice, productcatalogservice |
+| c-6e97052d57 | emailservice | stable_pass: emailservice, emailservice, emailservice | stable_pass: emailservice, emailservice, emailservice | stable_pass: emailservice, emailservice, emailservice | stable_pass: emailservice, emailservice, emailservice |
+| c-bba0bc25ab | checkoutservice | stable_fail: redis, redis, redis | flaky: checkoutservice, redis, checkoutservice | stable_pass: checkoutservice, checkoutservice, checkoutservice | stable_pass: checkoutservice, checkoutservice, checkoutservice |
+
+rcaeval-miss (5 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 3/15 (0.20) | 1 | 0 | 4 | 0 | 14/15 | 7 | 13.8 | 59907 | 0.06 |
+| skill | 3/12 (0.25) | 0 | 0 | 3 | 2 | 9/12 | 12.5 | 59.6 | 296209 | 0.25 |
+| raw | 13/13 (1.00) | 3 | 0 | 0 | 2 | 0/13 | 14 | 91.8 | 371505 | 0.28 |
+| chains | 0/15 (0.00) | 0 | 0 | 5 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as the runner reports it (pi's list price, or claude's total_cost_usd)
+mcp wrong answers: redis x9, paymentservice x3
+mcp departs from chains rank 1 on 12 of 15 runs: right on 3 of them, and rank 1 was right on 0
+skill wrong answers: redis x5, emailservice x2, paymentservice x2
+skill departs from chains rank 1 on 8 of 12 runs: right on 3 of them, and rank 1 was right on 0
+raw departs from chains rank 1 on 13 of 13 runs: right on 13 of them, and rank 1 was right on 0
+chains wrong answers: cartservice x6, emailservice x3, checkoutservice x3, paymentservice x3
+mcp against skill: better on 0 cases, worse on 1, equal on 4 (sign test p = 1.000)
+mcp against raw: better on 0 cases, worse on 4, equal on 1 (sign test p = 0.125)
+mcp against chains: better on 1 cases, worse on 0, equal on 4 (sign test p = 1.000)
+skill against raw: better on 0 cases, worse on 3, equal on 2 (sign test p = 0.250)
+skill against chains: better on 2 cases, worse on 0, equal on 3 (sign test p = 0.500)
+raw against chains: better on 5 cases, worse on 0, equal on 0 (sign test p = 0.062)
+
+| case | label | mcp | skill | raw | chains |
+|---|---|---|---|---|---|
+| c-1d389615b3 | currencyservice | stable_pass: currencyservice, currencyservice, currencyservice | error: currencyservice, currencyservice, currencyservice | error: currencyservice, currencyservice, currencyservice | stable_fail: cartservice, cartservice, cartservice |
+| c-b0f876b48e | checkoutservice | stable_fail: redis, redis, redis | stable_fail: emailservice, emailservice, redis | stable_pass: checkoutservice, checkoutservice, checkoutservice | stable_fail: emailservice, emailservice, emailservice |
+| c-d1059aa9c3 | currencyservice | stable_fail: redis, redis, redis | error: currencyservice, currencyservice, currencyservice | stable_pass: currencyservice, currencyservice, currencyservice | stable_fail: checkoutservice, checkoutservice, checkoutservice |
+| c-d7fc5dfaee | currencyservice | stable_fail: redis, redis, redis | stable_fail: redis, redis, redis | stable_pass: currencyservice, currencyservice, currencyservice | stable_fail: cartservice, cartservice, cartservice |
+| c-e425dee775 | checkoutservice | stable_fail: paymentservice, paymentservice, paymentservice | stable_fail: paymentservice, paymentservice, redis | error: checkoutservice, checkoutservice, checkoutservice | stable_fail: paymentservice, paymentservice, paymentservice |
+
+leak check: 25 of 468 runs voided; 0 errors
+  leak raw demo/demo/INC-4388 run 2: bash: climbs out with ..
+  leak raw demo/demo/INC-4388 run 3: bash: climbs out with ..
+  leak raw rcaeval-miss/c-1d389615b3/INC-1D3896 run 2: bash: climbs out with ..
+  leak skill rcaeval-miss/c-1d389615b3/INC-1D3896 run 1: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/an.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/onset.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/rare.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/show.py
+  leak skill rcaeval-miss/c-1d389615b3/INC-1D3896 run 2: bash: climbs out with ..
+  leak skill rcaeval-miss/c-d1059aa9c3/INC-D1059A run 3: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/series.py
+  leak raw rcaeval-miss/c-e425dee775/INC-E425DE run 3: bash: climbs out with ..
+  leak skill rcaeval/c-2951888112/INC-295188 run 1: bash: climbs out with ..
+  leak raw rcaeval/c-3a0809d8d0/INC-3A0809 run 2: bash: climbs out with ..
+  leak raw rcaeval/c-3cc10cccb6/INC-3CC10C run 1: bash: reaches /Users/juan/.claude/projects/-private-tmp-claude-501-haiku-gates-agent-rca-f-runs-77556331d7-ops/e67e2916-0672-46b0-87c0-bc6921321169/tool-results/bwji0swpj.txt
+  leak skill rcaeval/c-54eaff8bb0/INC-54EAFF run 2: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/onset.py
+  leak skill rcaeval/c-54eaff8bb0/INC-54EAFF run 3: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scripts; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scripts/onset.py
+  leak raw rcaeval/c-5930118bc1/INC-593011 run 1: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/an; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/an1.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/an2.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/an3.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/an4.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/an5.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/an6.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/an7.py; bash: reaches /private/tmp/claude-501/haiku-
+  leak raw rcaeval/c-648fd48698/INC-648FD4 run 1: bash: climbs out with ..
+  leak skill rcaeval/c-648fd48698/INC-648FD4 run 2: bash: climbs out with ..
+  leak skill rcaeval/c-648fd48698/INC-648FD4 run 3: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/onsets.txt; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scripts; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scripts/steps.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scripts/window.py
+  leak skill rcaeval/c-6e0dc58425/INC-6E0DC5 run 1: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/onset.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/series.py
+  leak raw rcaeval/c-8610a6ecab/INC-8610A6 run 2: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scripts; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scripts/dev.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scripts/tree.py
+  leak skill rcaeval/c-a0cadd712c/INC-A0CADD run 2: bash: climbs out with ..
+  leak skill rcaeval/c-bdf8aad8af/INC-BDF8AA run 2: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/an.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/logs.py
+  leak skill rcaeval/c-c91fd2df9f/INC-C91FD2 run 3: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/logs.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/onset.py
+  leak raw rcaeval/c-c9e38942cb/INC-C9E389 run 2: bash: climbs out with ..
+  leak raw rcaeval/c-c9e38942cb/INC-C9E389 run 3: bash: climbs out with ..
+  leak skill rcaeval/c-e26fc30ca6/INC-E26FC3 run 3: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scripts; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scripts/onset.py
+  leak skill rcaeval/c-ec9e76a45d/INC-EC9E76 run 1: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-f/scratch/first.py
+
+GATE chains arm reproduces rcaeval_score.py: PASS (35/35 cases with the same rank 1 on every run; AC@1 0.8286 against 0.8286)

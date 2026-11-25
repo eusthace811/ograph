@@ -45,3 +45,24 @@ coverage_decline-haiku.txt, agent-rca-haiku.txt (+ agent-rca-haiku/), each heade
 A limit refusal is retried once after a few minutes; a second is NOT MEASURED. The total cap for
 all Haiku gates is $40 by claude's total_cost_usd. These results are Haiku's, not the models the
 gates were first run with, and are not compared with their numbers.
+
+RESULTS (2026-11-25), all on claude-haiku-5-5; no limit refusal, no isolation void
+-----------------------------------------------------------------------------------
+Harvest model calls for the demo copy and B: 173 calls, $0.118, 0 failed.
+  llm_gate.py        PASS. 16/16 categories; replay 47 -> 47 cache lines; broken model commits
+                     nothing out of vocabulary, no invented app; audit 0 (llm-gate-haiku.txt).
+  action_gate.py C1  PASS. 25 committed, 25 correct: precision 1.00, recall 1.00; 0 on
+                     ask/propose/plan threads; times exact; replay 0 calls; bad_model.py commits 0
+                     (action-gate-haiku.txt). The written condition for turning `actions` on by
+                     default is met, on Haiku; the default is not changed here.
+  coverage_decline B PASS. Declined gaps never proposed again and reported as declined by eval
+                     in 3 of 3 treatment runs; other gaps 18 baseline against 18 treatment; every
+                     treatment run exits 1 (coverage_decline-haiku.txt).
+  agent_rca_eval F   Run in full (39 cases x 3 runs), $3.68, 25 of 468 runs voided by the leak
+                     rule. chains floor PASS (35/35). RCAEval sample AC@1 over runs: mcp 26/90
+                     (0.29), skill 53/79 (0.67), raw 74/83 (0.89), chains 87/90 (0.97); every
+                     agent arm is worse than chains rank 1 (mcp 0-24, skill 1-17, raw 1-7 cases).
+                     The mcp arm answers redis on 54 of 90 runs. Misses: raw 13/13, skill 3/12,
+                     mcp 3/15, chains 0/15. Demo: skill and raw 4/4, mcp and chains 3/4
+                     (agent-rca-haiku.txt).
+  C2 (vague titles)  NOT MEASURED: no pre-written gate.
