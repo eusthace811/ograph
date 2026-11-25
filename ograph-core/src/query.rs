@@ -258,6 +258,68 @@ fn graph_info(s: &Snapshot, g: Id, cache: &mut FxHashMap<Id, GraphInfo>) -> Grap
     info
 }
 
+#[derive(Serialize, Debug, PartialEq)]
+pub struct FactChange {
+    /// `added`, `removed`, or `changed` when one value of a subject's property replaced another.
+    pub change: &'static str,
+    pub at: String,
+    pub subject: String,
+    pub predicate: String,
+    pub object: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub was: Option<String>,
+    pub graph: String,
+    pub source: Option<String>,
+    pub extractor: Option<String>,
+}
+
+/// What the sources stated at the time of `then` (a [`Snapshot::known_at`] view) and state
+/// differently in `now`, by subject. Harvest bookkeeping, quarantined proposals and chains are
+/// left out: chains are recomputed from the facts listed here.
+pub fn changes(then: &Snapshot, now: &Snapshot) -> anyhow::Result<Vec<FactChange>> {
+    let derived = [vocab::QUARANTINE.to_owned(), format!("{}harvest/correlation/", vocab::GRAPH)];
+    let records = [format!("{}fact/", vocab::DATA), format!("{}quarantine/", vocab::DATA)];
+    let (mut cache_then, mut cache_now) = (FxHashMap::default(), FxHashMap::default());
+    let mut by_property: std::collections::BTreeMap<(String, String), [Vec<FactChange>; 2]> = Default::default();
+    for c in then.changes()? {
+        let [s, p, o, g] = c.quad;
+        let (Term::NamedNode(subject), Term::NamedNode(predicate), Term::NamedNode(graph)) = (now.term(s)?, now.term(p)?, now.term(g)?) else { continue };
+        if s == g
+            || predicate.as_str().starts_with(harv::NS)
+            || records.iter().any(|r| subject.as_str().starts_with(r.as_str()))
+            || derived.iter().any(|d| graph.as_str().starts_with(d.as_str()))
+        {
+            continue;
+        }
+        let info = if c.added { graph_info(now, g, &mut cache_now) } else { graph_info(then, g, &mut cache_then) };
+        let (subject, predicate) = (vocab::compact(subject.as_str()), vocab::compact(predicate.as_str()));
+        by_property.entry((subject.clone(), predicate.clone())).or_default()[usize::from(c.added)].push(FactChange {
+            change: if c.added { "added" } else { "removed" },
+            at: term::format_millis(c.at_ms),
+            subject,
+            predicate,
+            object: crate::sparql::show(&now.term(o)?),
+            was: None,
+            graph: info.graph,
+            source: info.source,
+            extractor: info.extractor,
+        });
+    }
+    let mut out = Vec::new();
+    for [mut removed, mut added] in by_property.into_values() {
+        if let ([old], [new]) = (removed.as_slice(), added.as_mut_slice()) {
+            new.change = "changed";
+            new.was = Some(old.object.clone());
+            removed.clear();
+        }
+        for side in [&mut removed, &mut added] {
+            side.sort_by(|a, b| a.object.cmp(&b.object));
+            out.append(side);
+        }
+    }
+    Ok(out)
+}
+
 /// Provenance of every fact about a node: which harvest graphs assert it, their source,
 /// extractor and time, model provenance for model-proposed facts, and quarantined proposals.
 pub fn why(s: &Snapshot, node: &str) -> anyhow::Result<Provenance> {

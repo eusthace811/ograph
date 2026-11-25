@@ -40,12 +40,20 @@ enum Cmd {
         window: String,
         #[arg(long, default_value_t = 4)]
         depth: usize,
+        /// Answer from what the store held at this time: a dateTime with a zone, or how long
+        /// ago (90m, 2d)
+        #[arg(long)]
+        known_at: Option<String>,
     },
     /// Applications and business processes that depend on an application (Q2)
     Blast {
         app: String,
         #[arg(long, default_value_t = 8)]
         depth: usize,
+        /// Answer from what the store held at this time: a dateTime with a zone, or how long
+        /// ago (90m, 2d)
+        #[arg(long)]
+        known_at: Option<String>,
     },
     /// Correlation chains and ranked root-cause candidates for an incident
     Chains {
@@ -59,6 +67,10 @@ enum Cmd {
         /// Override a correlation setting, e.g. --set prop_weights=[0.5,0.3,0.1,0.1]
         #[arg(long = "set")]
         set: Vec<String>,
+        /// Answer from what the store held at this time: a dateTime with a zone, or how long
+        /// ago (90m, 2d)
+        #[arg(long)]
+        known_at: Option<String>,
     },
     /// Past incidents that resemble this one, with accepted causes and mitigations (Q3)
     Similar {
@@ -104,6 +116,16 @@ enum Cmd {
         query: String,
         #[arg(long)]
         limit: Option<usize>,
+        /// Answer from what the store held at this time: a dateTime with a zone, or how long
+        /// ago (90m, 2d)
+        #[arg(long)]
+        known_at: Option<String>,
+    },
+    /// What the sources state differently now than at a time: facts added, removed and changed
+    Changes {
+        /// A dateTime with a zone, or how long ago (90m, 2d)
+        #[arg(long)]
+        since: String,
     },
     /// Full SHACL audit of the store
     Validate,
@@ -129,7 +151,7 @@ enum Cmd {
     },
     /// Store size per table and graph count
     Stats,
-    /// Rewrite the store file without free pages
+    /// Drop history older than history_days, then rewrite the store file without free pages
     Compact,
     /// Keep the store open and answer JSON-RPC over TCP (also MCP over stdio with --mcp)
     Serve {
@@ -153,6 +175,15 @@ fn warn(degraded: &[String]) {
     for d in degraded {
         eprintln!("ograph: DEGRADED: {d}");
     }
+}
+
+/// The store now, or as it was at `known_at`, with what that view covers on standard error so
+/// the answer on standard output is the one the command gave at the time.
+fn view(ws: &Workspace, known_at: Option<&str>) -> anyhow::Result<ograph_core::store::Snapshot> {
+    let Some(when) = known_at else { return Ok(ws.store.snapshot()?) };
+    let (snap, note) = ws.known_at(when)?;
+    eprintln!("ograph: {note}");
+    Ok(snap)
 }
 
 fn print_suspects(suspects: &[query::Suspect]) {
@@ -211,8 +242,8 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             }
             Ok(true)
         }
-        Cmd::Before { incident, window, depth } => {
-            let snap = ws.store.snapshot()?;
+        Cmd::Before { incident, window, depth, known_at } => {
+            let snap = view(&ws, known_at.as_deref())?;
             let b = query::before(&snap, &incident, query::duration_s(&window)?, depth)?;
             let found = !b.events.is_empty();
             print(json, &b, |b| {
@@ -223,8 +254,8 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             });
             Ok(found)
         }
-        Cmd::Blast { app, depth } => {
-            let snap = ws.store.snapshot()?;
+        Cmd::Blast { app, depth, known_at } => {
+            let snap = view(&ws, known_at.as_deref())?;
             let b = query::blast(&snap, &app, depth)?;
             let found = !b.dependents.is_empty() || !b.processes.is_empty();
             print(json, &b, |b| {
@@ -241,8 +272,8 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             });
             Ok(found)
         }
-        Cmd::Chains { incident, rank, window, top, set } => {
-            let snap = ws.store.snapshot()?;
+        Cmd::Chains { incident, rank, window, top, set, known_at } => {
+            let snap = view(&ws, known_at.as_deref())?;
             let ids = correlate::Ids::new(&snap)?;
             let mut st = ws.config.correlation.clone();
             if let Some(r) = rank {
@@ -392,9 +423,26 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             print(json, &o, |o| println!("verdict recorded in {} ({} facts, {} quarantined)", o.graph, o.accepted, o.quarantined.len()));
             Ok(o.quarantined.is_empty())
         }
-        Cmd::Sparql { query, limit } => {
+        Cmd::Changes { since } => {
+            let (then, note) = ws.known_at(&since)?;
+            eprintln!("ograph: {note}");
+            let v = query::changes(&then, &ws.store.snapshot()?)?;
+            print(json, &v, |v| {
+                for c in v {
+                    let mark = match c.change {
+                        "added" => '+',
+                        "removed" => '-',
+                        _ => '~',
+                    };
+                    let was = c.was.as_ref().map(|w| format!(" (was {w})")).unwrap_or_default();
+                    println!("{mark} {} {} {}{was}\n      {} {} [{} via {}]", c.subject, c.predicate, c.object, c.at, c.graph, c.source.as_deref().unwrap_or("?"), c.extractor.as_deref().unwrap_or("?"));
+                }
+            });
+            Ok(!v.is_empty())
+        }
+        Cmd::Sparql { query, limit, known_at } => {
             let query = sparql::check(&query, &ws.ontology)?;
-            let snap = ws.store.snapshot()?;
+            let snap = view(&ws, known_at.as_deref())?;
             let a = sparql::run(&snap, &query, limit)?;
             let found = match &a {
                 Answer::Solutions { rows, .. } => !rows.is_empty(),
@@ -505,10 +553,15 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         Cmd::Compact => {
             let before = std::fs::metadata(ws.store.path())?.len();
             let path = ws.store.path().to_owned();
+            let days = ws.history_days();
+            let _write = ws.store.write_lock()?;
+            let pruned = ws.store.prune_history(workspace::now_ms() - i64::from(days) * 86_400_000)?;
             let mut store = ws.store;
             store.compact()?;
             let after = std::fs::metadata(path)?.len();
-            print(json, &serde_json::json!({"bytes_before": before, "bytes_after": after}), |_| println!("{:.1} MiB -> {:.1} MiB", before as f64 / 1048576.0, after as f64 / 1048576.0));
+            print(json, &serde_json::json!({"bytes_before": before, "bytes_after": after, "history_rows_pruned": pruned, "history_days": days}), |_| {
+                println!("{:.1} MiB -> {:.1} MiB; dropped {pruned} history rows older than {days} days", before as f64 / 1048576.0, after as f64 / 1048576.0)
+            });
             Ok(true)
         }
         Cmd::Serve { addr, mcp } => {
