@@ -828,3 +828,19 @@ The first rerun of `known_at_gate.py` failed because a time 0.1 s before the his
 The following outputs are the same as before the fixes, apart from timings: `rcaeval_score.py` (chain AC@1 0.93), `similar_eval.py` (82/89 = 0.92), `known_at_gate.py`, `incident_conflicts_eval.py`, `ontology_diff_eval.py` (14 mutations, 0 mismatched), `lab_check.py`, `lab_browser.mjs`, `resolve_eval.py`, `hook_eval.py` (slowest 27.6 ms) and the pi and MCP contract. The 90-case lab page is 34 bytes longer because each run records verdict times of a different length.
 
 **Not run.** `action_gate.py`, `coverage_decline_eval.py`, `agent_rca_eval.py` and `llm_gate.py` need the model. `ruled_out_eval.py` needs `ruled_out_weight`, which lane A1 dropped; it now says so and exits 0, and `ruled-out.txt` keeps the run from commit 5f3ea74.
+
+## Phase 13, lane O: valid time on dependency edges
+
+Correlation scores a past incident with today's dependency edges. An edge added to the catalog after an incident can put a service in the incident's scope that was not connected to it then, and change its rank 1. `--known-at` (Phase 12, lane G) covers only what ograph recorded, so a first harvest after the incident cannot tell. This lane has ogrep date each dependency by the commit since which the repository has held it, and ograph uses an edge for an incident only when it held at the incident's open time.
+
+### Gates, written before the code
+
+| Gate | Data | Pass condition |
+|---|---|---|
+| 1. Old ranking restored | A scripted git repository: commit 1 declares `web -> api`; incident A opens on `web` 10 days later, with a fraud-service event closer and more severe than the api event; commit 2, 20 days after commit 1, adds `web -> fraud`; incident B opens 30 days after commit 1, with the same two events | `chains A` with dated edges equals, byte for byte, `chains A` harvested from the repository checked out at commit 1, while the undated build ranks `fraud` first for A; `chains B` still ranks `fraud` first; `before A` leaves `fraud` out of the scope and `before B` keeps it; `blast fraud --at A` lists no `web` and `blast fraud` does |
+| | The same repository with an ogrep that cannot date | Harvest says so, and every answer equals today's build |
+| 2. ogrep | ogrep's own suite | `cargo test --workspace` passes in ogrep, with new tests for the dating |
+| 3. No regression | RCAEval, 90 cases | chain AC@1 0.93 and `similar_eval.py` 82/89 = 0.92, with per-case output byte-identical between `integrate-phase-12` (5179213) and this lane, run with the dating ogrep (`ab_compare.sh`) |
+| 4. Cost | The dating call on real repositories with full history (GoogleCloudPlatform/microservices-demo, open-telemetry/opentelemetry-demo) | Time stated against plain `--entities`. On by default only if the dated call takes at most 5 s on each; otherwise KEEP-OFF behind a config key |
+
+The brief assumed RCAEval's catalog has no git history. It has one: `data/fixtures/online-boutique` is a git repository with one commit, made on 2026-11-22, and RCAEval's incidents opened in 2024. Dating each edge by the commit that added it would drop all 15 edges from every incident. So an edge that entered the files in the same commit as the service that declares it is not dated: before that commit the files said nothing about the service, which is no evidence that the dependency was absent. Only an edge added to a service the files already declared gets a date. Gate 3 checks this rule on real data.
