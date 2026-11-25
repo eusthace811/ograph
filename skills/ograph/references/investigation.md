@@ -24,6 +24,10 @@ id:inc/inc-5377 on checkout at 2026-11-22T22:26:40Z; scope: checkout(0) auth-ser
 - The earliest strong events on the deepest dependency are usually the root, the later ones on
   callers are symptoms. Changes (DEPLOYMENT, CONFIG_CHANGE) just before a symptom are leads.
 - An episode that began before the window and was still under way counts too.
+- `chronic: ...` under an event (`chronic` in `--json`) means its series (same application,
+  signal and metric or log template) fired at least twice in the correlation window before the
+  incident. A series that keeps firing is background noise, however early or strong: a sparse
+  series reaches full strength on any change. Look past it for the first event that is not.
 - Nothing found? `--window 30m`, then `--window 2h`. Still nothing: say so.
 - `--json` adds `source_record` per event (`alerts.json#3`, `metrics.csv:347`), the raw record
   to open in the source system.
@@ -63,6 +67,9 @@ ograph chains INC-5377
   where the dependency a link crosses comes from. `catalog` is declared, or inferred by ogrep
   from configuration; `trace` means only parent spans state it; `indirect` means the link
   closes at the incident from more than one hop away.
+- `chronic ...` lines (`chronic` on `root` and `links` in `--json`) mark chain events whose
+  series fired again and again before the incident: a chain rooted on one is rooted on
+  background. The ranking does not change.
 - `--window 60m` and `--set KEY=VALUE` (any `[correlation]` key, references/verdicts.md) rank
   again under other settings without storing anything.
 - `--rank propagation` ranks by how an anomaly spread to callers. When both rankings agree,

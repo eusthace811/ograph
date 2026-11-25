@@ -1439,6 +1439,29 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_series_that_keeps_firing_before_the_incident_is_chronic() {
+        let mut csv = String::from("time,ledger-db_diskio,ledger-db_latency\n");
+        for i in 0..240 {
+            let disk = if [150, 180, 210].iter().any(|s| (*s..s + 6).contains(&i)) { 5000.0 } else { 0.0 };
+            let latency = if i < 225 { 100.0 + (i % 7) as f64 * 0.3 } else { 1000.0 };
+            csv += &format!("{},{disk},{latency}\n", T - 3600 + 15 * i);
+        }
+        let root = fixture("chronic", &[("metrics", "metrics.csv", &csv)]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let before = crate::query::before(&snap, "INC-1", 1800, 4, 1800).unwrap();
+        let marks: Vec<(&str, bool)> = before.events.iter().map(|e| (e.event.rsplit_once('-').unwrap().0, e.chronic.is_some())).collect();
+        assert_eq!(marks, [("id:ev/metric-ledger-db-latency", false), ("id:ev/metric-ledger-db-diskio", true), ("id:ev/metric-ledger-db-diskio", true), ("id:ev/metric-ledger-db-diskio", true)]);
+        assert!(before.events[1].chronic.as_deref().unwrap().starts_with("ledger-db diskio fired 3 times in the 30 min before the incident"));
+        // The marks come only from the lookback before the incident: one episode in it is not enough.
+        let short = crate::query::before(&snap, "INC-1", 1800, 4, 300).unwrap();
+        assert!(short.events.iter().all(|e| e.chronic.is_none()));
+        let why = crate::query::why(&snap, &before.events[3].event, Some(1800)).unwrap();
+        assert!(why.chronic.is_some());
+    }
+
+    #[test]
     fn two_applications_claiming_one_alias_get_neither() {
         let root = fixture("alias", &[("ownership", "ownership.jsonl", "{\"app\":\"ledger-db\",\"alias\":\"shared\"}\n{\"app\":\"checkout\",\"alias\":\"shared\"}\n")]);
         harvest(&root, None);

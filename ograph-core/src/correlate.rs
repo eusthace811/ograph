@@ -518,8 +518,8 @@ pub fn mark_chronic<'a>(s: &Snapshot, ids: &Ids, from: i64, to: i64, what: &str,
     let mut counts: FxHashMap<Id, FxHashMap<(String, String), usize>> = FxHashMap::default();
     for sig in sigs {
         let Some(key) = series_of(s, ids, sig.id, &sig.kind) else { continue };
-        if !counts.contains_key(&sig.app) {
-            let mut c: FxHashMap<(String, String), usize> = FxHashMap::default();
+        if let std::collections::hash_map::Entry::Vacant(slot) = counts.entry(sig.app) {
+            let c = slot.insert(FxHashMap::default());
             for (tid, e) in s.events_on(sig.app, term::time_id(from), term::time_id(to))? {
                 if term::millis(tid).is_none_or(|at| at >= to) {
                     continue;
@@ -528,7 +528,6 @@ pub fn mark_chronic<'a>(s: &Snapshot, ids: &Ids, from: i64, to: i64, what: &str,
                     *c.entry(k).or_default() += 1;
                 }
             }
-            counts.insert(sig.app, c);
         }
         let n = counts[&sig.app].get(&key).copied().unwrap_or(0);
         if n >= CHRONIC_EPISODES {
