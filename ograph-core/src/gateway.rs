@@ -398,22 +398,18 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                 }
             },
         };
-        if p == RDF_TYPE {
-            let Term::NamedNode(c) = &o else { unreachable!("types are entities") };
-            if !ont.is_class(c.as_str()) {
-                rejected.push(reject(format!("{} is not an ontology class", vocab::compact(c.as_str()))));
-                continue;
-            }
-            if CATALOG_CLASSES.contains(&c.as_str()) && !catalog_method {
-                rejected.push(reject(format!("only the catalog may create a {}", vocab::compact(c.as_str()))));
-                continue;
-            }
+        if let Some(r) = ontology_problem(ont, &Triple::new(s.clone(), f.predicate.clone(), o.clone())) {
+            rejected.push(reject(r));
+            continue;
         }
-        if let (Some(v), Term::Literal(l)) = (ont.vocabulary(p), &o)
-            && !v.iter().any(|t| t.value == l.value()) {
-                rejected.push(reject(format!("\"{}\" is not in the closed vocabulary of {}", l.value(), vocab::compact(p))));
-                continue;
-            }
+        if p == RDF_TYPE
+            && let Term::NamedNode(c) = &o
+            && CATALOG_CLASSES.contains(&c.as_str())
+            && !catalog_method
+        {
+            rejected.push(reject(format!("only the catalog may create a {}", vocab::compact(c.as_str()))));
+            continue;
+        }
         if let Term::NamedNode(on) = &o
             && matches!(f.method, Extraction::Llm { .. })
             && NEEDS_SUPPORT.contains(&p)
@@ -748,7 +744,7 @@ fn recheck(snap: &Snapshot, ont: &Ontology, graph: Id, triples: &[Triple]) -> Ve
     rejected
 }
 
-/// The gateway's membership and vocabulary checks on a resolved triple, with its reasons.
+/// The membership and vocabulary checks on a resolved triple, for a batch and for stored facts.
 fn ontology_problem(ont: &Ontology, t: &Triple) -> Option<String> {
     let p = t.predicate.as_str();
     if p != RDF_TYPE && p != RDFS_LABEL && ont.property(p).is_none() {
@@ -762,6 +758,12 @@ fn ontology_problem(ont: &Ontology, t: &Triple) -> Option<String> {
         Term::NamedNode(n) => Some(n),
         _ => None,
     };
+    if p == RDF_TYPE
+        && let Some(c) = object
+        && !ont.is_class(c.as_str())
+    {
+        return Some(format!("{} is not an ontology class", vocab::compact(c.as_str())));
+    }
     for n in subject.into_iter().chain(object) {
         if !n.as_str().starts_with(vocab::DATA) && n.as_str().starts_with("https://ograph.dev/") && !ont.is_class(n.as_str()) {
             return Some(format!("{} is not an ontology class", vocab::compact(n.as_str())));
