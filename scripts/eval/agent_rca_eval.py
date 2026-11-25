@@ -319,7 +319,7 @@ def chains_answer(ctx, case, ws):
 # ---------- arms
 
 def extension_tools(ctx):
-    return re.findall(r'"name": "(\w+)", "description"', ctx.extension.read_text())
+    return [t["name"] for t in json.loads(re.search(r"^const tools: any\[\] = (.*);$", ctx.extension.read_text(), re.M)[1])]
 
 
 def mcp_unavailable(ctx):
@@ -328,7 +328,8 @@ def mcp_unavailable(ctx):
     shutil.rmtree(seed, ignore_errors=True); (seed / ".ograph").mkdir(parents=True)
     (seed / ".ograph" / "config.toml").write_text("")
     p = run([sys.executable, REPO / "scripts" / "agent" / "install.py", "--bin", ctx.bin, "--root", seed, "--out", ctx.extension], seed)
-    return None if p.returncode == 0 and ctx.extension.exists() else f"scripts/agent/install.py failed: {(p.stderr or p.stdout).strip()[-200:]}"
+    if p.returncode != 0 or not ctx.extension.exists(): return f"scripts/agent/install.py failed: {(p.stderr or p.stdout).strip()[-200:]}"
+    return None if extension_tools(ctx) else "the generated extension registers no tools"
 
 
 def needs_pi(ctx):
