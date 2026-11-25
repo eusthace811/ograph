@@ -562,6 +562,17 @@ mod tests {
     }
 
     #[test]
+    fn an_incident_resolved_before_it_opened_keeps_everything_but_the_resolution() {
+        let inverted = format!(r#"[{{"id":"INC-2","service":"checkout","opened":{T},"resolved":{},"status":"resolved"}}]"#, T - 3600);
+        let root = fixture("inverted", &[("incidents", "more.json", &inverted)]);
+        let out = harvest(&root, None);
+        let reasons: Vec<&str> = out.iter().flat_map(|o| &o.quarantined).map(|q| q.reason.as_str()).collect();
+        assert_eq!(reasons, ["SHACL LessThanOrEqualsConstraintComponent: an incident cannot be resolved before it opened"]);
+        assert_eq!(sparql(&root, "SELECT ?status WHERE { ?i inc:id \"INC-2\" ; evt:at ?at ; inc:status ?status FILTER NOT EXISTS { ?i inc:resolvedAt ?r } }"), [["resolved"]]);
+        assert_eq!(violations(&root), 0);
+    }
+
+    #[test]
     fn similar_keeps_the_cause_of_a_verdict_whose_root_left_the_sources() {
         let root = fixture("similar", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600))), ("deployments", "deployments.jsonl", &format!("{{\"service\":\"payments-api\",\"version\":\"1\",\"at\":{}}}\n{{\"service\":\"payments-api\",\"version\":\"2\",\"at\":{}}}\n", T - 300, T + 86_100))]);
         std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T}}},{{"id":"INC-2","service":"checkout","opened":{}}}]"#, T + 86_400)).unwrap();

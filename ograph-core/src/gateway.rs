@@ -472,7 +472,7 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
         let mut drop: FxHashSet<usize> = FxHashSet::default();
         let mut why: FxHashMap<usize, String> = FxHashMap::default();
         for r in &results {
-            let prop = r.path.as_deref().map(|p| p.trim_matches(['<', '>']).to_owned()).or_else(|| {
+            let prop = order_end(ont, r).or_else(|| r.path.as_deref().map(|p| p.trim_matches(['<', '>']).to_owned())).or_else(|| {
                 let local = r.shape.trim_matches(['<', '>']).strip_prefix("https://ograph.dev/shape/")?.strip_suffix("/domain")?.to_owned();
                 let (pfx, name) = local.split_once('-')?;
                 vocab::PREFIXES.iter().find(|(p, _)| *p == pfx).map(|(_, ns)| format!("{ns}{name}"))
@@ -509,6 +509,19 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
         accepted = keep;
     }
     (accepted.into_iter().map(|r| (r.triple, r.fact)).collect(), rejected, fuzzy)
+}
+
+/// For a time-order violation, the property that must come later. An end time before its start
+/// is quarantined alone: the start places the node on the timeline and is required anyway.
+fn order_end(ont: &Ontology, r: &shacl::ValidationResult) -> Option<String> {
+    if !r.component.starts_with("LessThan") {
+        return None;
+    }
+    let shape = ont.shapes.shapes.iter().find(|s| s.id.to_string() == r.shape)?;
+    shape.constraints.iter().find_map(|c| match c {
+        shacl::Constraint::LessThan(p) | shacl::Constraint::LessThanOrEquals(p) => Some(p.as_str().to_owned()),
+        _ => None,
+    })
 }
 
 fn s(v: &str) -> Term {
