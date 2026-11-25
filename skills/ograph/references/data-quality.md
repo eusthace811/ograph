@@ -30,6 +30,20 @@ A batch line ending in `DEGRADED: <why>` kept the facts it had. Causes: a file t
 read or parsed, an empty file, a directory that cannot be listed, or a directory that held files
 and is now empty (an unmounted share). Fix the source and harvest again.
 
+## Is the graph current
+
+```bash
+ograph status          # nothing when nothing is due
+ograph validate        # SHACL audit; also the focus nodes each shape selects
+```
+
+- `status` prints one line when source files or settings changed since the last full harvest,
+  and lists incidents with chains but no verdict. `--json` gives `harvested_at`, `changed` and
+  `unjudged`. Exit 0 when something is due. `./x install-hook` in the ograph repository makes
+  it a Claude Code `SessionStart` hook.
+- `validate` prints the focus nodes each `shapes.ttl` shape selects and warns about a shape that
+  selects none: misspelled, or waiting for data that never came. It exits 1 only on violations.
+
 ## Where a fact came from
 
 ```bash

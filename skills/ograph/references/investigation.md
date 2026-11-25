@@ -21,8 +21,9 @@ id:inc/inc-5377 on checkout at 2026-11-22T22:26:40Z; scope: checkout(0) auth-ser
 - `sev` is a 0 to 1 score from the source's label: SEV1 1.00, SEV2 0.75, SEV3 0.50, SEV4 0.25
   (`why` shows the label). Deployments and config changes are SEV4 by default: their weight
   comes from timing, not severity.
-- The earliest strong events on the deepest dependency are usually the root, the later ones on
-  callers are symptoms. Changes (DEPLOYMENT, CONFIG_CHANGE) just before a symptom are leads.
+- This is a timeline, not a ranking. An early or severe event on a dependency is a lead for
+  `chains`, not the cause: `chains` already scores every event here by time, severity and the
+  dependency it crosses. Changes (DEPLOYMENT, CONFIG_CHANGE) just before a symptom are leads.
 - An episode that began before the window and was still under way counts too.
 - Nothing found? `--window 30m`, then `--window 2h`. Still nothing: say so.
 - `--json` adds `source_record` per event (`alerts.json#3`, `metrics.csv:347`), the raw record
@@ -57,6 +58,14 @@ ograph chains INC-5377
   geometric mean of its links. Check the weakest link first: a low time part means a long gap,
   and `dependency seen only in traces` or `no direct dependency` means the catalog does not
   state the edge the link crosses.
+- `--json` gives per application its `score` and, when it has one, `precedent`; per chain its
+  `id`, `confidence`, `scores` (one per link: `from`, `to`, `time`, `severity`, `known_pair`,
+  `edge`, `score`) and `weakest`. `edge` is where the dependency a link crosses comes from:
+  `same_app`, `catalog` (declared, or inferred by ogrep from configuration), `trace` (only
+  parent spans state it), `other`, or `indirect` (the link closes at the incident from more
+  than one hop away).
+- `--window 60m` and `--set KEY=VALUE` (any `[correlation]` key, references/verdicts.md) rank
+  again under other settings without storing anything.
 - `--rank propagation` ranks by how an anomaly spread to callers. When both rankings agree,
   say so; when they differ, report both.
 - A line `app:SIGNAL was accepted as the cause of id:inc/... (similarity 0.97)` under an
@@ -83,6 +92,25 @@ since 2026-11-25T11:53:57.945Z: the ranking moved; source files changed: 1
 - A file that changed but is not named did not move the ranking on its own. Do not cite it.
 - `the changes move it together` means no single file explains the move. Say so; do not pick one.
 
+Rank 1 is the answer to report. Name another application only when you can quote evidence the
+ranking does not use:
+
+- a person's chat message or an operator action that names the cause,
+- a deployment or config change that no ranked chain contains,
+- a past write-up (`code`), or a verdict (`precedent` above, `causes` in `similar`).
+
+Severity, being earliest and being upstream are not such evidence. The ranking has already
+scored the chain that starts at that event and placed it lower, so do not call rank 1 a symptom
+of it. A severity of 1.00 says the source rated the event high, not that the fault began there.
+
+To say how sure rank 1 is, read its links (`scores` in `--json`): the `weakest` one, its `time`
+and `severity` parts and its `edge`. A low time part, or an `edge` of `trace`, `other` or
+`indirect`, makes rank 1 less certain. Say so; it does not make another application the cause.
+
+When you depart from rank 1, quote the evidence and keep rank 1 in the answer as the
+alternative, with its score and chain id. Either way the cause is a hypothesis until a verdict
+accepts it. Say so in the answer, and write "the strongest candidate is", never "the cause is".
+
 ## 3. Has this happened before
 
 ```bash
@@ -93,14 +121,16 @@ ograph similar INC-5377
   0.599  id:inc/inc-4120 on payments-api at 2026-11-01T22:26:40Z  causes: [ledger-db]  mitigations: [raised ledger-db connection pool to 200]
 ```
 
-- Similarity compares the signal pattern around each incident's onset.
+- Similarity compares the signal pattern around each incident's onset. What the incidents
+  state (the application, `fault` and the fault class an `incidents` source with
+  `classify = true` asks a model for) then orders the matches.
 - `causes` appear only for past incidents with an accepted verdict. An empty list means nobody
   confirmed one yet, not that there was none.
 - A mitigation that worked on a similar incident is the strongest fix to suggest.
 - A line `ruled out: app:SIGNAL (evidence)` under a past incident is a root people rejected
   there. It says what that incident was not. It does not rule the application out here: on
-  RCAEval, 9 of the 11 top-ranked roots that matched an earlier rejection were the true cause
-  (docs/EVIDENCE.md).
+  ograph's labeled benchmark incidents, 9 of the 11 top-ranked roots that matched an earlier
+  rejection were the true cause (docs/EVIDENCE.md).
 
 ## 4. What does it affect
 
@@ -128,7 +158,7 @@ Distance is in dependency hops. Business processes come from the ownership sourc
 Run this when the workspace has a `code` source (`.ograph/config.toml`), after `chains`.
 
 ```bash
-ograph code INC-1
+ograph code INC-1     # in a workspace with a code source
 ```
 
 ```
@@ -169,6 +199,7 @@ past write-ups:
   (with `touches`), `files`, `files_confidence`, `writeups` and `degraded`. A reason under `degraded` means ogrep could not answer for a
   repository: say so, do not report the empty list as "nothing found".
 - Commits outside the correlation window are not listed. `suspects --since 7d` reaches further back.
+- `--top 3` limits the files and write-ups (default 5).
 - `ogrep index .` in the code repository makes these lookups fast. ograph does not build that
   index itself.
 
@@ -200,6 +231,8 @@ ograph suspects checkout,payments --since 3d
 
 - Run it when `before` and `chains` find nothing or little. It needs no telemetry: ogrep ranks
   the failing applications and what they depend on by distance and by recent commits.
+- For an incident, `suspects` counts commits from the day before it until it opened. With
+  ogrep 0.2.0, which cannot stop at a time, later commits count too and a note says so.
 - Other incidents opened within the correlation window count as failing too, so one upstream
   cause that explains several of them ranks higher.
 - With a `code` source, `chains` prints the same list when it ranks no application.
@@ -216,10 +249,21 @@ Each item names the vendor, the applications that use it and their business proc
 incident when its applications are in the incident's `scope` and it came shortly before the
 first symptom. Say so as a lead to check, not as a cause.
 
+## Show it to a person
+
+```bash
+ograph lab --out lab.html
+```
+
+One HTML page, no server. Per incident: the ranked causes with their chains, a timeline with a
+lane per application and the top chain as arrows, the dependency neighbourhood, the evidence of
+every event in the top five chains with its verdict, and an `ograph verdict` command to copy.
+
 ## What to report
 
 1. The timeline, newest first, minutes before the incident.
-2. The top candidates with score and chain id, called hypotheses.
+2. The top candidates with score and chain id, called hypotheses. Rank 1 first; if you name
+   another application, the evidence the ranking does not use, with rank 1 as the alternative.
 3. The similar past incident, its confirmed cause and the mitigation that worked.
 4. The blast radius: applications, business processes, other open incidents.
 5. With a `code` source: the commit, file and line behind the top candidate, if `code` found one.

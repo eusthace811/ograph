@@ -1,0 +1,134 @@
+Phase 13 lane S, item S4: gated evolution of the investigation guidance (Parent against Candidate).
+
+================================================================================
+GATE, written before any Candidate run (commit of this file precedes every run below)
+================================================================================
+
+What changes. Only the agent-facing text: skills/ograph/SKILL.md, skills/ograph/references/
+investigation.md and scripts/agent/SKILL.md (the pi extension's instructions).
+  Parent    = 0be3918: integrate-phase-12 (5179213) with one sentence of investigation.md
+              reworded so it does not name the benchmark dataset. The harness voids any run whose
+              tool output names it, so at 5179213 a skill agent that read investigation.md
+              would be voided. Both Parent and Candidate carry the same rewording.
+  Candidate = 34f7625: Parent plus the S1 text (rank 1 is the answer unless the agent can quote
+              evidence the ranking does not use; severity, earliness and being upstream are not
+              such evidence; say hypothesis; when departing, quote the evidence and keep rank 1 as
+              the alternative).
+The harness takes each revision's skills/ograph and scripts/agent with `git archive`
+(--guidance parent=0be3918,candidate=34f7625); arms mcp@parent, mcp@candidate, skill@parent,
+skill@candidate share the binary (target/release/ograph built from this branch), the model
+(openai/gpt-5.6-terra, the harness default and Phase 12's), the prompt, the timeout (600 s) and
+the leak checks. chains (rank 1 of `ograph chains`) is the floor. raw is not run (budget).
+
+Case sets (labels: data/rcaeval-cases/labels.json, read-only; the 90 cases are 30
+(root, fault) cells x 3 repetitions):
+  seen     the Phase 12 sample, --sample 30 --seed 12 (one case per cell). The finding behind S1
+           came from it. Reported apart, never used for the decision.
+  misses   every case outside seen whose rank 1 is wrong in target/rcaeval-ref.json
+           (rcaeval_score.py --modes chain on this binary, AC@1 0.93): c-1d389615b3,
+           c-b0f876b48e, c-d1059aa9c3, c-d7fc5dfaee, c-e425dee775 (5).
+  held-out 25 cases drawn with random.Random(13).sample from the 55 cases outside seen and
+           misses (--holdout 25 --holdout-seed 13): c-37a5303b48 c-3bb38f3165 c-bd0ab7fc84
+           c-f07bba6dfd c-2bb29befe5 c-b8a8899e63 c-2e930efa74 c-ba7c71dce5 c-1f89afb4ec
+           c-db856d2c9b c-e38b7757b4 c-e39c7bb9d6 c-1d28b06708 c-0abf02c950 c-97bf1c72d2
+           c-2cf334d2e0 c-f9278c4f7b c-025a43e8ef c-7c01c92782 c-d20ce82152 c-011f3b9bc3
+           c-3a0764b124 c-c923bc4f2d c-0ae1ec693f c-9a8d5cecc6. By construction rank 1 is
+           right on every one, so held-out measures what departing from rank 1 costs and misses
+           measures what it recovers. The 60 cases outside seen are 55 like held-out and 5
+           misses, so an arm's estimated AC@1 on unseen cases is (55 x held-out + 5 x misses) / 60.
+  demo     the 4 incidents of examples/demo (labels from generate.py's story).
+
+Runs. 1 run per case and arm on held-out, misses and demo first, then 1 on seen, then runs 2
+and 3 on held-out, misses and demo while the budget allows. Budget cap $40 at pi's list price
+for all of lane S. A usage-limit refusal stops model work; what did not finish is NOT MEASURED.
+
+PASS, all of these, per arm family (mcp and skill), on the runs both Parent and Candidate have:
+  1. held-out: Candidate AC@1 >= Parent AC@1.
+  2. departures from chains rank 1 over held-out, misses and demo: the fraction of Candidate's
+     departures that name the label >= Parent's. If Candidate never departs this holds
+     vacuously, and the result is said so.
+  3. misses: Candidate recovers (names the label on) at least as many runs as Parent.
+Paired comparison per case (mean pass rate over runs), with the exact two-sided sign test the
+harness prints; a difference with p >= 0.05 is reported as not significant. A Candidate that only
+repeats rank 1 passes 1 and scores 0 on misses: if criterion 3 then passes only because Parent
+also scores 0, that is said, and S1 is kept for its effect on held-out, not for recovery.
+
+Decision. KEEP the Candidate text if both families pass. Otherwise build Candidate 2 from the
+seen set only (its transcripts and Phase 12's), rerun held-out and misses, report both, and keep
+whichever passes; if neither does, revert to Parent. Held-out and misses transcripts are not
+read to write a candidate.
+
+================================================================================
+RESULT, pass 1 (runs 1 on held-out, misses and demo): PARTIAL, then the usage limit
+================================================================================
+STATUS: NOT MEASURED for the decision. pi refused with "The ChatGPT user has reached their
+Subscription Sharing usage limit" after 78 agent runs had been attempted. What finished: 12 of
+25 held-out cases for mcp@parent and mcp@candidate (paired on all 12), 9 for skill@parent and 10
+for skill@candidate (paired on 9). No agent run on misses or demo; seen was not started. The
+chains floor ran on everything (no model). Rows: docs/evidence/agent-rca-guidance/runs.jsonl;
+rerunning the command below keeps them and runs only the error rows.
+
+A first attempt put --work inside the repository; every skill run read a path that names it,
+and the leak check voided all 11. Those rows were dropped (they measured the harness, not the
+agent) and the harness now refuses such a --work (test_a_work_directory_inside_the_repository_is_refused).
+One later skill@parent run was voided for `..` in a command, a real leak-rule hit; it is kept.
+
+Cost at pi list price: voided attempt $1.36, pass 1 $3.62. Total for lane S: $4.98.
+
+Command (from the repository root; $WORK outside the repository):
+  python3 scripts/eval/agent_rca_eval.py --bin target/eval-bin/ograph --cases data/rcaeval-cases \
+    --demo examples/demo --reference target/rcaeval-ref.json --misses --holdout 25 --holdout-seed 13 \
+    --skip-sample --runs 1 --parallel 5 --guidance parent=0be3918,candidate=34f7625 \
+    --arms mcp@parent,mcp@candidate,skill@parent,skill@candidate,chains --work $WORK --out docs/evidence/agent-rca-guidance
+
+held-out, on the cases both revisions answered:
+  arm              AC@1          says hypothesis   departs from rank 1 (right)   cost
+  mcp@parent       8/12 (0.67)   12/12             4 of 12 (0)                   $0.52
+  mcp@candidate    12/12 (1.00)  4/12              0 of 12                       $0.39
+  skill@parent     8/9  (0.89)   0/9               1 of 9  (0)                   $1.47
+  skill@candidate  9/10 (0.90)   2/10              1 of 10 (0)                   $1.24
+  chains           25/25 (1.00)  -                 -                             -
+  mcp: Candidate better on 4 cases, worse on 0, equal on 8 (sign test p = 0.125, not significant).
+  skill: better on 1, worse on 1, equal on 7 (p = 1.000).
+  Every wrong answer on held-out, in all four arms, named the same application (redis x6).
+
+Against the gate: criterion 1 holds on what finished (mcp 1.00 >= 0.67, skill 0.89 = 0.89 on the
+paired 9) but is not significant. Criterion 2: Candidate departed 1 time (skill, wrong) against
+Parent's 5 (all wrong); 0 of 1 against 0 of 5, equal. Criterion 3 (misses): NOT MEASURED, no
+agent run on a miss finished. The decision cannot be made: S1's text stays on the branch,
+marked NOT MEASURED, and must not merge on this evidence alone.
+
+One regression the run did measure: mcp@candidate replies call the cause a hypothesis 4 of 12
+times against Parent's 12 of 12. Candidate 1 replaced Parent's "A chain is a hypothesis. Say so."
+with a sentence about wording ("say 'the strongest candidate is'"), and agents took the wording
+without the word. S1's own specification says "say the cause is a hypothesis".
+
+================================================================================
+GATE for Candidate 2, written before any Candidate 2 run
+================================================================================
+Candidate 2 = Candidate 1 plus one sentence in each of the three surfaces telling the agent to
+say in its answer that the cause is a hypothesis (the S1 specification, and the phrasing that
+gave 25 of 26 in Phase 12's mcp arm on the seen set). Because the regression above was seen on
+held-out, Candidate 2 is not tested on that held-out set. Its held-out set is the 30 cases
+outside seen, misses and the first held-out set (all of them, no draw): suite
+rcaeval-heldout-2. Misses and demo are as before. Arms: mcp and skill at Parent, Candidate 1 and
+Candidate 2, chains. The pass criteria are those above, Candidate 2 against Parent, plus:
+  4. says hypothesis: Candidate 2's rate >= Parent's in each family.
+Candidate 2 ships only if it passes; Candidate 1 is then dropped.
+Revisions: Parent 0be3918, Candidate 1 34f7625, Candidate 2 ea05982 (branch lane-s-candidate2:
+34f7625 plus that sentence only; c7c0dea on lane-s-skill carries the same sentence on top of the
+command documentation, which does not change the guidance).
+rcaeval-heldout-2 (--holdout 25 --holdout-seed 13 --holdout-rest --skip-holdout): c-073e220e96
+c-0776f54cd9 c-0db34b4c7e c-18804bdd7f c-22a7556181 c-2cd85ef30d c-34a5398b52 c-407a9f7eba
+c-50e3775f48 c-5ad5f3d0de c-6775d676c8 c-6ab11c1b3d c-6f03d011b8 c-7041399641 c-75d480fc3d
+c-7c907c38ac c-847b7ca578 c-870814bb24 c-8e8d35d164 c-90376d73d9 c-94e5ae21b2 c-99fc833ae8
+c-9fa5601eb7 c-a254fd4742 c-a28d1285e7 c-aae861ca51 c-be290185f2 c-c4a56b7233 c-e5abfe8ebd
+c-fc745c5f4c.
+Command, once pi answers again (resumes; the first command above finishes Candidate 1 first):
+  python3 scripts/eval/agent_rca_eval.py --bin target/eval-bin/ograph --cases data/rcaeval-cases \
+    --demo examples/demo --reference target/rcaeval-ref.json --misses --holdout 25 --holdout-seed 13 \
+    --holdout-rest --skip-holdout --skip-sample --runs 1 --parallel 5 \
+    --guidance parent=0be3918,candidate=34f7625,candidate2=ea05982 \
+    --arms mcp@parent,mcp@candidate2,skill@parent,skill@candidate2,chains --work $WORK --out docs/evidence/agent-rca-guidance
+Estimated cost at Phase 12's per-run prices: 35 cases x (2 x $0.036 + 2 x $0.098) = $9.4.
+Candidate 2 result: NOT MEASURED (the usage limit had not reset when lane S ended).

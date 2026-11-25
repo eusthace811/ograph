@@ -50,6 +50,11 @@ class Scoring(unittest.TestCase):
             self.assertEqual(sorted((labels[c.id]["root"], labels[c.id]["fault"]) for c in four), [("a", "x"), ("a", "y"), ("b", "x"), ("b", "y")])
             self.assertEqual([c.id for c in two], [c.id for c in four][:2])
             self.assertEqual([c.id for c in four], [c.id for c in h.rcaeval_cases(d, 4, 12)])
+            first = h.holdout_cases(d, 3, 13, {c.id for c in four})
+            rest = h.holdout_cases(d, 3, 13, {c.id for c in four}, rest=True)
+            self.assertEqual((len(first), len(rest)), (3, 5))
+            self.assertEqual(sorted(c.id for c in first + rest + four), sorted(labels))
+            self.assertEqual({c.suite for c in rest}, {"rcaeval-heldout-2"})
 
 
 class Leaks(unittest.TestCase):
@@ -185,6 +190,29 @@ class EndToEnd(unittest.TestCase):
         code, text, rows = self.harness()
         self.assertEqual({r["status"] for r in rows if r["arm"] == "cart"}, {"leak"})
         self.assertIn("| cart | 0/0 (0.00) | 0 | 0 | 0 | 2 |", text)
+
+
+class Guidance(unittest.TestCase):
+    def test_a_guided_arm_reads_the_skill_of_its_revision(self):
+        with tempfile.TemporaryDirectory() as d:
+            work = pathlib.Path(os.path.realpath(d)) / "work"
+            ctx = h.Ctx(types.SimpleNamespace(work=str(work), cases=None, bin=str(BIN), guidance="old=5179213"))
+            ctx.setup()
+            old = subprocess.run(["git", "-C", str(h.REPO), "show", "5179213:skills/ograph/SKILL.md"], capture_output=True, text=True, check=True).stdout
+            self.assertEqual((ctx.skill_of("old") / "SKILL.md").read_text(), old)
+            self.assertEqual((ctx.agent_of("old") / "SKILL.md").read_text(), subprocess.run(["git", "-C", str(h.REPO), "show", "5179213:scripts/agent/SKILL.md"], capture_output=True, text=True, check=True).stdout)
+            self.assertEqual(ctx.skill_of("old"), work / "guide" / "old" / "skills" / "ograph")
+            arm = h.arm_named("skill@old")
+            self.assertEqual((arm.name, arm.guide), ("skill@old", "old"))
+            self.assertEqual(h.arm_named("skill@new").unavailable(ctx) if h.shutil.which("pi") else "no --guidance new=REV", "no --guidance new=REV")
+            self.assertIsNone(h.arm_named("chains@old"))
+            ws = work / "runs" / "r" / "ops"; ws.mkdir(parents=True)
+            self.assertEqual(h.leaks_in_transcript(ctx, ws, [bash(f"cat {ctx.skill_of('old')}/references/investigation.md")], arm), [])
+            self.assertEqual(h.leaks_in_transcript(ctx, ws, [bash(f"cat {work}/guide/old/scripts/agent/SKILL.md")], arm), [f"bash: reaches {work}/guide/old/scripts/agent/SKILL.md"])
+
+    def test_a_work_directory_inside_the_repository_is_refused(self):
+        with self.assertRaisesRegex(SystemExit, "is inside"):
+            h.Ctx(types.SimpleNamespace(work=str(h.REPO / "target" / "agent-work"), cases=None, bin="unused"))
 
 
 if __name__ == "__main__":

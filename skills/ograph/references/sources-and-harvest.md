@@ -61,6 +61,8 @@ path = "exports/news.jsonl"
 - The catalog also takes the calls ogrep infers from configuration (an environment variable
   that holds another service's address) as dependencies. Kubernetes manifests declare none, so
   there these are the whole graph. `inferred = false` on the source keeps declared ones only.
+  A Kubernetes Service in front of a workload with another name becomes an alias of it (ogrep
+  0.3 or newer).
 - The catalog dates a dependency added to a service the repository already declared, from its
   git history (`ops:validFrom`). `before`, `chains` and `blast --at INC` follow it only for an
   incident that opened after that date, and list the ones they left out as `withheld` ("not
@@ -70,7 +72,8 @@ path = "exports/news.jsonl"
 - A `code` source turns each service's commits into `COMMIT` events with their changed files.
   It also lets ogrep locate log bursts and stack traces, so `LOG_ERROR` and `EXCEPTION` events
   get a `path:line`. A deployment whose version and the one before it are tags or commit ids of
-  the repository gets the files changed between them (ogrep 0.3 or newer). It may be the same
+  the repository gets the files changed between them (ogrep 0.3 or newer; with an older one the
+  harvest line says `DEGRADED` and the deployment keeps no files). It may be the same
   repository as the catalog. `ograph code` and the
   `chains` fallback to `suspects` need it.
 - Run `ogrep index .` in the code repository to make those lookups fast, and
@@ -83,7 +86,17 @@ path = "exports/news.jsonl"
 - Times may be epoch seconds, ms, µs or ns, or ISO 8601 with any offset; between 1971 and 2200.
 - JSON files may be one array, one object, or JSON lines.
 - An incident may be updated across files: each field comes from the last record that states
-  it, in file-path order, so name exports so they sort by date.
+  it, in file-path order, so name exports so they sort by date. `[incidents]` with
+  `merge = { at = "earliest", severity = "max" }` picks another record per field (`at`,
+  `resolved`, `severity`, `service`; `default` for the rest). A value not kept is quarantined
+  with the record it disagrees with, so `ograph why INC` shows both.
+- `classify = true` on an `incidents` source asks the model (`[llm.extract]`) for each title's
+  fault class (`inc:faultClass`: CPU, MEMORY, DISK, CONNECTION_POOL, ...). A class needs a quote
+  from the title, or it becomes UNKNOWN, which `similar` ignores.
+- `actions = true` on a `discussions` source also asks the model for what people did in chat
+  (rollback, restart, scale, failover, flag, config, deploy) as `OPERATOR_ACTION` events, timed
+  by their message. A proposal, question or negation is quarantined, not stored. `similar`
+  lists them as mitigations; correlation leaves them out.
 - A typo in a key (`windw_s`, `[corelation]`) is an error, not ignored.
 - Full field lists: `docs/REFERENCE.md`, "Input formats".
 

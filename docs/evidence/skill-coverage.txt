@@ -1,0 +1,317 @@
+Phase 13 lane S, items S2 and S3: does the skill cover what an agent can use, and do its examples run?
+Script: scripts/eval/skill_coverage.py (exclusions fixed in commit f84b3c7, before its first run).
+Binary: target/eval-bin/ograph, a copy of target/release/ograph built at 34f7625 (no Rust changed after it). Demo: a fresh copy of examples/demo after `python3 generate.py`.
+
+Runner fixes after the first baseline run, none of which changes what counts as covered:
+exclusion keys of clap's own flags carry their "global" prefix; the input-format table's header
+row is not a source kind; a positional value (`verdict ... accept`) may follow other arguments;
+only a trailing "(exit N)" states an exit code; a line whose comment says it needs a model or a
+code source is listed as not run; a time older than the demo store's history runs again at the
+time now and must exit 0 or 1.
+
+S3 table (section 2 of each run, before and after):
+| commit | user-visible behavior | covered at integrate-phase-12 | covered now |
+|---|---|---|---|
+| c9abd75 | `ograph code INC`: lines behind the events, commits, files, write-ups | yes | yes |
+| c9abd75 | `code --top` limits files and write-ups | NO | yes |
+| c9abd75 | `code` lists `degraded` when ogrep cannot answer for a repository | yes | yes |
+| c9abd75 | `code` in serve/MCP | yes | yes |
+| 10eeba2 | `ograph suspects INC|APP[,APP] --since` | yes | yes |
+| 10eeba2 | `chains` falls back to suspects when nothing ranks (code source) | yes | yes |
+| 10eeba2 | other incidents in the window count as failing for suspects | yes | yes |
+| a2dacb8 | `code` source kind, its `since` option | yes | yes |
+| a2dacb8 | `errors` source kind, EXCEPTION events with stack-frame lines | yes | yes |
+| a2dacb8 | COMMIT and EXCEPTION signals | yes | yes |
+| a2dacb8 | `ogrep index .` makes lookups fast, ograph does not build it | yes | yes |
+| c7f2e06/7fac5b9 | commit-to-file prior: added then dropped; the skill must not offer code_pair_prior | n/a (nothing to document) | n/a (nothing to document) |
+| b7471ca | ogrep calls of a harvest run side by side: speed only, no flag or output | n/a (nothing to document) | n/a (nothing to document) |
+| fa935b8 | catalog takes calls ogrep infers from configuration; `inferred = false` | yes | yes |
+| fa935b8 | aliases from a Kubernetes Service in front of a workload (ogrep 0.3+) | NO | yes |
+| fa935b8 | LOG_NEW and `[detect] log_new_after_s` | yes | yes |
+| fa935b8 | `code` names the commit that first added a message; needs `ogrep index --history` | yes | yes |
+| fa935b8 | deployment files between two revisions; `code` lists `deployments` with `touches` | yes | yes |
+| fa935b8 | `suspects` for an incident stops at its open time | NO | yes |
+| c975ff8 | with ogrep 0.2.0, deployments keep no files and the harvest line says DEGRADED | NO | yes |
+| fa935b8 | with ogrep 0.2.0, suspects counts later commits too and a note says so | NO | yes |
+| 57184ae | ogrep hand-over from a located line: --related-tests, --callers | yes | yes |
+| a2dacb8 | `OGRAPH_OGREP` points at another ogrep binary | yes | yes |
+| b7471ca/serve | serve re-harvests when a code repository's .git/logs/HEAD changes | yes | yes |
+
+================================================================================
+BASELINE: skills/ograph and docs/REFERENCE.md at integrate-phase-12 (5179213)
+================================================================================
+skill: skills/ograph at 5179213 (SKILL.md, references/data-quality.md, references/investigation.md, references/ontology.md, references/serving.md, references/sources-and-harvest.md, references/sparql.md, references/verdicts.md); binary /Volumes/External Disk/Github/graph-rag/.claude/worktrees/lane-s-skill/target/eval-bin/ograph
+
+1. Coverage: 92 of 136 items mentioned; 31 unmentioned and not excluded
+  MISSING before --depth
+  MISSING blast --depth
+  MISSING chains --window
+  MISSING chains --set
+  MISSING code --top
+  MISSING ontology --out
+  MISSING config [correlation]
+  MISSING config [correlation] after_s
+  MISSING config [correlation] min_confidence
+  MISSING config [correlation] w_time
+  MISSING config [correlation] w_severity
+  MISSING config [correlation] known_pair_prior
+  MISSING config [correlation] prop_weights
+  MISSING config [correlation] signature_window_s
+  MISSING config [correlation] precedent_weight
+  MISSING config [correlation] depth
+  MISSING config [correlation] max_chains
+  MISSING config [incidents]
+  MISSING source option actions
+  MISSING source option classify
+  MISSING ./x install-hook
+  MISSING chains field scores
+  MISSING chains field weakest
+  MISSING chains field edge and its values
+  MISSING chains field precedent
+  MISSING fault classes ([incidents] classify, inc:faultClass)
+  MISSING validate focus counts per shape
+  MISSING status --json fields
+  MISSING lab panels
+  MISSING operator actions (actions = true, OPERATOR_ACTION)
+  MISSING [incidents] merge policy
+  excluded help: clap's own subcommand
+  excluded global --help: clap's own flag
+  excluded global --version: clap's own flag
+  excluded config [detect] metric_z: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] metric_baseline_s: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] metric_min_run: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] metric_min_history_s: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] log_burst_factor: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] log_min_count: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] trace_error_rate: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] trace_slow_factor: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] two_sided: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [llm.extract] command: how the model is called, set once by a person; the skill says what the table enables
+  excluded config [llm.extract] model: how the model is called, set once by a person; the skill says what the table enables
+  excluded config [llm.extract] parallel: how the model is called, set once by a person; the skill says what the table enables
+  excluded config [llm.extract] timeout_s: how the model is called, set once by a person; the skill says what the table enables
+
+2. ogrep integrations (commit, behavior, covered)
+  c9abd75         yes                        `ograph code INC`: lines behind the events, commits, files, write-ups
+  c9abd75         NO                         `code --top` limits files and write-ups
+  c9abd75         yes                        `code` lists `degraded` when ogrep cannot answer for a repository
+  c9abd75         yes                        `code` in serve/MCP
+  10eeba2         yes                        `ograph suspects INC|APP[,APP] --since`
+  10eeba2         yes                        `chains` falls back to suspects when nothing ranks (code source)
+  10eeba2         yes                        other incidents in the window count as failing for suspects
+  a2dacb8         yes                        `code` source kind, its `since` option
+  a2dacb8         yes                        `errors` source kind, EXCEPTION events with stack-frame lines
+  a2dacb8         yes                        COMMIT and EXCEPTION signals
+  a2dacb8         yes                        `ogrep index .` makes lookups fast, ograph does not build it
+  c7f2e06/7fac5b9 n/a (nothing to document)  commit-to-file prior: added then dropped; the skill must not offer code_pair_prior
+  b7471ca         n/a (nothing to document)  ogrep calls of a harvest run side by side: speed only, no flag or output
+  fa935b8         yes                        catalog takes calls ogrep infers from configuration; `inferred = false`
+  fa935b8         NO                         aliases from a Kubernetes Service in front of a workload (ogrep 0.3+)
+  fa935b8         yes                        LOG_NEW and `[detect] log_new_after_s`
+  fa935b8         yes                        `code` names the commit that first added a message; needs `ogrep index --history`
+  fa935b8         yes                        deployment files between two revisions; `code` lists `deployments` with `touches`
+  fa935b8         NO                         `suspects` for an incident stops at its open time
+  c975ff8         NO                         with ogrep 0.2.0, deployments keep no files and the harvest line says DEGRADED
+  fa935b8         NO                         with ogrep 0.2.0, suspects counts later commits too and a note says so
+  57184ae         yes                        ogrep hand-over from a located line: --related-tests, --callers
+  a2dacb8         yes                        `OGRAPH_OGREP` points at another ogrep binary
+  b7471ca/serve   yes                        serve re-harvests when a code repository's .git/logs/HEAD changes
+
+3. Examples: 67 run, 5 not exiting as documented, 2 not run
+  ok      SKILL.md: ograph harvest    # commands search upward for .ograph/; the last line counts quarantined facts  (exit 0, documented 0)
+  ok      SKILL.md: ograph before INC-5377                 # default window 10m, 4 dependency hops  (exit 0, documented 0)
+  ok      SKILL.md: ograph before INC-5377 --window 45m    # widen when nothing shows up  (exit 0, documented 0)
+  ok      SKILL.md: ograph chains INC-5377                 # top 5 applications, each with its best chain  (exit 0, documented 0)
+  ok      SKILL.md: ograph chains INC-5377 --top 10  (exit 0, documented 0)
+  ok      SKILL.md: ograph chains INC-5377 --rank propagation   # second opinion: anomaly spread, not chain score  (exit 0, documented 0)
+  ok      SKILL.md: ograph blast ledger-db                 # name, alias or IRI of an application  (exit 0, documented 0)
+  ok      SKILL.md: ograph similar INC-5377 --top 3  (exit 0, documented 0)
+  FAIL    SKILL.md: ograph code INC-5377                   # lines, commits, files and past write-ups behind it (needs a code sour  (exit 1, documented 0)  
+  ok      SKILL.md: ograph suspects INC-5377               # likely causes from dependencies and recent commits, no telemetry need  (exit 0, documented 0)
+  ok      SKILL.md: ograph suspects checkout,payments --since 3d   # the same for failing applications  (exit 0, documented 0)
+  ok      SKILL.md: ograph news                            # all news; --since 24h, 7d counts back from now  (exit 0, documented 0)
+  ok      SKILL.md: ograph why INC-5377                    # every fact: graph, source, extractor, time, model provenance  (exit 0, documented 0)
+  ok      SKILL.md: ograph why id:app/ledger-db            # also lists quarantined proposals about the node  (exit 0, documented 0)
+  ok      SKILL.md: ograph why id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000  (exit 0, documented 0)
+  ok      SKILL.md: ograph changes --since 2d              # facts the sources added, removed or changed since then  (exit 0, documented 0)  store younger than the example's time; at the time now it exits 1
+  ok      SKILL.md: ograph chains INC-5377 --known-at 2026-11-20T09:00:00Z   # the answer the store gave then; also on before, bla  (exit 0, documented 0)  store younger than the example's time; at the time now it exits 0
+  ok      SKILL.md: ograph resolve chekout ledger-service    # names to catalog applications, at most 5, by the harvest's rules  (exit 0, documented 0)
+  ok      SKILL.md: ograph cite-check answer.md              # every chain, incident, application and IRI an answer cites  (exit 0, documented 0)
+  ok      SKILL.md: ograph status                            # a line when the graph is stale or chains wait for a verdict  (exit 0, documented 0)
+  ok      SKILL.md: ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept --evidence PM-5377 --by oncall  (exit 0, documented 0)
+  ok      SKILL.md: ograph verdict id:chain/inc-5377-f1ece3ced5be33c7 reject --evidence "deploy was a no-op" --by oncall  (exit 0, documented 0)
+  FAIL    SKILL.md: ograph replay --set window_s=600       # before a settings change: which past verdicts would flip (exit 1)  (exit 0, documented 1)  
+  ok      SKILL.md: ograph sparql 'SELECT ?app WHERE { ?a ops:dependsOn+ id:app\/ledger-db ; ops:name ?app }'  (exit 0, documented 0)
+  ok      SKILL.md: ograph sparql 'SELECT ?id ?status WHERE { ?i a inc:Incident ; inc:id ?id ; inc:status ?status }' --limit 20  (exit 0, documented 0)
+  ok      SKILL.md: ograph init                 # create .ograph/ (config.toml, ontology.ttl, shapes.ttl)  (exit 0, documented 0)
+  ok      SKILL.md: ograph harvest              # all sources, then correlation; unchanged files write nothing  (exit 0, documented 0)
+  ok      SKILL.md: ograph harvest --only alerts   # one kind, then re-correlate  (exit 0, documented 0)
+  ok      SKILL.md: ograph validate             # full SHACL audit, expect "0 violations"  (exit 0, documented 0)
+  ok      SKILL.md: ograph stats                # store size, graphs, triples  (exit 0, documented 0)
+  ok      SKILL.md: ograph lab --out lab.html   # one HTML page over incidents, causes, timelines  (exit 0, documented 0)
+  ok      SKILL.md: ograph export --out all.trig  (exit 0, documented 0)
+  ok      SKILL.md: ograph compact              # drop history older than history_days, shrink the file  (exit 0, documented 0)
+  ok      SKILL.md: ograph --json before INC-5377  (exit 0, documented 0)
+  ok      SKILL.md: ograph --json chains INC-5377  (exit 0, documented 0)
+  ok      SKILL.md: ograph --json sparql 'SELECT ?id WHERE { ?i a inc:Incident ; inc:id ?id }'  (exit 0, documented 0)
+  ok      references/data-quality.md: ograph sparql 'SELECT ?fact ?reason WHERE { GRAPH ?g { ?q a harv:Quarantined ; harv:fact ?fact ; harv:reason ?  (exit 0, documented 0)
+  ok      references/data-quality.md: ograph why id:app/checkout        # quarantined proposals about one node are listed at the end  (exit 0, documented 0)
+  ok      references/data-quality.md: ograph why INC-5377  (exit 0, documented 0)
+  ok      references/investigation.md: ograph before INC-5377  (exit 0, documented 0)
+  ok      references/investigation.md: ograph chains INC-5377  (exit 0, documented 0)
+  ok      references/investigation.md: ograph similar INC-5377  (exit 0, documented 0)
+  ok      references/investigation.md: ograph blast ledger-db  (exit 0, documented 0)
+  FAIL    references/investigation.md: ograph code INC-1  (exit 2, documented 0)  ograph: nothing in the graph is called INC-1
+  ok      references/investigation.md: ograph suspects INC-5377                 # the incident's application, commits since the day before  (exit 0, documented 0)
+  ok      references/investigation.md: ograph suspects checkout,payments --since 3d  (exit 0, documented 0)
+  ok      references/investigation.md: ograph news --since 7d  (exit 0, documented 0)
+  ok      references/ontology.md: ograph ontology check  (exit 0, documented 0)
+  FAIL    references/ontology.md: ograph ontology diff new.ttl --shapes new-shapes.ttl  (exit 2, documented 0)  ograph: No such file or directory (os error 2)
+  FAIL    references/ontology.md: ograph ontology coverage questions.txt  (exit 1, documented 0)  
+  not run references/serving.md: ograph serve --addr 127.0.0.1:7474 &  not run: serve does not exit
+  not run references/serving.md: ograph serve --mcp  not run: serve does not exit
+  ok      references/sources-and-harvest.md: ograph init            # writes .ograph/config.toml, ontology.ttl, shapes.ttl  (exit 0, documented 0)
+  ok      references/sources-and-harvest.md: ograph harvest  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?app WHERE { ?a ops:dependsOn+ id:app\/ledger-db ; ops:name ?app }'  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?app ?v ?at WHERE { ?d a evt:Deployment ; evt:on/ops:name ?app ; evt:version ?v ; evt:at  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?type (COUNT(?e) AS ?n) WHERE {  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?id ?app ?status WHERE { ?i a inc:Incident ; inc:id ?id ; evt:on/ops:name ?app OPTIONAL   (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?rank ?app ?conf WHERE { ?c corr:leadsTo/inc:id "INC-5377" ; corr:rank ?rank ;  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?app ?vendor WHERE { ?a ops:usesVendor ?v ; ops:name ?app . ?v ops:name ?vendor }'  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?t ?cat ?inc WHERE { ?t a disc:Thread ; disc:category ?cat OPTIONAL { ?t disc:about/inc:  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?g (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s ?p ?o } } GROUP BY ?g ORDER BY DESC(?n)'  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?p ?o WHERE { <https://ograph.dev/id/app/ledger-db> ?p ?o }'  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph chains INC-5377                       # note the chain id of the confirmed application  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept --evidence PM-5377 --by "jane (oncall)"  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph verdict id:chain/inc-5377-f1ece3ced5be33c7 reject --evidence "rollback changed nothing" --by "jane (onc  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph sparql 'SELECT ?id ?state ?by ?cause ?at WHERE {  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph sparql 'SELECT ?id ?app WHERE { ?i inc:id ?id ; inc:cause ?e . ?v rca:onChain [ corr:rootCause ?e ] ; r  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph replay --set window_s=600            # what the change would do to past verdicts  (exit 0, documented 0)
+
+GATE 0 unmentioned items, 0 uncovered ogrep behaviors, 0 failing examples: FAIL (31 unmentioned, 5 uncovered, 5 failing)
+
+================================================================================
+AFTER: lane-s-skill
+================================================================================
+skill: skills/ograph at the working tree (SKILL.md, references/data-quality.md, references/investigation.md, references/ontology.md, references/serving.md, references/sources-and-harvest.md, references/sparql.md, references/verdicts.md); binary /Volumes/External Disk/Github/graph-rag/.claude/worktrees/lane-s-skill/target/eval-bin/ograph
+
+1. Coverage: 123 of 136 items mentioned; 0 unmentioned and not excluded
+  excluded help: clap's own subcommand
+  excluded global --help: clap's own flag
+  excluded global --version: clap's own flag
+  excluded config [detect] metric_z: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] metric_baseline_s: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] metric_min_run: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] metric_min_history_s: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] log_burst_factor: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] log_min_count: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] trace_error_rate: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] trace_slow_factor: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [detect] two_sided: detector threshold: it changes which events exist, a person tunes it against docs/EVIDENCE.md, and the skill points at docs/REFERENCE.md for the list
+  excluded config [llm.extract] command: how the model is called, set once by a person; the skill says what the table enables
+  excluded config [llm.extract] model: how the model is called, set once by a person; the skill says what the table enables
+  excluded config [llm.extract] parallel: how the model is called, set once by a person; the skill says what the table enables
+  excluded config [llm.extract] timeout_s: how the model is called, set once by a person; the skill says what the table enables
+
+2. ogrep integrations (commit, behavior, covered)
+  c9abd75         yes                        `ograph code INC`: lines behind the events, commits, files, write-ups
+  c9abd75         yes                        `code --top` limits files and write-ups
+  c9abd75         yes                        `code` lists `degraded` when ogrep cannot answer for a repository
+  c9abd75         yes                        `code` in serve/MCP
+  10eeba2         yes                        `ograph suspects INC|APP[,APP] --since`
+  10eeba2         yes                        `chains` falls back to suspects when nothing ranks (code source)
+  10eeba2         yes                        other incidents in the window count as failing for suspects
+  a2dacb8         yes                        `code` source kind, its `since` option
+  a2dacb8         yes                        `errors` source kind, EXCEPTION events with stack-frame lines
+  a2dacb8         yes                        COMMIT and EXCEPTION signals
+  a2dacb8         yes                        `ogrep index .` makes lookups fast, ograph does not build it
+  c7f2e06/7fac5b9 n/a (nothing to document)  commit-to-file prior: added then dropped; the skill must not offer code_pair_prior
+  b7471ca         n/a (nothing to document)  ogrep calls of a harvest run side by side: speed only, no flag or output
+  fa935b8         yes                        catalog takes calls ogrep infers from configuration; `inferred = false`
+  fa935b8         yes                        aliases from a Kubernetes Service in front of a workload (ogrep 0.3+)
+  fa935b8         yes                        LOG_NEW and `[detect] log_new_after_s`
+  fa935b8         yes                        `code` names the commit that first added a message; needs `ogrep index --history`
+  fa935b8         yes                        deployment files between two revisions; `code` lists `deployments` with `touches`
+  fa935b8         yes                        `suspects` for an incident stops at its open time
+  c975ff8         yes                        with ogrep 0.2.0, deployments keep no files and the harvest line says DEGRADED
+  fa935b8         yes                        with ogrep 0.2.0, suspects counts later commits too and a note says so
+  57184ae         yes                        ogrep hand-over from a located line: --related-tests, --callers
+  a2dacb8         yes                        `OGRAPH_OGREP` points at another ogrep binary
+  b7471ca/serve   yes                        serve re-harvests when a code repository's .git/logs/HEAD changes
+
+3. Examples: 69 run, 0 not exiting as documented, 4 not run
+  ok      SKILL.md: ograph harvest    # commands search upward for .ograph/; the last line counts quarantined facts  (exit 0, documented 0)
+  ok      SKILL.md: ograph before INC-5377                 # default window 10m, 4 dependency hops  (exit 0, documented 0)
+  ok      SKILL.md: ograph before INC-5377 --window 45m    # widen when nothing shows up; --depth 6 for more hops  (exit 0, documented 0)
+  ok      SKILL.md: ograph chains INC-5377                 # top 5 applications, each with its best chain  (exit 0, documented 0)
+  ok      SKILL.md: ograph chains INC-5377 --top 10  (exit 0, documented 0)
+  ok      SKILL.md: ograph chains INC-5377 --rank propagation   # second opinion: anomaly spread, not chain score  (exit 0, documented 0)
+  ok      SKILL.md: ograph chains INC-5377 --window 60m --set depth=6   # what a wider correlation would rank (stores nothing)  (exit 0, documented 0)
+  ok      SKILL.md: ograph blast ledger-db                 # name, alias or IRI of an application; --depth limits the hops  (exit 0, documented 0)
+  ok      SKILL.md: ograph similar INC-5377 --top 3  (exit 0, documented 0)
+  ok      SKILL.md: ograph code INC-5377 --top 3           # lines, commits, files and write-ups behind it; nothing without a code  (exit 1, documented 1)
+  ok      SKILL.md: ograph suspects INC-5377               # likely causes from dependencies and recent commits, no telemetry need  (exit 0, documented 0)
+  ok      SKILL.md: ograph suspects checkout,payments --since 3d   # the same for failing applications  (exit 0, documented 0)
+  ok      SKILL.md: ograph news                            # all news; --since 24h, 7d counts back from now  (exit 0, documented 0)
+  ok      SKILL.md: ograph why INC-5377                    # every fact: graph, source, extractor, time, model provenance  (exit 0, documented 0)
+  ok      SKILL.md: ograph why id:app/ledger-db            # also lists quarantined proposals about the node  (exit 0, documented 0)
+  ok      SKILL.md: ograph why id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000  (exit 0, documented 0)
+  ok      SKILL.md: ograph changes --since 2d              # facts the sources added, removed or changed since then  (exit 0, documented 0)  store younger than the example's time; at the time now it exits 1
+  ok      SKILL.md: ograph chains INC-5377 --known-at 2026-11-20T09:00:00Z   # the answer the store gave then; also on before, bla  (exit 0, documented 0)  store younger than the example's time; at the time now it exits 0
+  ok      SKILL.md: ograph resolve chekout ledger-service    # names to catalog applications, at most 5, by the harvest's rules  (exit 0, documented 0)
+  ok      SKILL.md: ograph cite-check answer.md              # every chain, incident, application and IRI an answer cites  (exit 0, documented 0)
+  ok      SKILL.md: ograph status                            # a line when the graph is stale or chains wait for a verdict  (exit 0, documented 0)
+  ok      SKILL.md: ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept --evidence PM-5377 --by oncall  (exit 0, documented 0)
+  ok      SKILL.md: ograph verdict id:chain/inc-5377-f1ece3ced5be33c7 reject --evidence "deploy was a no-op" --by oncall  (exit 0, documented 0)
+  ok      SKILL.md: ograph replay --set window_s=600       # before a settings change: which past verdicts it would flip; exits 1   (exit 0, documented 0)
+  ok      SKILL.md: ograph sparql 'SELECT ?app WHERE { ?a ops:dependsOn+ id:app\/ledger-db ; ops:name ?app }'  (exit 0, documented 0)
+  ok      SKILL.md: ograph sparql 'SELECT ?id ?status WHERE { ?i a inc:Incident ; inc:id ?id ; inc:status ?status }' --limit 20  (exit 0, documented 0)
+  ok      SKILL.md: ograph init                 # create .ograph/ (config.toml, ontology.ttl, shapes.ttl)  (exit 0, documented 0)
+  ok      SKILL.md: ograph harvest              # all sources, then correlation; unchanged files write nothing  (exit 0, documented 0)
+  ok      SKILL.md: ograph harvest --only alerts   # one kind, then re-correlate  (exit 0, documented 0)
+  ok      SKILL.md: ograph validate             # full SHACL audit, expect "0 violations"  (exit 0, documented 0)
+  ok      SKILL.md: ograph stats                # store size, graphs, triples  (exit 0, documented 0)
+  ok      SKILL.md: ograph lab --out lab.html   # one HTML page for a person: causes, timeline, neighbourhood, evidence  (exit 0, documented 0)
+  ok      SKILL.md: ograph export --out all.trig  (exit 0, documented 0)
+  ok      SKILL.md: ograph compact              # drop history older than history_days, shrink the file  (exit 0, documented 0)
+  ok      SKILL.md: ograph --json before INC-5377  (exit 0, documented 0)
+  ok      SKILL.md: ograph --json chains INC-5377  (exit 0, documented 0)
+  ok      SKILL.md: ograph --json sparql 'SELECT ?id WHERE { ?i a inc:Incident ; inc:id ?id }'  (exit 0, documented 0)
+  ok      references/data-quality.md: ograph sparql 'SELECT ?fact ?reason WHERE { GRAPH ?g { ?q a harv:Quarantined ; harv:fact ?fact ; harv:reason ?  (exit 0, documented 0)
+  ok      references/data-quality.md: ograph why id:app/checkout        # quarantined proposals about one node are listed at the end  (exit 0, documented 0)
+  ok      references/data-quality.md: ograph status          # nothing when nothing is due  (exit 0, documented 0)
+  ok      references/data-quality.md: ograph validate        # SHACL audit; also the focus nodes each shape selects  (exit 0, documented 0)
+  ok      references/data-quality.md: ograph why INC-5377  (exit 0, documented 0)
+  ok      references/investigation.md: ograph before INC-5377  (exit 0, documented 0)
+  ok      references/investigation.md: ograph chains INC-5377  (exit 0, documented 0)
+  ok      references/investigation.md: ograph similar INC-5377  (exit 0, documented 0)
+  ok      references/investigation.md: ograph blast ledger-db  (exit 0, documented 0)
+  not run references/investigation.md: ograph code INC-1     # in a workspace with a code source  not run: its comment says it in a workspace with a code source
+  ok      references/investigation.md: ograph suspects INC-5377                 # the incident's application, commits since the day before  (exit 0, documented 0)
+  ok      references/investigation.md: ograph suspects checkout,payments --since 3d  (exit 0, documented 0)
+  ok      references/investigation.md: ograph news --since 7d  (exit 0, documented 0)
+  ok      references/investigation.md: ograph lab --out lab.html  (exit 0, documented 0)
+  ok      references/ontology.md: ograph ontology check  (exit 0, documented 0)
+  ok      references/ontology.md: ograph ontology diff new.ttl  (exit 0, documented 0)
+  not run references/ontology.md: ograph ontology coverage questions.txt   # needs a model  not run: its comment says it needs a model
+  not run references/serving.md: ograph serve --addr 127.0.0.1:7474 &  not run: serve does not exit
+  not run references/serving.md: ograph serve --mcp  not run: serve does not exit
+  ok      references/sources-and-harvest.md: ograph init            # writes .ograph/config.toml, ontology.ttl, shapes.ttl  (exit 0, documented 0)
+  ok      references/sources-and-harvest.md: ograph harvest  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?app WHERE { ?a ops:dependsOn+ id:app\/ledger-db ; ops:name ?app }'  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?app ?v ?at WHERE { ?d a evt:Deployment ; evt:on/ops:name ?app ; evt:version ?v ; evt:at  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?type (COUNT(?e) AS ?n) WHERE {  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?id ?app ?status WHERE { ?i a inc:Incident ; inc:id ?id ; evt:on/ops:name ?app OPTIONAL   (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?rank ?app ?conf WHERE { ?c corr:leadsTo/inc:id "INC-5377" ; corr:rank ?rank ;  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?app ?vendor WHERE { ?a ops:usesVendor ?v ; ops:name ?app . ?v ops:name ?vendor }'  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?t ?cat ?inc WHERE { ?t a disc:Thread ; disc:category ?cat OPTIONAL { ?t disc:about/inc:  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?g (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s ?p ?o } } GROUP BY ?g ORDER BY DESC(?n)'  (exit 0, documented 0)
+  ok      references/sparql.md: ograph sparql 'SELECT ?p ?o WHERE { <https://ograph.dev/id/app/ledger-db> ?p ?o }'  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph chains INC-5377                       # note the chain id of the confirmed application  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept --evidence PM-5377 --by "jane (oncall)"  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph verdict id:chain/inc-5377-f1ece3ced5be33c7 reject --evidence "rollback changed nothing" --by "jane (onc  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph sparql 'SELECT ?id ?state ?by ?cause ?at WHERE {  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph sparql 'SELECT ?id ?app WHERE { ?i inc:id ?id ; inc:cause ?e . ?v rca:onChain [ corr:rootCause ?e ] ; r  (exit 0, documented 0)
+  ok      references/verdicts.md: ograph replay --set window_s=600            # what the change would do to past verdicts  (exit 0, documented 0)
+
+GATE 0 unmentioned items, 0 uncovered ogrep behaviors, 0 failing examples: PASS (0 unmentioned, 0 uncovered, 0 failing)

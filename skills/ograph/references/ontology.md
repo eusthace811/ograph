@@ -36,10 +36,12 @@ workspace whose `ontology.ttl` lacks them quarantines the actions a model reads 
 ## Diff before you install a change
 
 ```bash
-cp .ograph/ontology.ttl new.ttl; cp .ograph/shapes.ttl new-shapes.ttl
-# edit either
-ograph ontology diff new.ttl --shapes new-shapes.ttl
+cp .ograph/ontology.ttl new.ttl     # then edit new.ttl
+ograph ontology diff new.ttl
 ```
+
+To check a changed `shapes.ttl` too, copy it the same way and add `--shapes new-shapes.ttl`;
+`ograph ontology diff --shapes new-shapes.ttl` checks the shapes alone.
 
 Lines starting with `BREAKING` remove or narrow something stored data uses, with the count of
 uses: a removed class, property or vocabulary value, a closed vocabulary, a lost superclass, a
@@ -57,12 +59,13 @@ Needs a model (`[llm.extract]` configured).
 
 ```bash
 printf 'Which deployments touched services that page the payments team?\nWhich region was the failing pod in?\n' > questions.txt
-ograph ontology coverage questions.txt
+ograph ontology coverage questions.txt   # needs a model
 ```
 
 For each question it lists the declared names that can answer it and the concepts nothing
 declares. Proposed additions go to `.ograph/proposed.ttl` for a person to review, merge, and
-check with `ontology diff`. To decline a proposal for good, add it to `.ograph/declined.ttl`:
+check with `ontology diff` (`ograph ontology coverage questions.txt --out FILE` writes them
+elsewhere). To decline a proposal for good, add it to `.ograph/declined.ttl`:
 
 ```turtle
 @prefix og: <https://ograph.dev/meta#> .
