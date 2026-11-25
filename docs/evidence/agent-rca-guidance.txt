@@ -1,0 +1,59 @@
+Phase 13 lane S, item S4: gated evolution of the investigation guidance (Parent against Candidate).
+
+================================================================================
+GATE, written before any Candidate run (commit of this file precedes every run below)
+================================================================================
+
+What changes. Only the agent-facing text: skills/ograph/SKILL.md, skills/ograph/references/
+investigation.md and scripts/agent/SKILL.md (the pi extension's instructions).
+  Parent    = 0be3918: integrate-phase-12 (5179213) with one sentence of investigation.md
+              reworded so it does not name the benchmark dataset. The harness voids any run whose
+              tool output names it, so at 5179213 a skill agent that read investigation.md
+              would be voided. Both Parent and Candidate carry the same rewording.
+  Candidate = 34f7625: Parent plus the S1 text (rank 1 is the answer unless the agent can quote
+              evidence the ranking does not use; severity, earliness and being upstream are not
+              such evidence; say hypothesis; when departing, quote the evidence and keep rank 1 as
+              the alternative).
+The harness takes each revision's skills/ograph and scripts/agent with `git archive`
+(--guidance parent=0be3918,candidate=34f7625); arms mcp@parent, mcp@candidate, skill@parent,
+skill@candidate share the binary (target/release/ograph built from this branch), the model
+(openai/gpt-5.6-terra, the harness default and Phase 12's), the prompt, the timeout (600 s) and
+the leak checks. chains (rank 1 of `ograph chains`) is the floor. raw is not run (budget).
+
+Case sets (labels: data/rcaeval-cases/labels.json, read-only; the 90 cases are 30
+(root, fault) cells x 3 repetitions):
+  seen     the Phase 12 sample, --sample 30 --seed 12 (one case per cell). The finding behind S1
+           came from it. Reported apart, never used for the decision.
+  misses   every case outside seen whose rank 1 is wrong in target/rcaeval-ref.json
+           (rcaeval_score.py --modes chain on this binary, AC@1 0.93): c-1d389615b3,
+           c-b0f876b48e, c-d1059aa9c3, c-d7fc5dfaee, c-e425dee775 (5).
+  held-out 25 cases drawn with random.Random(13).sample from the 55 cases outside seen and
+           misses (--holdout 25 --holdout-seed 13): c-37a5303b48 c-3bb38f3165 c-bd0ab7fc84
+           c-f07bba6dfd c-2bb29befe5 c-b8a8899e63 c-2e930efa74 c-ba7c71dce5 c-1f89afb4ec
+           c-db856d2c9b c-e38b7757b4 c-e39c7bb9d6 c-1d28b06708 c-0abf02c950 c-97bf1c72d2
+           c-2cf334d2e0 c-f9278c4f7b c-025a43e8ef c-7c01c92782 c-d20ce82152 c-011f3b9bc3
+           c-3a0764b124 c-c923bc4f2d c-0ae1ec693f c-9a8d5cecc6. By construction rank 1 is
+           right on every one, so held-out measures what departing from rank 1 costs and misses
+           measures what it recovers. The 60 cases outside seen are 55 like held-out and 5
+           misses, so an arm's estimated AC@1 on unseen cases is (55 x held-out + 5 x misses) / 60.
+  demo     the 4 incidents of examples/demo (labels from generate.py's story).
+
+Runs. 1 run per case and arm on held-out, misses and demo first, then 1 on seen, then runs 2
+and 3 on held-out, misses and demo while the budget allows. Budget cap $40 at pi's list price
+for all of lane S. A usage-limit refusal stops model work; what did not finish is NOT MEASURED.
+
+PASS, all of these, per arm family (mcp and skill), on the runs both Parent and Candidate have:
+  1. held-out: Candidate AC@1 >= Parent AC@1.
+  2. departures from chains rank 1 over held-out, misses and demo: the fraction of Candidate's
+     departures that name the label >= Parent's. If Candidate never departs this holds
+     vacuously, and the result is said so.
+  3. misses: Candidate recovers (names the label on) at least as many runs as Parent.
+Paired comparison per case (mean pass rate over runs), with the exact two-sided sign test the
+harness prints; a difference with p >= 0.05 is reported as not significant. A Candidate that only
+repeats rank 1 passes 1 and scores 0 on misses: if criterion 3 then passes only because Parent
+also scores 0, that is said, and S1 is kept for its effect on held-out, not for recovery.
+
+Decision. KEEP the Candidate text if both families pass. Otherwise build Candidate 2 from the
+seen set only (its transcripts and Phase 12's), rerun held-out and misses, report both, and keep
+whichever passes; if neither does, revert to Parent. Held-out and misses transcripts are not
+read to write a candidate.
