@@ -340,12 +340,15 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         }
         Cmd::Before { incident, window, depth, known_at } => {
             let snap = view(&ws, known_at.as_deref())?;
-            let b = query::before(&snap, &incident, query::duration_s(&window)?, depth)?;
+            let b = query::before(&snap, &incident, query::duration_s(&window)?, depth, ws.config.correlation.window_s)?;
             let found = !b.events.is_empty();
             print(json, &b, |b| {
                 println!("{} on {} at {}; scope: {}", b.incident, b.app, b.at, b.scope.iter().map(|(a, d)| format!("{a}({d})")).collect::<Vec<_>>().join(" "));
                 for e in &b.events {
                     println!("  -{:>5.1} min  {:<16} {:<15} sev {:.2}  {}", e.minutes_before, e.app, e.signal, e.severity, e.event);
+                    if let Some(c) = &e.chronic {
+                        println!("                 chronic: {c}");
+                    }
                 }
                 print_withheld(&b.withheld);
             });
@@ -408,6 +411,11 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                         println!("     {} {:.2}: {} -> incident", ograph_core::vocab::compact(&c.id), c.confidence, path.join(" -> "));
                         for l in &c.scores {
                             println!("       {:.2}  {} -> {}  ({})", l.score, l.from, l.to, link_basis(l));
+                        }
+                        for sig in std::iter::once(&c.root).chain(&c.links) {
+                            if let Some(ch) = &sig.chronic {
+                                println!("       chronic {}:{}: {ch}", sig.app_name, sig.kind);
+                            }
                         }
                         if c.scores.len() > 1 {
                             println!("       weakest link: {} -> {} at {:.2}", c.weakest.from, c.weakest.to, c.weakest.score);
@@ -515,7 +523,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         }
         Cmd::Why { node } => {
             let snap = ws.store.snapshot()?;
-            let p = query::why(&snap, &node)?;
+            let p = query::why(&snap, &node, Some(ws.config.correlation.window_s))?;
             print(json, &p, |p| {
                 println!("{}", p.node);
                 for f in &p.facts {
@@ -527,6 +535,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 }
                 for (fact, reason) in &p.quarantined {
                     println!("  QUARANTINED {fact}: {reason}");
+                }
+                if let Some(c) = &p.chronic {
+                    println!("  chronic: {c}");
                 }
                 if !p.verdicts.is_empty() {
                     println!("  verdicts, oldest first:");

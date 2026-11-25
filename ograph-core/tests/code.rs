@@ -238,7 +238,7 @@ fn withheld_lists_only_the_dependencies_the_depth_would_follow() {
     harvest(&root);
     let ws = Workspace::open(&root).unwrap();
     let snap = ws.store.snapshot().unwrap();
-    let withheld = |depth| ograph_core::query::before(&snap, "INC-1", 600, depth).unwrap().withheld.iter().map(|w| format!("{} -> {}", w.caller, w.callee)).collect::<Vec<_>>();
+    let withheld = |depth| ograph_core::query::before(&snap, "INC-1", 600, depth, 1800).unwrap().withheld.iter().map(|w| format!("{} -> {}", w.caller, w.callee)).collect::<Vec<_>>();
     assert_eq!(withheld(0), Vec::<String>::new());
     assert_eq!(withheld(1), ["checkout -> mailer"]);
 }

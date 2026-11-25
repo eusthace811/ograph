@@ -118,6 +118,10 @@ pub struct Signal {
     pub kind: String,
     pub severity: f64,
     pub distance: usize,
+    /// Set when the event's series fired again and again before the incident (see
+    /// [`mark_chronic`]): background the incident did not start.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chronic: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -250,6 +254,8 @@ pub struct Ids {
     pub name: Option<Id>,
     pub changed_file: Option<Id>,
     pub code_location: Option<Id>,
+    pub metric: Option<Id>,
+    pub template: Option<Id>,
     /// Dependencies a repository's history dates, as (caller, callee) -> the first time, in Unix
     /// ms, that a graph stating the dependency gives it. A dependency missing here holds at every
     /// time: some graph states it without a date.
@@ -272,6 +278,8 @@ impl Ids {
             name: s.iri(ops::NAME)?,
             changed_file: s.iri(evt::CHANGED_FILE)?,
             code_location: s.iri(evt::CODE_LOCATION)?,
+            metric: s.iri(evt::METRIC)?,
+            template: s.iri(evt::TEMPLATE)?,
             valid_from: valid_from(s)?,
         })
     }
@@ -461,11 +469,74 @@ pub fn candidates(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyho
                 kind,
                 severity: severity_of(s, ids, e),
                 distance: d,
+                chronic: None,
             });
         }
     }
     out.sort_by(|a, b| a.at_ms.cmp(&b.at_ms).then(a.iri.cmp(&b.iri)));
     Ok((app, t, out))
+}
+
+/// An event as a signal, for marks that need no incident: its application, time and kind.
+pub fn event_signal(s: &Snapshot, ids: &Ids, e: Id) -> anyhow::Result<Option<Signal>> {
+    let (Some(app), Some(at_ms)) = (s.object(e, ids.on)?, s.object(e, ids.at)?.and_then(term::millis)) else { return Ok(None) };
+    let kind = kind_of(s, ids, e);
+    Ok(Some(Signal {
+        id: e,
+        iri: literal(s, e).unwrap_or_default(),
+        app,
+        app_iri: literal(s, app).unwrap_or_default(),
+        app_name: app_name(s, ids, app),
+        at_ms,
+        until_ms: at_ms,
+        kind,
+        severity: severity_of(s, ids, e),
+        distance: 0,
+        chronic: None,
+    }))
+}
+
+/// Episodes of one series in the lookback that make each of them chronic.
+pub const CHRONIC_EPISODES: usize = 2;
+
+/// The series a detected event belongs to: its signal kind and its metric or log template.
+/// Deployments, changes, alerts and other one-off records have none.
+fn series_of(s: &Snapshot, ids: &Ids, e: Id, kind: &str) -> Option<(String, String)> {
+    let detail = |p: Option<Id>| p.and_then(|p| s.object(e, p).ok().flatten()).and_then(|v| literal(s, v));
+    match detail(ids.metric).or_else(|| detail(ids.template)) {
+        Some(d) => Some((kind.to_owned(), d)),
+        None if kind.starts_with("TRACE_") => Some((kind.to_owned(), String::new())),
+        None => None,
+    }
+}
+
+/// Marks each signal whose series (same application, signal kind and metric or log template)
+/// started at least [`CHRONIC_EPISODES`] episodes in `[from, to)`, Unix ms. A series that keeps
+/// firing is background: sparse series reach full strength on any change, and noise fires
+/// whether or not anything is wrong. Only events the view holds count, so `--known-at` applies.
+pub fn mark_chronic<'a>(s: &Snapshot, ids: &Ids, from: i64, to: i64, what: &str, sigs: impl IntoIterator<Item = &'a mut Signal>) -> anyhow::Result<()> {
+    let mut counts: FxHashMap<Id, FxHashMap<(String, String), usize>> = FxHashMap::default();
+    for sig in sigs {
+        let Some(key) = series_of(s, ids, sig.id, &sig.kind) else { continue };
+        if !counts.contains_key(&sig.app) {
+            let mut c: FxHashMap<(String, String), usize> = FxHashMap::default();
+            for (tid, e) in s.events_on(sig.app, term::time_id(from), term::time_id(to))? {
+                if term::millis(tid).is_none_or(|at| at >= to) {
+                    continue;
+                }
+                if let Some(k) = series_of(s, ids, e, &kind_of(s, ids, e)) {
+                    *c.entry(k).or_default() += 1;
+                }
+            }
+            counts.insert(sig.app, c);
+        }
+        let n = counts[&sig.app].get(&key).copied().unwrap_or(0);
+        if n >= CHRONIC_EPISODES {
+            let name = if key.1.is_empty() || sig.kind.starts_with("LOG") { format!("{} {}", sig.app_name, sig.kind) } else { format!("{} {}", sig.app_name, key.1) };
+            sig.chronic = Some(format!("{name} fired {n} times {what}: likely background, not a new fault"));
+        }
+    }
+    Ok(())
 }
 
 impl Settings {

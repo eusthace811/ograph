@@ -815,7 +815,7 @@ pub(crate) mod tests {
         std::fs::write(root.join("alerts.json"), "[]").unwrap();
         harvest(&root, None);
         let ws = Workspace::open(&root).unwrap();
-        assert!(crate::query::before(&ws.store.snapshot().unwrap(), "INC-1", 1800, 4).unwrap().events.is_empty());
+        assert!(crate::query::before(&ws.store.snapshot().unwrap(), "INC-1", 1800, 4, 1800).unwrap().events.is_empty());
         assert!(sparql(&root, "SELECT ?c WHERE { ?c corr:rank ?r }").is_empty());
         assert_eq!(violations(&root), 0);
     }
@@ -974,7 +974,7 @@ pub(crate) mod tests {
         assert!(sparql(&root, cause).is_empty());
         assert_eq!(violations(&root), 0);
         let ws = Workspace::open(&root).unwrap();
-        let why = crate::query::why(&ws.store.snapshot().unwrap(), &chain).unwrap();
+        let why = crate::query::why(&ws.store.snapshot().unwrap(), &chain, Some(1800)).unwrap();
         let seen: Vec<_> = why.verdicts.iter().map(|e| (e.verdict.as_str(), e.state.as_str(), e.by.as_str(), e.evidence.clone(), e.rank.as_deref(), e.superseded_by.as_deref())).collect();
         let v2 = format!("{v}-v2");
         assert_eq!(seen, [(v.as_str(), "accepted", "oncall", vec!["PM-1".to_owned()], Some("1"), Some(v2.as_str())), (v2.as_str(), "rejected", "lead", vec!["rollback changed nothing".to_owned()], Some("1"), None)]);
@@ -1433,7 +1433,7 @@ pub(crate) mod tests {
         let root = fixture("episode", &[("metrics", "metrics.csv", &csv)]);
         harvest(&root, None);
         let ws = Workspace::open(&root).unwrap();
-        let before = crate::query::before(&ws.store.snapshot().unwrap(), "INC-1", 600, 4).unwrap();
+        let before = crate::query::before(&ws.store.snapshot().unwrap(), "INC-1", 600, 4, 1800).unwrap();
         assert_eq!(before.events.iter().map(|e| (e.app.as_str(), e.signal.as_str())).collect::<Vec<_>>(), [("ledger-db", "METRIC_ANOMALY")]);
         assert!(before.events[0].source_record.as_deref().is_some_and(|r| r.starts_with("metrics.csv")));
     }
@@ -1518,7 +1518,7 @@ pub(crate) mod tests {
         );
         assert_eq!(top, "payments-api");
         let ws = Workspace::open(&root).unwrap();
-        let why = crate::query::why(&ws.store.snapshot().unwrap(), "INC-1").unwrap();
+        let why = crate::query::why(&ws.store.snapshot().unwrap(), "INC-1", Some(1800)).unwrap();
         let at: Vec<&str> = why.facts.iter().filter(|f| f.predicate == "evt:at").map(|f| f.object.as_str()).collect();
         assert_eq!(at, ["2026-11-22T23:06:40Z"]);
         assert_eq!(why.quarantined.len(), 2);
@@ -1629,7 +1629,7 @@ pub(crate) mod tests {
         );
         let ws = Workspace::open(&root).unwrap();
         let snap = ws.store.snapshot().unwrap();
-        let before = crate::query::before(&snap, "INC-10", 1800, 4).unwrap();
+        let before = crate::query::before(&snap, "INC-10", 1800, 4, 1800).unwrap();
         assert_eq!(before.events.iter().map(|e| e.signal.as_str()).collect::<Vec<_>>(), ["OPERATOR_ACTION", "ALERT"]);
         let ids = crate::correlate::Ids::new(&snap).unwrap();
         let chains = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-10").unwrap(), &ws.config.correlation, &[]).unwrap();
