@@ -236,5 +236,236 @@
   "channel": "mentions",
   "user": "U2",
   "text": "payments team asks who approved the checkout of the old ledger schema branch"
+ },
+ {
+  "ts": "1791757600.000400",
+  "thread_ts": "1791757600.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "orders svc 5xx since the db failover"
+ },
+ {
+  "ts": "1791757660.000400",
+  "thread_ts": "1791757600.000400",
+  "channel": "heldout",
+  "user": "U3",
+  "text": "ledger looks fine now, orders still erroring"
+ },
+ {
+  "ts": "1791759400.000400",
+  "thread_ts": "1791759400.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "web front end can't load product images, CDN cache purge pending"
+ },
+ {
+  "ts": "1791761200.000400",
+  "thread_ts": "1791761200.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "notification service stopped sending push since midnight"
+ },
+ {
+  "ts": "1791763000.000400",
+  "thread_ts": "1791763000.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "elastic cluster red after the node replacement"
+ },
+ {
+  "ts": "1791764800.000400",
+  "thread_ts": "1791764800.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "paygw timeouts to the bank, card auths failing"
+ },
+ {
+  "ts": "1791766600.000400",
+  "thread_ts": "1791766600.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "finder returns empty results for every query since 9am"
+ },
+ {
+  "ts": "1791768400.000400",
+  "thread_ts": "1791768400.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "auth latency doubled after the token cache change"
+ },
+ {
+  "ts": "1791768460.000400",
+  "thread_ts": "1791768400.000400",
+  "channel": "heldout",
+  "user": "U3",
+  "text": "auth team rolled it back"
+ },
+ {
+  "ts": "1791770200.000400",
+  "thread_ts": "1791770200.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "checkout svc OOM on 3 of 8 hosts"
+ },
+ {
+  "ts": "1791772000.000400",
+  "thread_ts": "1791772000.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "ledger-pg vacuum is blocking writes"
+ },
+ {
+  "ts": "1791773800.000400",
+  "thread_ts": "1791773800.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "inventory svc can't reach the ledger, connection refused"
+ },
+ {
+  "ts": "1791775600.000400",
+  "thread_ts": "1791775600.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "the payments service and the checkout service disagree on totals for EUR orders"
+ },
+ {
+  "ts": "1791777400.000400",
+  "thread_ts": "1791777400.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "search latency is up, the search service is waiting on elastic"
+ },
+ {
+  "ts": "1791779200.000400",
+  "thread_ts": "1791779200.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "frontend 404s on /cart after the router change"
+ },
+ {
+  "ts": "1791781000.000400",
+  "thread_ts": "1791781000.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "notif backlog is 12k and climbing"
+ },
+ {
+  "ts": "1791782800.000400",
+  "thread_ts": "1791782800.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "orders API rejects every request with 401"
+ },
+ {
+  "ts": "1791782860.000400",
+  "thread_ts": "1791782800.000400",
+  "channel": "heldout",
+  "user": "U3",
+  "text": "auth svc rotated its signing key an hour ago"
+ },
+ {
+  "ts": "1791784600.000400",
+  "thread_ts": "1791784600.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "the ledger db is at 90% storage"
+ },
+ {
+  "ts": "1791786400.000400",
+  "thread_ts": "1791786400.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "pay gw p99 at 2s, ledger reads are slow"
+ },
+ {
+  "ts": "1791788200.000400",
+  "thread_ts": "1791788200.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "ES snapshot job failed overnight, disk full on the repo bucket"
+ },
+ {
+  "ts": "1791790000.000400",
+  "thread_ts": "1791790000.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "auth is fine, the problem was the corporate VPN"
+ },
+ {
+  "ts": "1791791800.000400",
+  "thread_ts": "1791791800.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "inventory counts are off by one after the reserve change"
+ },
+ {
+  "ts": "1791793600.000400",
+  "thread_ts": "1791793600.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "please checkout the new on-call handbook before your shift"
+ },
+ {
+  "ts": "1791795400.000400",
+  "thread_ts": "1791795400.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "the order of the deploy steps in the wiki is wrong, fixing it"
+ },
+ {
+  "ts": "1791797200.000400",
+  "thread_ts": "1791797200.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "Okta is down, nobody can log in to Grafana"
+ },
+ {
+  "ts": "1791799000.000400",
+  "thread_ts": "1791799000.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "search the incident channel before opening a new ticket"
+ },
+ {
+  "ts": "1791800800.000400",
+  "thread_ts": "1791800800.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "finance asked for an inventory of our cloud spend by team"
+ },
+ {
+  "ts": "1791802600.000400",
+  "thread_ts": "1791802600.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "front end guild meetup is moved to thursday"
+ },
+ {
+  "ts": "1791804400.000400",
+  "thread_ts": "1791804400.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "MailRelay changed their API keys, the vendor emailed us"
+ },
+ {
+  "ts": "1791806200.000400",
+  "thread_ts": "1791806200.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "slack notifications for deploys are duplicated, the bot posts twice"
+ },
+ {
+  "ts": "1791808000.000400",
+  "thread_ts": "1791808000.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "the auth token for the build bot expired, CI is red"
+ },
+ {
+  "ts": "1791809800.000400",
+  "thread_ts": "1791809800.000400",
+  "channel": "heldout",
+  "user": "U2",
+  "text": "payment of the AWS invoice is late, finance is on it"
  }
 ]

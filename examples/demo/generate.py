@@ -205,6 +205,41 @@ MENTION_THREADS = [
     (["auth-svc certificate expires tomorrow, renewing it tonight"], ["auth-service"]),
     (["payments team asks who approved the checkout of the old ledger schema branch"], []),
 ]
+# Held-out set B, written after the first slice failed on the set above and before the second
+# was built or run. Same mix: short names, aliases, words of a name, and words that only look
+# like one.
+HELDOUT_THREADS = [
+    (["orders svc 5xx since the db failover", "ledger looks fine now, orders still erroring"], ["orders-api", "ledger-db"]),
+    (["web front end can't load product images, CDN cache purge pending"], ["web-frontend"]),
+    (["notification service stopped sending push since midnight"], ["notifications"]),
+    (["elastic cluster red after the node replacement"], ["elasticsearch"]),
+    (["paygw timeouts to the bank, card auths failing"], ["payments-api"]),
+    (["finder returns empty results for every query since 9am"], ["search-api"]),
+    (["auth latency doubled after the token cache change", "auth team rolled it back"], ["auth-service"]),
+    (["checkout svc OOM on 3 of 8 hosts"], ["checkout"]),
+    (["ledger-pg vacuum is blocking writes"], ["ledger-db"]),
+    (["inventory svc can't reach the ledger, connection refused"], ["inventory", "ledger-db"]),
+    (["the payments service and the checkout service disagree on totals for EUR orders"], ["payments-api", "checkout"]),
+    (["search latency is up, the search service is waiting on elastic"], ["search-api", "elasticsearch"]),
+    (["frontend 404s on /cart after the router change"], ["web-frontend"]),
+    (["notif backlog is 12k and climbing"], ["notifications"]),
+    (["orders API rejects every request with 401", "auth svc rotated its signing key an hour ago"], ["orders-api", "auth-service"]),
+    (["the ledger db is at 90% storage"], ["ledger-db"]),
+    (["pay gw p99 at 2s, ledger reads are slow"], ["payments-api", "ledger-db"]),
+    (["ES snapshot job failed overnight, disk full on the repo bucket"], ["elasticsearch"]),
+    (["auth is fine, the problem was the corporate VPN"], ["auth-service"]),
+    (["inventory counts are off by one after the reserve change"], ["inventory"]),
+    (["please checkout the new on-call handbook before your shift"], []),
+    (["the order of the deploy steps in the wiki is wrong, fixing it"], []),
+    (["Okta is down, nobody can log in to Grafana"], []),
+    (["search the incident channel before opening a new ticket"], []),
+    (["finance asked for an inventory of our cloud spend by team"], []),
+    (["front end guild meetup is moved to thursday"], []),
+    (["MailRelay changed their API keys, the vendor emailed us"], []),
+    (["slack notifications for deploys are duplicated, the bot posts twice"], []),
+    (["the auth token for the build bot expired, CI is red"], []),
+    (["payment of the AWS invoice is late, finance is on it"], []),
+]
 OPS_APPS = [["payments-api", "ledger-db"], ["checkout"], ["auth-service"], ["orders-api"], ["ledger-db"], ["search-api", "elasticsearch"], ["notifications"], ["web-frontend", "checkout"], ["inventory", "checkout"], ["auth-service"], ["web-frontend", "checkout"], ["ledger-db"], ["payments-api"], ["search-api"], [], ["orders-api"]]
 ACTION_APPS = [["checkout"], ["payments-api"], ["orders-api"], ["ledger-db"], ["auth-service"], ["search-api"], ["inventory"], ["notifications"], ["checkout"], ["web-frontend"], ["elasticsearch"], ["payments-api"], ["orders-api"], ["ledger-db", "payments-api"], ["ledger-db"], ["checkout"], ["auth-service"], ["search-api"], ["inventory"], ["notifications"], ["web-frontend"], ["checkout", "payments-api"], ["ledger-db"], ["orders-api"], ["auth-service"], ["elasticsearch"], ["payments-api"], ["web-frontend"], ["inventory"], ["checkout"], ["payments-api", "ledger-db"]]
 TM = T0 - 40 * 86400
@@ -214,6 +249,10 @@ for i, (texts, apps) in enumerate(MENTION_THREADS):
     ts = [f"{TM + i * 3600 + k * 60}.000300" for k in range(len(texts))]
     mmsgs += [{"ts": t, "thread_ts": ts[0], "channel": "mentions", "user": f"U{k + 2}", "text": x} for k, (t, x) in enumerate(zip(ts, texts))]
     apps_labels["mentions"][ts[0]] = apps
+for i, (texts, apps) in enumerate(HELDOUT_THREADS):
+    ts = [f"{TM - 86400 + i * 1800 + k * 60}.000400" for k in range(len(texts))]
+    mmsgs += [{"ts": t, "thread_ts": ts[0], "channel": "heldout", "user": f"U{k + 2}", "text": x} for k, (t, x) in enumerate(zip(ts, texts))]
+    apps_labels.setdefault("heldout", {})[ts[0]] = apps
 pathlib.Path("chat-mentions").mkdir(exist_ok=True)
 pathlib.Path("chat-mentions/mentions.json").write_text(json.dumps(mmsgs, indent=1))
 pathlib.Path("apps-labels.json").write_text(json.dumps(apps_labels, indent=1))

@@ -19,6 +19,12 @@ Pass for KEEP, fixed before any model run: mean recall of the candidate above th
 the candidate's lowest run at least the parent's highest; mean precision not lower; mean false
 positives not higher; B passes. Equal recall is no gain.
 
+Round 2. The first candidate listed every application sharing a word with the thread; it
+failed on precision (catalog-slice.txt). The second lists only applications the thread does not
+already name by a whole name or alias. It was built after held-out set B (the `heldout` label
+group, 30 threads) was written, and it passes only on B, with --decide heldout and the same
+conditions. Set A (`mentions`) is development data for it and is reported, not decided on.
+
 Usage: catalog_slice_gate.py --parent BIN --candidate BIN --demo examples/demo --out DIR [--runs 3]
        catalog_slice_gate.py --candidate BIN --demo examples/demo --out DIR --keys-only
 """
@@ -54,7 +60,7 @@ def score(binp, d, labels):
     gold = {(ch, int(float(ts))): set(apps) for ch, by in labels.items() for ts, apps in by.items()}
     got = {k: set() for k in gold}
     for ch, at, a in rows(binp, d, 'SELECT ?ch ?at ?a WHERE { ?t a disc:Thread ; disc:channel ?ch ; disc:at ?at ; disc:about ?a . FILTER(STRSTARTS(STR(?a), "' + APP + '")) }'):
-        got.setdefault(root_key(ch, at), set()).add(a[len(APP):])
+        got.setdefault(root_key(ch, at), set()).add(a.rsplit("/", 1)[-1])
     quarantined = {}
     for f, r in rows(binp, d, 'SELECT ?f ?r WHERE { GRAPH ?g { ?q harv:fact ?f ; harv:reason ?r } FILTER(CONTAINS(STR(?g), "discussions")) }'):
         m = re.search(r'thread/([a-z]+)-(\d+)-\d+ disc:about ops:Application\?"(.*)"$', f)
@@ -69,7 +75,7 @@ def score(binp, d, labels):
     for ch in labels:
         ks = [k for k in gold if k[0] == ch]
         t = sum(len(got[k] & gold[k]) for k in ks); p = sum(len(got[k]) for k in ks); g = sum(len(gold[k]) for k in ks)
-        per[ch] = f"P {t}/{p} R {t}/{g}"
+        per[ch] = dict(tp=t, pred=p, gold=g, fp=sum(len(got[k] - gold[k]) for k in ks))
     pred = sum(len(got[k]) for k in gold); want = sum(len(v) for v in gold.values())
     calls = len(rows(binp, d, 'SELECT ?a ?b WHERE { GRAPH ?g { ?a ops:dependsOn ?b } FILTER(CONTAINS(STR(?g), "/discussions/")) }'))
     degraded = [l for l in (d / "harvest.out").read_text().splitlines() if "discussions" in l]
@@ -91,13 +97,18 @@ def accuracy(a, labels):
             res[name].append(s)
             print(f"run {r} {name}: precision {s['precision']:.3f} ({s['tp']}/{s['pred']}), recall {s['recall']:.3f} ({s['tp']}/{s['gold']}), "
                   f"false positives {len(s['fp'])}, real mentions quarantined {len(s['refused_real'])}, app names quarantined {s['quarantined_apps']}, "
-                  f"model calls committed {s['calls']}; {s['per']}")
+                  f"model calls committed {s['calls']}; " + ", ".join(f"{ch} P {x['tp']}/{x['pred']} R {x['tp']}/{x['gold']}" for ch, x in s["per"].items()))
             for line in s["harvest"]: print("   ", line)
             for x in s["fp"]: print("    false positive:", x)
             for x in s["fn"]: print("    missed:", x)
             for x in s["refused_real"]: print("    quarantined real mention:", x)
-    m = {n: {k: statistics.mean(s[k] if not isinstance(s[k], list) else len(s[k]) for s in v) for k in ["precision", "recall", "fp", "refused_real"]} for n, v in res.items()}
-    span = {n: (min(s["recall"] for s in v), max(s["recall"] for s in v)) for n, v in res.items()}
+    def on(s, k):
+        c = [s["per"][ch] for ch in a.decide]
+        tp, pred, gold = (sum(x[f] for x in c) for f in ["tp", "pred", "gold"])
+        return {"precision": tp / pred if pred else 1.0, "recall": tp / gold, "fp": sum(x["fp"] for x in c), "refused_real": len([r for r in s["refused_real"] if r[0] in a.decide])}[k]
+    print(f"decided on: {', '.join(a.decide)}")
+    m = {n: {k: statistics.mean(on(s, k) for s in v) for k in ["precision", "recall", "fp", "refused_real"]} for n, v in res.items()}
+    span = {n: (min(on(s, "recall") for s in v), max(on(s, "recall") for s in v)) for n, v in res.items()}
     for n in m:
         print(f"{n}: mean precision {m[n]['precision']:.3f}, mean recall {m[n]['recall']:.3f} (runs {span[n][0]:.3f}-{span[n][1]:.3f}), "
               f"mean false positives {m[n]['fp']:.2f}, mean real mentions quarantined {m[n]['refused_real']:.2f}")
@@ -135,8 +146,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--parent"); ap.add_argument("--candidate", required=True); ap.add_argument("--demo", required=True)
     ap.add_argument("--out", required=True); ap.add_argument("--runs", type=int, default=3); ap.add_argument("--keys-only", action="store_true")
+    ap.add_argument("--decide", default="ops,incidents,mentions", help="label groups the pass condition reads")
     a = ap.parse_args()
-    a.candidate = str(pathlib.Path(a.candidate).resolve())
+    a.candidate = str(pathlib.Path(a.candidate).resolve()); a.decide = a.decide.split(",")
     pathlib.Path(a.out).mkdir(parents=True, exist_ok=True)
     k = keys(a)
     if a.keys_only:

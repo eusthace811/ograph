@@ -1,0 +1,130 @@
+B. cache keys: first harvest asked 77 threads, 75 with a known-applications list, 6 of them listing notifications; after the catalog edit the harvest asked 6: exactly those
+run 1 parent: precision 0.973 (72/74), recall 0.867 (72/83), false positives 2, real mentions quarantined 11, app names quarantined 22, model calls committed 1; {'ops': 'P 19/19 R 19/20', 'incidents': 'P 34/34 R 34/34', 'mentions': 'P 19/21 R 19/29'}
+    harvest/discussions/chat-actions/actions.json: 223 proposed, 222 accepted, 1 quarantined, +903 -0 quads (0.01 s)
+    harvest/discussions/chat-mentions/mentions.json: 222 proposed, 203 accepted, 19 quarantined, +857 -0 quads, 5 fuzzy catalog matches (0.01 s)
+    harvest/discussions/discussions/ops.json: 121 proposed, 118 accepted, 3 quarantined, +492 -0 quads (0.01 s)
+    false positive: ['mentions', 1791948400, 'checkout']
+    false positive: ['mentions', 1791948400, 'payments-api']
+    missed: ['mentions', 1791844000, 'auth-service']
+    missed: ['mentions', 1791847600, 'web-frontend']
+    missed: ['mentions', 1791851200, 'notifications']
+    missed: ['mentions', 1791854800, 'elasticsearch']
+    missed: ['mentions', 1791869200, 'ledger-db']
+    missed: ['mentions', 1791898000, 'orders-api']
+    missed: ['mentions', 1791901600, 'auth-service']
+    missed: ['mentions', 1791905200, 'web-frontend']
+    missed: ['mentions', 1791908800, 'elasticsearch']
+    missed: ['mentions', 1791944800, 'auth-service']
+    missed: ['ops', 1795264000, 'notifications']
+    quarantined real mention: ['mentions', 1791844000, 'auth', '"auth" only fuzzily matches id:app/auth-service (0.87); not created']
+    quarantined real mention: ['mentions', 1791847600, 'Safari', '"Safari" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791847600, 'frontend', '"frontend" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791851200, 'notif service', '"notif service" only fuzzily matches id:app/notifications (0.82); not created']
+    quarantined real mention: ['mentions', 1791854800, 'ES', '"ES" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791869200, 'ledger database', '"ledger database" only fuzzily matches id:app/ledger-db (0.91); not created']
+    quarantined real mention: ['mentions', 1791901600, 'auth svc', '"auth svc" only fuzzily matches id:app/auth-service (0.93); not created']
+    quarantined real mention: ['mentions', 1791905200, 'frontend', '"frontend" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791908800, 'elastic', '"elastic" only fuzzily matches id:app/elasticsearch (0.91); not created']
+    quarantined real mention: ['mentions', 1791944800, 'auth-svc', '"auth-svc" only fuzzily matches id:app/auth-service (0.93); not created']
+    quarantined real mention: ['ops', 1795264000, 'MailRelay', '"MailRelay" is not in the ops:Application catalog; not created']
+run 1 candidate: precision 0.942 (81/86), recall 0.976 (81/83), false positives 5, real mentions quarantined 1, app names quarantined 5, model calls committed 1; {'ops': 'P 20/20 R 20/20', 'incidents': 'P 34/34 R 34/34', 'mentions': 'P 27/32 R 27/29'}
+    harvest/discussions/chat-actions/actions.json: 222 proposed, 222 accepted, 0 quarantined, +899 -0 quads (0.01 s)
+    harvest/discussions/chat-mentions/mentions.json: 215 proposed, 212 accepted, 3 quarantined, +873 -0 quads (0.01 s)
+    harvest/discussions/discussions/ops.json: 123 proposed, 121 accepted, 2 quarantined, +506 -0 quads (0.01 s)
+    false positive: ['mentions', 1791890800, 'notifications']
+    false positive: ['mentions', 1791912400, 'web-frontend']
+    false positive: ['mentions', 1791948400, 'checkout']
+    false positive: ['mentions', 1791948400, 'ledger-db']
+    false positive: ['mentions', 1791948400, 'payments-api']
+    missed: ['mentions', 1791854800, 'elasticsearch']
+    missed: ['mentions', 1791908800, 'elasticsearch']
+    quarantined real mention: ['mentions', 1791854800, 'ES', '"ES" is not in the ops:Application catalog; not created']
+run 2 parent: precision 0.973 (71/73), recall 0.855 (71/83), false positives 2, real mentions quarantined 13, app names quarantined 24, model calls committed 2; {'ops': 'P 19/19 R 19/20', 'incidents': 'P 34/34 R 34/34', 'mentions': 'P 18/20 R 18/29'}
+    harvest/discussions/chat-actions/actions.json: 223 proposed, 222 accepted, 1 quarantined, +903 -0 quads (0.01 s)
+    harvest/discussions/chat-mentions/mentions.json: 222 proposed, 201 accepted, 21 quarantined, +857 -0 quads, 4 fuzzy catalog matches (0.01 s)
+    harvest/discussions/discussions/ops.json: 122 proposed, 119 accepted, 3 quarantined, +500 -0 quads (0.01 s)
+    false positive: ['mentions', 1791948400, 'checkout']
+    false positive: ['mentions', 1791948400, 'payments-api']
+    missed: ['mentions', 1791844000, 'auth-service']
+    missed: ['mentions', 1791847600, 'web-frontend']
+    missed: ['mentions', 1791851200, 'notifications']
+    missed: ['mentions', 1791854800, 'elasticsearch']
+    missed: ['mentions', 1791869200, 'ledger-db']
+    missed: ['mentions', 1791894400, 'payments-api']
+    missed: ['mentions', 1791898000, 'orders-api']
+    missed: ['mentions', 1791901600, 'auth-service']
+    missed: ['mentions', 1791905200, 'web-frontend']
+    missed: ['mentions', 1791908800, 'elasticsearch']
+    missed: ['mentions', 1791944800, 'auth-service']
+    missed: ['ops', 1795264000, 'notifications']
+    quarantined real mention: ['mentions', 1791844000, 'auth', '"auth" only fuzzily matches id:app/auth-service (0.87); not created']
+    quarantined real mention: ['mentions', 1791847600, 'Safari', '"Safari" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791847600, 'frontend', '"frontend" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791851200, 'notif service', '"notif service" only fuzzily matches id:app/notifications (0.82); not created']
+    quarantined real mention: ['mentions', 1791854800, 'ES', '"ES" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791869200, 'ledger database', '"ledger database" only fuzzily matches id:app/ledger-db (0.91); not created']
+    quarantined real mention: ['mentions', 1791894400, 'CardRail', '"CardRail" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791894400, 'payments service', '"payments service" only fuzzily matches id:app/payments-api (0.91); not created']
+    quarantined real mention: ['mentions', 1791901600, 'auth svc', '"auth svc" only fuzzily matches id:app/auth-service (0.93); not created']
+    quarantined real mention: ['mentions', 1791905200, 'frontend', '"frontend" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791908800, 'elastic', '"elastic" only fuzzily matches id:app/elasticsearch (0.91); not created']
+    quarantined real mention: ['mentions', 1791944800, 'auth-svc', '"auth-svc" only fuzzily matches id:app/auth-service (0.93); not created']
+    quarantined real mention: ['ops', 1795264000, 'MailRelay', '"MailRelay" is not in the ops:Application catalog; not created']
+run 2 candidate: precision 0.920 (81/88), recall 0.976 (81/83), false positives 7, real mentions quarantined 1, app names quarantined 6, model calls committed 0; {'ops': 'P 20/20 R 20/20', 'incidents': 'P 34/34 R 34/34', 'mentions': 'P 27/34 R 27/29'}
+    harvest/discussions/chat-actions/actions.json: 222 proposed, 222 accepted, 0 quarantined, +899 -0 quads (0.09 s)
+    harvest/discussions/chat-mentions/mentions.json: 218 proposed, 214 accepted, 4 quarantined, +893 -0 quads (0.08 s)
+    harvest/discussions/discussions/ops.json: 121 proposed, 119 accepted, 2 quarantined, +496 -0 quads (0.01 s)
+    false positive: ['mentions', 1791880000, 'inventory']
+    false positive: ['mentions', 1791890800, 'notifications']
+    false positive: ['mentions', 1791912400, 'web-frontend']
+    false positive: ['mentions', 1791941200, 'search-api']
+    false positive: ['mentions', 1791948400, 'checkout']
+    false positive: ['mentions', 1791948400, 'ledger-db']
+    false positive: ['mentions', 1791948400, 'payments-api']
+    missed: ['mentions', 1791854800, 'elasticsearch']
+    missed: ['mentions', 1791908800, 'elasticsearch']
+    quarantined real mention: ['mentions', 1791854800, 'ES', '"ES" is not in the ops:Application catalog; not created']
+run 3 parent: precision 0.986 (72/73), recall 0.867 (72/83), false positives 1, real mentions quarantined 13, app names quarantined 24, model calls committed 3; {'ops': 'P 19/19 R 19/20', 'incidents': 'P 34/34 R 34/34', 'mentions': 'P 19/20 R 19/29'}
+    harvest/discussions/chat-actions/actions.json: 223 proposed, 222 accepted, 1 quarantined, +903 -0 quads (0.01 s)
+    harvest/discussions/chat-mentions/mentions.json: 222 proposed, 201 accepted, 21 quarantined, +857 -0 quads, 5 fuzzy catalog matches (0.01 s)
+    harvest/discussions/discussions/ops.json: 123 proposed, 120 accepted, 3 quarantined, +508 -0 quads (0.01 s)
+    false positive: ['mentions', 1791948400, 'payments-api']
+    missed: ['mentions', 1791844000, 'auth-service']
+    missed: ['mentions', 1791847600, 'web-frontend']
+    missed: ['mentions', 1791851200, 'notifications']
+    missed: ['mentions', 1791854800, 'elasticsearch']
+    missed: ['mentions', 1791869200, 'ledger-db']
+    missed: ['mentions', 1791894400, 'payments-api']
+    missed: ['mentions', 1791901600, 'auth-service']
+    missed: ['mentions', 1791905200, 'web-frontend']
+    missed: ['mentions', 1791908800, 'elasticsearch']
+    missed: ['mentions', 1791944800, 'auth-service']
+    missed: ['ops', 1795264000, 'notifications']
+    quarantined real mention: ['mentions', 1791844000, 'auth', '"auth" only fuzzily matches id:app/auth-service (0.87); not created']
+    quarantined real mention: ['mentions', 1791847600, 'frontend', '"frontend" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791847600, 'safari', '"safari" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791851200, 'notif service', '"notif service" only fuzzily matches id:app/notifications (0.82); not created']
+    quarantined real mention: ['mentions', 1791854800, 'ES', '"ES" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791869200, 'ledger database', '"ledger database" only fuzzily matches id:app/ledger-db (0.91); not created']
+    quarantined real mention: ['mentions', 1791894400, 'CardRail', '"CardRail" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791894400, 'payments service', '"payments service" only fuzzily matches id:app/payments-api (0.91); not created']
+    quarantined real mention: ['mentions', 1791901600, 'auth svc', '"auth svc" only fuzzily matches id:app/auth-service (0.93); not created']
+    quarantined real mention: ['mentions', 1791905200, 'frontend', '"frontend" is not in the ops:Application catalog; not created']
+    quarantined real mention: ['mentions', 1791908800, 'elastic', '"elastic" only fuzzily matches id:app/elasticsearch (0.91); not created']
+    quarantined real mention: ['mentions', 1791944800, 'auth-svc', '"auth-svc" only fuzzily matches id:app/auth-service (0.93); not created']
+    quarantined real mention: ['ops', 1795264000, 'MailRelay', '"MailRelay" is not in the ops:Application catalog; not created']
+run 3 candidate: precision 0.953 (81/85), recall 0.976 (81/83), false positives 4, real mentions quarantined 1, app names quarantined 5, model calls committed 1; {'ops': 'P 20/20 R 20/20', 'incidents': 'P 34/34 R 34/34', 'mentions': 'P 27/31 R 27/29'}
+    harvest/discussions/chat-actions/actions.json: 222 proposed, 222 accepted, 0 quarantined, +899 -0 quads (0.01 s)
+    harvest/discussions/chat-mentions/mentions.json: 215 proposed, 211 accepted, 4 quarantined, +869 -0 quads (0.02 s)
+    harvest/discussions/discussions/ops.json: 122 proposed, 120 accepted, 2 quarantined, +504 -0 quads (0.01 s)
+    false positive: ['mentions', 1791876400, 'checkout']
+    false positive: ['mentions', 1791948400, 'checkout']
+    false positive: ['mentions', 1791948400, 'ledger-db']
+    false positive: ['mentions', 1791948400, 'payments-api']
+    missed: ['mentions', 1791854800, 'elasticsearch']
+    missed: ['mentions', 1791908800, 'elasticsearch']
+    quarantined real mention: ['mentions', 1791854800, 'ES', '"ES" is not in the ops:Application catalog; not created']
+parent: mean precision 0.977, mean recall 0.863 (runs 0.855-0.867), mean false positives 1.67, mean real mentions quarantined 12.33
+candidate: mean precision 0.938, mean recall 0.976 (runs 0.976-0.976), mean false positives 5.33, mean real mentions quarantined 1.00
+A. recall gain beyond the spread: True; precision not lower: False; false positives not higher: False
+CATALOG SLICE GATE: FAIL
