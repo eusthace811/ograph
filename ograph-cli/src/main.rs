@@ -165,6 +165,9 @@ enum Cmd {
         /// coverage: where to write the proposed Turtle (default .ograph/proposed.ttl)
         #[arg(long)]
         out: Option<PathBuf>,
+        /// diff: the newer shapes.ttl (default the workspace's)
+        #[arg(long)]
+        shapes: Option<PathBuf>,
     },
     /// Write a self-contained HTML page over the graph (incidents, causes, timelines)
     Lab {
@@ -597,11 +600,18 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             let snap = ws.store.snapshot()?;
             let t = std::time::Instant::now();
             let r = ograph_core::gateway::audit(&snap, &ws.ontology);
-            print(json, &r, |r| {
+            let shapes = ograph_core::gateway::shape_focus(&snap, &ws.ontology);
+            let unmatched: Vec<&str> = shapes.iter().filter(|(_, n)| *n == 0).map(|(s, _)| s.as_str()).collect();
+            let secs = t.elapsed().as_secs_f64();
+            print(json, &serde_json::json!({"violations": r, "shapes": shapes, "unmatched": unmatched}), |_| {
                 for v in r.iter().take(50) {
                     println!("{} {} {:?}: {}", v.component, v.focus, v.path, v.message);
                 }
-                println!("{} violations ({:.1} s)", r.len(), t.elapsed().as_secs_f64());
+                println!("shapes.ttl focus nodes: {}", shapes.iter().map(|(s, n)| format!("{s} {n}")).collect::<Vec<_>>().join(", "));
+                if !unmatched.is_empty() {
+                    println!("warning: {} shapes matched nothing: {}", unmatched.len(), unmatched.join(", "));
+                }
+                println!("{} violations ({secs:.1} s)", r.len());
             });
             Ok(r.is_empty())
         }
@@ -612,14 +622,19 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             print(json, &serde_json::json!({"quads": n, "path": path}), |_| println!("wrote {n} quads to {}", path.display()));
             Ok(n > 0)
         }
-        Cmd::Ontology { action, other, out } => {
+        Cmd::Ontology { action, other, out, shapes } => {
             if action == "coverage" {
                 let file = other.ok_or_else(|| anyhow::anyhow!("ontology coverage needs a file of questions, one per line"))?;
                 let llm = ws.llm().ok_or_else(|| anyhow::anyhow!("ontology coverage needs a model: add [llm.extract] to .ograph/config.toml"))?;
                 let questions: Vec<String> = std::fs::read_to_string(file)?.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_owned).collect();
                 let catalog = ograph_core::gateway::Catalog::from_snapshot(&ws.store.snapshot()?, None)?;
                 let is_entity = |t: &str| matches!(catalog.resolve(ograph_core::vocab::ops::APPLICATION, t), ograph_core::gateway::Resolution::Exact(_));
-                let report = ograph_core::coverage::report(&ws.ontology, &llm, &questions, is_entity);
+                let mut report = ograph_core::coverage::report(&ws.ontology, &llm, &questions, is_entity);
+                let declined = ws.dir.join("declined.ttl");
+                if declined.exists() {
+                    let d = ograph_core::coverage::declines(&std::fs::read_to_string(&declined)?).map_err(|e| e.context(declined.display().to_string()))?;
+                    ograph_core::coverage::decline(&mut report, &d);
+                }
                 let path = out.unwrap_or_else(|| ws.dir.join("proposed.ttl"));
                 std::fs::write(&path, ograph_core::coverage::proposals(&report))?;
                 let gaps = report.iter().filter(|c| !c.gaps.is_empty() || c.failed.is_some()).count();
@@ -627,35 +642,62 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                     for c in r {
                         let names: Vec<&str> = c.covered.iter().filter_map(|n| n.name.as_deref()).collect();
                         let missing: Vec<&str> = c.gaps.iter().map(|n| n.text.as_str()).collect();
-                        let state = if c.failed.is_some() { "FAILED " } else if missing.is_empty() { "covered" } else { "GAP    " };
+                        let state = if c.failed.is_some() { "FAILED  " } else if !missing.is_empty() { "GAP     " } else if !c.declined.is_empty() { "DECLINED" } else { "covered " };
                         println!("{state} {}\n    uses {}{}", c.question, names.join(" "), if missing.is_empty() { String::new() } else { format!("\n    missing: {}", missing.join("; ")) });
+                        for d in &c.declined {
+                            println!("    declined by {}: \"{}\" ({}: {})", d.by, d.need.text, d.term, d.reason);
+                        }
                         for n in c.notes.iter().chain(&c.failed) {
                             println!("    note: {n}");
                         }
                     }
-                    println!("{} of {} questions need something the ontology lacks; proposals in {}", gaps, r.len(), path.display());
+                    let judged = r.iter().filter(|c| !c.declined.is_empty()).count();
+                    println!("{} of {} questions need something the ontology lacks; {judged} have declined gaps; proposals in {}", gaps, r.len(), path.display());
                 });
                 return Ok(gaps == 0);
             }
             if action == "check" {
                 let p = ws.ontology.check();
-                print(json, &p, |p| {
-                    for x in p {
+                let snap = ws.store.snapshot()?;
+                let usage = ograph_core::ontology::Usage::from_snapshot(&snap)?;
+                let w = ws.ontology.lints(Some(&usage));
+                print(json, &serde_json::json!({"problems": p, "warnings": w}), |_| {
+                    for x in &p {
                         println!("{x}");
                     }
-                    println!("ontology v{}: {} classes, {} properties, {} closed vocabularies, {} shapes; {} problems", ws.ontology.version, ws.ontology.classes.len(), ws.ontology.properties.len(), ws.ontology.vocabularies.len(), ws.ontology.shapes.shapes.len(), p.len());
+                    for x in &w {
+                        println!("warning: {x}");
+                    }
+                    println!("ontology v{}: {} classes, {} properties, {} closed vocabularies, {} shapes; {} problems, {} warnings", ws.ontology.version, ws.ontology.classes.len(), ws.ontology.properties.len(), ws.ontology.vocabularies.len(), ws.ontology.shapes.shapes.len(), p.len(), w.len());
                 });
                 Ok(p.is_empty())
             } else {
-                let other = other.ok_or_else(|| anyhow::anyhow!("ontology diff needs the other ontology.ttl"))?;
-                let newer = ograph_core::ontology::Ontology::load(&std::fs::read_to_string(other)?, ograph_core::ontology::DEFAULT_SHAPES)?;
-                let d = ws.ontology.diff(&newer);
-                print(json, &d, |d| {
-                    for x in d {
+                anyhow::ensure!(other.is_some() || shapes.is_some(), "ontology diff needs the newer ontology.ttl, --shapes FILE, or both");
+                let read = |p: Option<PathBuf>, name: &str, default: &str| -> anyhow::Result<String> {
+                    match p {
+                        Some(p) => Ok(std::fs::read_to_string(p)?),
+                        None => Ok(std::fs::read_to_string(ws.dir.join(name)).unwrap_or_else(|_| default.to_owned())),
+                    }
+                };
+                let newer = ograph_core::ontology::Ontology::load(&read(other, "ontology.ttl", ograph_core::ontology::DEFAULT_TTL)?, &read(shapes, "shapes.ttl", ograph_core::ontology::DEFAULT_SHAPES)?)?;
+                let snap = ws.store.snapshot()?;
+                let changes = ws.ontology.diff(&newer, &ograph_core::ontology::Usage::from_snapshot(&snap)?);
+                let quarantine = ograph_core::gateway::impact(&snap, &ws.ontology, &newer)?;
+                let breaks = changes.iter().any(|x| x.starts_with("BREAKING")) || !quarantine.is_empty();
+                print(json, &serde_json::json!({"changes": changes, "quarantine": quarantine}), |_| {
+                    for x in &changes {
                         println!("{x}");
                     }
+                    for q in &quarantine {
+                        println!("{} facts in {} would be quarantined", q.facts, q.graph);
+                        for (r, n) in q.reasons.iter().take(3) {
+                            println!("    {n}  {r}");
+                        }
+                    }
+                    let facts: usize = quarantine.iter().map(|q| q.facts).sum();
+                    println!("{} changes, {} breaking; a harvest under the newer ontology would quarantine {facts} stored facts in {} graphs", changes.len(), changes.iter().filter(|x| x.starts_with("BREAKING")).count(), quarantine.len());
                 });
-                Ok(!d.iter().any(|x| x.starts_with("BREAKING")))
+                Ok(!breaks)
             }
         }
         Cmd::Lab { out } => {

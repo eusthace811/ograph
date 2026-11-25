@@ -15,7 +15,7 @@
 # (ALERT, LOG, METRIC, TIMELINE), INCIDENT, SLACK (disc), CORRELATION, RCA and HARVEST.
 # Only what the four benchmark questions need is modeled.
 
-<https://ograph.dev/ontology> a owl:Ontology ; owl:versionInfo "1.1" .
+<https://ograph.dev/ontology> a owl:Ontology ; owl:versionInfo "1.3" .
 
 # ---------- OPS: the catalog ----------
 og:Thing a owl:Class ; rdfs:comment "Anything the graph can name." .
@@ -43,8 +43,6 @@ evt:LogError a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A burst of 
 evt:MetricAnomaly a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A metric of an application left its normal band." .
 evt:TraceFailed a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "Request spans through an application ended with an error status." .
 evt:TraceSlow a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "Request spans through an application took far longer than usual." .
-evt:Experiment a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An A/B test or canary started or changed allocation." .
-evt:E2EFailure a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A synthetic end-to-end check failed." .
 evt:NewsItem a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An external news development about a vendor or a technology we run." .
 evt:Commit a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A commit to an application's code or configuration in its repository." .
 evt:Exception a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An error report with a stack trace from an error tracker." .
@@ -78,6 +76,7 @@ inc:resolvedAt a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xs
 inc:mitigation a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string ; rdfs:comment "What was done to mitigate or fix the incident." .
 inc:cause a owl:ObjectProperty ; rdfs:domain inc:Incident ; rdfs:range og:Thing ; rdfs:comment "An accepted cause, written only by a verdict: an event, or once its telemetry is gone, the event the verdict describes." .
 inc:faultType a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string ; rdfs:comment "The kind of fault that caused the incident." .
+inc:faultClass a owl:DatatypeProperty ; rdfs:domain inc:Incident ; rdfs:range xsd:string ; rdfs:comment "The class of fault the incident's title states, from a closed vocabulary. Proposed by the model when an incidents source sets classify = true; UNKNOWN when the title states no fault." .
 
 # ---------- SLACK: discussion threads ----------
 disc:Thread a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A chat discussion thread (Slack or Teams) about operations." .
@@ -143,11 +142,7 @@ evt:signal og:vocabulary
   [ og:value "METRIC_ANOMALY" ; rdfs:comment "A metric left its normal band." ],
   [ og:value "TRACE_FAILED" ; rdfs:comment "Spans ended with an error status." ],
   [ og:value "TRACE_SLOW" ; rdfs:comment "Spans took far longer than usual." ],
-  [ og:value "EXPERIMENT" ; rdfs:comment "An A/B test or canary started or changed allocation." ],
-  [ og:value "E2E_FAILURE" ; rdfs:comment "A synthetic end-to-end check failed." ],
-  [ og:value "DISCUSSION" ; rdfs:comment "People discussed a problem in chat." ],
   [ og:value "NEWS" ; rdfs:comment "An external news development." ],
-  [ og:value "DEPENDENCY_CHANGE" ; rdfs:comment "A library, base image or upstream API version changed." ],
   [ og:value "COMMIT" ; rdfs:comment "A commit changed an application's code or configuration." ],
   [ og:value "EXCEPTION" ; rdfs:comment "An error tracker reported an exception with a stack trace." ],
   [ og:value "OPERATOR_ACTION" ; rdfs:comment "A person acted on a running application: a rollback, a restart, a scale change." ] .
@@ -181,5 +176,23 @@ disc:category og:vocabulary
   [ og:value "DATA" ; rdfs:comment "Bad, missing or corrupt data, a migration or a schema mismatch." ],
   [ og:value "SECURITY" ; rdfs:comment "An attack, a leaked credential or an access-control problem." ],
   [ og:value "UNKNOWN" ; rdfs:comment "The thread does not say what caused it." ] .
+
+inc:faultClass og:vocabulary
+  [ og:value "CPU" ; rdfs:comment "CPU saturation or throttling." ],
+  [ og:value "MEMORY" ; rdfs:comment "Memory ran out or leaked: out-of-memory kills, a heap or container memory limit reached." ],
+  [ og:value "DISK" ; rdfs:comment "A disk or volume filled up, or disk reads and writes failed or slowed." ],
+  [ og:value "CONNECTION_POOL" ; rdfs:comment "A pool of connections or threads was exhausted and requests waited for one." ],
+  [ og:value "QUEUE" ; rdfs:comment "A message queue or stream backed up: consumer lag, a growing backlog, messages dropped or expired." ],
+  [ og:value "NETWORK_LATENCY" ; rdfs:comment "Packets between hosts were delayed: added network latency, slow links." ],
+  [ og:value "NETWORK_LOSS" ; rdfs:comment "Packets were lost or connections reset or refused between hosts, or a host was unreachable." ],
+  [ og:value "DNS" ; rdfs:comment "Name resolution failed or returned wrong or stale records." ],
+  [ og:value "CERTIFICATE" ; rdfs:comment "A TLS certificate expired, was invalid or was not trusted, so handshakes failed." ],
+  [ og:value "CONFIG" ; rdfs:comment "A setting, feature flag, limit or secret was changed or wrong." ],
+  [ og:value "DEPLOYMENT" ; rdfs:comment "A code rollout or rollback of our own service." ],
+  [ og:value "DEPENDENCY" ; rdfs:comment "Another service or vendor we call was down, slow or returned errors while our own resources were fine." ],
+  [ og:value "RATE_LIMIT" ; rdfs:comment "Requests were throttled by a quota or rate limit." ],
+  [ og:value "DATA" ; rdfs:comment "Bad, missing or corrupt data, a migration or a schema mismatch." ],
+  [ og:value "CRASH" ; rdfs:comment "A process crashed, panicked or restarted in a loop because of a defect in its code." ],
+  [ og:value "UNKNOWN" ; rdfs:comment "The title does not say what kind of fault it was." ] .
 
 disc:sentiment og:vocabulary [ og:value "calm" ], [ og:value "concerned" ], [ og:value "urgent" ] .

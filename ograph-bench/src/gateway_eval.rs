@@ -1,4 +1,4 @@
-//! Gateway gate: generated bad writes of 18 kinds mixed with good ones. Passes when no bad fact
+//! Gateway gate: generated bad writes of 20 kinds mixed with good ones. Passes when no bad fact
 //! reaches a harvest graph, every bad fact is quarantined with a reason, every good fact is
 //! committed, a full SHACL audit of the store is clean, and re-submitting writes nothing.
 
@@ -85,6 +85,21 @@ fn main() -> anyhow::Result<()> {
         b.add(g.clone(), evt::SEVERITY, lit(["SEV1", "SEV2", "SEV3"][i % 3]), &r, &rule);
         good.push(format!("good-{i}"));
     }
+    for i in 0..3 {
+        let r = b.record(format!("ordered-{i}"));
+        let e = known("ev", &format!("good-episode-{i}"));
+        b.add(e.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::METRIC_ANOMALY)), &r, &rule);
+        b.add(e.clone(), evt::ON, obj(entity("app", "cart")), &r, &rule);
+        b.add(e.clone(), evt::AT, dt(t0), &r, &rule);
+        b.add(e, evt::UNTIL, dt(t0 + i as i64 * 60_000), &r, &rule);
+        let n = known("inc", &format!("good-incident-{i}"));
+        b.add(n.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(inc::INCIDENT)), &r, &rule);
+        b.add(n.clone(), inc::ID, lit(format!("INC-10{i}")), &r, &rule);
+        b.add(n.clone(), evt::ON, obj(entity("app", "cart")), &r, &rule);
+        b.add(n.clone(), evt::AT, dt(t0), &r, &rule);
+        b.add(n, inc::RESOLVED_AT, dt(t0 + i as i64 * 3_600_000), &r, &rule);
+        good.extend([format!("good-episode-{i}"), format!("good-incident-{i}")]);
+    }
     for (i, typo) in ["inventory-servcie-eu", "Inventory Service EU", "inventry-service-eu", "inventory-service-eu-svc"].iter().enumerate() {
         let r = b.record(format!("alert-typo-{i}"));
         let g = known("ev", &format!("good-typo-{i}"));
@@ -128,7 +143,9 @@ fn main() -> anyhow::Result<()> {
     kind(&mut b, "unconfirmed-model-edge", &|b, s, r| { if let EntityRef::Known(n) = &s { b.add(EntityRef::Known(NamedNode::new_unchecked(n.as_str().replace("/ev/", "/app/"))), ops::DEPENDS_ON, obj(entity("app", "cart")), &r, &lm) } });
     let r = b.record("thread-confirmed-edge");
     b.add(known("app", "checkout"), ops::DEPENDS_ON, obj(entity("app", "payments-api")), &r, &llm);
-    kind(&mut b, "missing-required", &|b, s, r| { b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::ALERT)), &r, &rl); b.add(s, evt::ON, obj(entity("app", "cart")), &r, &rl) });
+    kind(&mut b, "episode-ends-before-start", &|b, s, r| { b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::METRIC_ANOMALY)), &r, &rl); b.add(s.clone(), evt::ON, obj(entity("app", "cart")), &r, &rl); b.add(s.clone(), evt::AT, dt(t0 + 60_000), &r, &rl); b.add(s, evt::UNTIL, dt(t0), &r, &rl) });
+    kind(&mut b, "resolved-before-opened", &|b, s, r| { b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(inc::INCIDENT)), &r, &rl); b.add(s.clone(), inc::ID, lit("INC-2"), &r, &rl); b.add(s.clone(), evt::ON, obj(entity("app", "cart")), &r, &rl); b.add(s.clone(), evt::AT, dt(t0), &r, &rl); b.add(s, inc::RESOLVED_AT, dt(t0 - 3_600_000), &r, &rl) });
+    kind(&mut b, "missing-required",&|b, s, r| { b.add(s.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(evt::ALERT)), &r, &rl); b.add(s, evt::ON, obj(entity("app", "cart")), &r, &rl) });
 
     let t = Instant::now();
     let out = gateway::submit(&store, &ont, &b, t0)?;
@@ -157,6 +174,8 @@ fn main() -> anyhow::Result<()> {
         println!("| {k} | {} | {committed} | {} ({}) |", locals.len(), reasons.len(), reason.replace('|', "/"));
     }
     let missing_good = good.iter().filter(|g| !in_harvest(g).unwrap()).count();
+    let ends = sparql::solutions(&snap, "SELECT ?s WHERE { GRAPH ?g { ?s ?p ?o } FILTER(?p IN (evt:until, inc:resolvedAt)) FILTER(CONTAINS(STR(?s), \"/good-\")) }")?.len();
+    println!("end times kept on good episodes and incidents, with start <= end: {ends}/6");
     let confirmed_edge = sparql::run(&snap, &sparql::parse("ASK { GRAPH ?g { id:app\\/checkout ops:dependsOn id:app\\/payments-api } FILTER(CONTAINS(STR(?g), \"/alerts/\")) }")?, None)?;
     let confirmed_edge = matches!(confirmed_edge, sparql::Answer::Boolean { value: true });
     println!("model-proposed edge the catalog declares, committed: {confirmed_edge}");
@@ -172,7 +191,7 @@ fn main() -> anyhow::Result<()> {
     let snap = store.snapshot()?;
     let still_clean = gateway::audit(&snap, &ont).is_empty();
     drop(snap);
-    let ok = confirmed_edge && bad_fact_committed(&store, &b)? == 0 && missing_good == 0 && audit.is_empty() && still_clean && again.added == 0 && again.removed == 0 && problems.is_empty();
+    let ok = ends == 6 && confirmed_edge && bad_fact_committed(&store, &b)? == 0 && missing_good == 0 && audit.is_empty() && still_clean && again.added == 0 && again.removed == 0 && problems.is_empty();
     println!("GATEWAY GATE: {}", if ok { "PASS" } else { "FAIL" });
     let _ = std::fs::remove_dir_all(&dir);
     std::process::exit(if ok { 0 } else { 1 });

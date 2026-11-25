@@ -50,8 +50,6 @@ ns!(evt, "https://ograph.dev/evt#", {
     UNTIL = "until",
     NEWS_ITEM = "NewsItem",
     MENTIONS = "mentions",
-    E2E_FAILURE = "E2EFailure",
-    EXPERIMENT = "Experiment",
     COMMIT = "Commit",
     EXCEPTION = "Exception",
     REVISION = "revision",

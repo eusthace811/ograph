@@ -449,22 +449,18 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                 }
             },
         };
-        if p == RDF_TYPE {
-            let Term::NamedNode(c) = &o else { unreachable!("types are entities") };
-            if !ont.is_class(c.as_str()) {
-                rejected.push(reject(format!("{} is not an ontology class", vocab::compact(c.as_str()))));
-                continue;
-            }
-            if CATALOG_CLASSES.contains(&c.as_str()) && !catalog_method {
-                rejected.push(reject(format!("only the catalog may create a {}", vocab::compact(c.as_str()))));
-                continue;
-            }
+        if let Some(r) = ontology_problem(ont, &Triple::new(s.clone(), f.predicate.clone(), o.clone())) {
+            rejected.push(reject(r));
+            continue;
         }
-        if let (Some(v), Term::Literal(l)) = (ont.vocabulary(p), &o)
-            && !v.iter().any(|t| t.value == l.value()) {
-                rejected.push(reject(format!("\"{}\" is not in the closed vocabulary of {}", l.value(), vocab::compact(p))));
-                continue;
-            }
+        if p == RDF_TYPE
+            && let Term::NamedNode(c) = &o
+            && CATALOG_CLASSES.contains(&c.as_str())
+            && !catalog_method
+        {
+            rejected.push(reject(format!("only the catalog may create a {}", vocab::compact(c.as_str()))));
+            continue;
+        }
         if let Term::NamedNode(on) = &o
             && matches!(f.method, Extraction::Llm { .. })
             && NEEDS_SUPPORT.contains(&p)
@@ -505,13 +501,26 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
     for (n, class) in minted {
         accepted.push(Resolved { triple: Triple::new(n, ty.clone(), NamedNode::new_unchecked(class)), fact: usize::MAX });
     }
-    // Incremental SHACL on the touched nodes, repeated until no violation remains, because
-    // removing a fact can break another shape. Each pass drops a fact or stops.
+    let (kept, dropped) = shacl_pass(snap, ont, replaced, accepted, |r| &r.triple);
+    for (a, reason) in dropped {
+        let fact = batch.facts.get(a.fact).map_or_else(|| format!("{} (minted type)", a.triple), ProposedFact::describe);
+        rejected.push(Rejection { fact, reason });
+    }
+    let accepted = kept;
+    (accepted.into_iter().map(|r| (r.triple, r.fact)).collect(), rejected, fuzzy)
+}
+
+/// Incremental SHACL on the nodes `accepted` touches, seen as the store will be with them in
+/// place of graph `replaced`, repeated until no violation remains, because removing a fact can
+/// break another shape. Each pass drops a fact or stops. Returns what is kept and what is
+/// dropped, with its reason.
+fn shacl_pass<T>(snap: &Snapshot, ont: &Ontology, replaced: Option<Id>, mut accepted: Vec<T>, triple: impl Fn(&T) -> &Triple) -> (Vec<T>, Vec<(T, String)>) {
+    let mut dropped = Vec::new();
     let mut overlay = Overlay { snap, ont, add: oxrdf::Graph::new(), replaced, ids: RefCell::default() };
     loop {
-        overlay.add = accepted.iter().map(|r| r.triple.clone()).collect();
+        overlay.add = accepted.iter().map(|r| triple(r).clone()).collect();
         let focus: Vec<Term> = {
-            let mut f: Vec<Term> = accepted.iter().map(|r| Term::from(r.triple.subject.clone())).collect();
+            let mut f: Vec<Term> = accepted.iter().map(|r| Term::from(triple(r).subject.clone())).collect();
             f.sort_by_cached_key(Term::to_string);
             f.dedup();
             f
@@ -523,16 +532,16 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
         let mut drop: FxHashSet<usize> = FxHashSet::default();
         let mut why: FxHashMap<usize, String> = FxHashMap::default();
         for r in &results {
-            let prop = r.path.as_deref().map(|p| p.trim_matches(['<', '>']).to_owned()).or_else(|| {
+            let prop = order_end(ont, r).or_else(|| r.path.as_deref().map(|p| p.trim_matches(['<', '>']).to_owned())).or_else(|| {
                 let local = r.shape.trim_matches(['<', '>']).strip_prefix("https://ograph.dev/shape/")?.strip_suffix("/domain")?.to_owned();
                 let (pfx, name) = local.split_once('-')?;
                 vocab::PREFIXES.iter().find(|(p, _)| *p == pfx).map(|(_, ns)| format!("{ns}{name}"))
             });
-            let on_focus = |a: &Resolved| a.triple.subject.to_string() == r.focus;
+            let on_focus = |a: &T| triple(a).subject.to_string() == r.focus;
             let mut hits: Vec<usize> = accepted
                 .iter()
                 .enumerate()
-                .filter(|(_, a)| on_focus(a) && prop.as_ref().is_none_or(|p| a.triple.predicate.as_str() == p))
+                .filter(|(_, a)| on_focus(a) && prop.as_ref().is_none_or(|p| triple(a).predicate.as_str() == p))
                 .map(|(k, _)| k)
                 .collect();
             // A required value missing rejects the node. A bad value the batch did not propose
@@ -551,15 +560,27 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
         let mut keep = Vec::with_capacity(accepted.len());
         for (k, a) in accepted.into_iter().enumerate() {
             if drop.contains(&k) {
-                let fact = batch.facts.get(a.fact).map_or_else(|| format!("{} (minted type)", a.triple), ProposedFact::describe);
-                rejected.push(Rejection { fact, reason: why.remove(&k).unwrap_or_default() });
+                dropped.push((a, why.remove(&k).unwrap_or_default()));
             } else {
                 keep.push(a);
             }
         }
         accepted = keep;
     }
-    (accepted.into_iter().map(|r| (r.triple, r.fact)).collect(), rejected, fuzzy)
+    (accepted, dropped)
+}
+
+/// For a time-order violation, the property that must come later. An end time before its start
+/// is quarantined alone: the start places the node on the timeline and is required anyway.
+fn order_end(ont: &Ontology, r: &shacl::ValidationResult) -> Option<String> {
+    if !r.component.starts_with("LessThan") {
+        return None;
+    }
+    let shape = ont.shapes.shapes.iter().find(|s| s.id.to_string() == r.shape)?;
+    shape.constraints.iter().find_map(|c| match c {
+        shacl::Constraint::LessThan(p) | shacl::Constraint::LessThanOrEquals(p) => Some(p.as_str().to_owned()),
+        _ => None,
+    })
 }
 
 fn s(v: &str) -> Term {
@@ -703,10 +724,129 @@ pub fn sha2_hash(s: &str) -> [u8; 32] {
     sha2::Sha256::digest(s.as_bytes()).into()
 }
 
+/// Facts the store holds now that a harvest under another ontology would quarantine, for one
+/// harvest graph.
+#[derive(Debug, serde::Serialize)]
+pub struct Impact {
+    pub graph: String,
+    pub facts: usize,
+    /// Each reason and how many facts it rejects, most frequent first.
+    pub reasons: Vec<(String, usize)>,
+}
+
+/// What a harvest under `newer` would quarantine that one under `current` keeps, per harvest
+/// graph. The stored facts of each graph go through the checks that depend on the ontology
+/// (membership, closed vocabularies, SHACL) against the rest of the store, as a re-harvest of
+/// that graph would see them; the checks that do not (catalog, evidence, confidence) passed
+/// when the facts were stored.
+pub fn impact(snap: &Snapshot, current: &Ontology, newer: &Ontology) -> anyhow::Result<Vec<Impact>> {
+    let harvest = format!("{}harvest/", vocab::GRAPH);
+    let mut out = Vec::new();
+    for (gid, _) in snap.graphs()? {
+        let Term::NamedNode(g) = snap.term(gid)? else { continue };
+        if !g.as_str().starts_with(&harvest) {
+            continue;
+        }
+        let mut triples = Vec::new();
+        for q in snap.quads([None; 3], GraphSel::Named(gid)) {
+            let q = q?;
+            if let (Some(s), Term::NamedNode(p)) = (shacl::as_subject(&snap.term(q[0])?), snap.term(q[1])?) {
+                triples.push(Triple::new(s, p, snap.term(q[2])?));
+            }
+        }
+        // The gateway writes a graph's own record and the provenance of model facts after its checks.
+        let bookkeeping: FxHashSet<oxrdf::NamedOrBlankNode> = triples
+            .iter()
+            .filter(|t| t.predicate.as_str() == RDF_TYPE && matches!(&t.object, Term::NamedNode(c) if c.as_str() == harv::HARVEST || c.as_str() == harv::LLM_FACT))
+            .map(|t| t.subject.clone())
+            .collect();
+        triples.retain(|t| !bookkeeping.contains(&t.subject));
+        let before: FxHashSet<Triple> = recheck(snap, current, gid, &triples).into_iter().map(|(t, _)| t).collect();
+        let mut reasons: FxHashMap<String, usize> = FxHashMap::default();
+        let mut facts = 0;
+        for (t, r) in recheck(snap, newer, gid, &triples) {
+            if !before.contains(&t) {
+                facts += 1;
+                *reasons.entry(r).or_default() += 1;
+            }
+        }
+        if facts > 0 {
+            let mut reasons: Vec<(String, usize)> = reasons.into_iter().collect();
+            reasons.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            out.push(Impact { graph: vocab::compact(g.as_str()), facts, reasons });
+        }
+    }
+    Ok(out)
+}
+
+fn recheck(snap: &Snapshot, ont: &Ontology, graph: Id, triples: &[Triple]) -> Vec<(Triple, String)> {
+    let mut rejected = Vec::new();
+    let mut kept = Vec::new();
+    for t in triples {
+        match ontology_problem(ont, t) {
+            Some(r) => rejected.push((t.clone(), r)),
+            None => kept.push(t.clone()),
+        }
+    }
+    fn itself(t: &Triple) -> &Triple {
+        t
+    }
+    rejected.extend(shacl_pass(snap, ont, Some(graph), kept, itself).1);
+    rejected
+}
+
+/// The membership and vocabulary checks on a resolved triple, for a batch and for stored facts.
+fn ontology_problem(ont: &Ontology, t: &Triple) -> Option<String> {
+    let p = t.predicate.as_str();
+    if p != RDF_TYPE && p != RDFS_LABEL && ont.property(p).is_none() {
+        return Some(format!("{} is not an ontology property", vocab::compact(p)));
+    }
+    let subject = match &t.subject {
+        oxrdf::NamedOrBlankNode::NamedNode(n) => Some(n),
+        _ => None,
+    };
+    let object = match &t.object {
+        Term::NamedNode(n) => Some(n),
+        _ => None,
+    };
+    if p == RDF_TYPE
+        && let Some(c) = object
+        && !ont.is_class(c.as_str())
+    {
+        return Some(format!("{} is not an ontology class", vocab::compact(c.as_str())));
+    }
+    for n in subject.into_iter().chain(object) {
+        if !n.as_str().starts_with(vocab::DATA) && n.as_str().starts_with("https://ograph.dev/") && !ont.is_class(n.as_str()) {
+            return Some(format!("{} is not an ontology class", vocab::compact(n.as_str())));
+        }
+    }
+    if let (Some(v), Term::Literal(l)) = (ont.vocabulary(p), &t.object)
+        && !v.iter().any(|x| x.value == l.value()) {
+            return Some(format!("\"{}\" is not in the closed vocabulary of {}", l.value(), vocab::compact(p)));
+        }
+    None
+}
+
 /// Full SHACL audit of the store, the `ograph validate` command.
 pub fn audit(snap: &Snapshot, ont: &Ontology) -> Vec<shacl::ValidationResult> {
     let view = Overlay { snap, ont, add: oxrdf::Graph::new(), replaced: None, ids: RefCell::default() };
     shacl::Validator::new(&ont.shapes, &view).validate_all()
+}
+
+/// How many focus nodes each shape of shapes.ttl that has a target selects in the store. A
+/// shape that selects none checks nothing, whether by a misspelled target or by data that
+/// never came.
+pub fn shape_focus(snap: &Snapshot, ont: &Ontology) -> Vec<(String, usize)> {
+    let view = Overlay { snap, ont, add: oxrdf::Graph::new(), replaced: None, ids: RefCell::default() };
+    let v = shacl::Validator::new(&ont.shapes, &view);
+    let mut out: Vec<(String, usize)> = ont
+        .handwritten_shapes()
+        .iter()
+        .filter(|s| !s.targets.is_empty() && !s.deactivated)
+        .map(|s| (crate::ontology::shape_name(&s.id), v.focus_nodes(s).len()))
+        .collect();
+    out.sort();
+    out
 }
 
 #[cfg(test)]

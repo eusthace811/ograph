@@ -1,0 +1,31 @@
+# scripts/eval/coverage_decline_eval.py --runs 3 (uncached, the gate)
+baseline run 1: 21 of 21 questions got no answer: model call failed: model command failed: The ChatGPT user has reached their Subscription Sharing usage limit. Ask the user to try again after their usage limit resets or use an API key instead.
+COVERAGE DECLINE GATE: NOT MEASURED
+
+# scripts/eval/coverage_decline_eval.py --runs 1 --cached, replaying the answers of one live run made earlier
+# in this session on ontology 1.1, before the usage limit. That cache was overwritten afterwards, so this
+# part cannot be rerun without the model.
+baseline run 1: exit 1, 10 questions with gaps, 0 declined gaps
+   baseline proposes for 'How much revenue was lost during INC-4120?': ['Revenue', 'lost']
+   baseline proposes for 'Which Kubernetes cluster runs payments-api?': ['KubernetesCluster', 'runs']
+   baseline proposes for 'Which customers were affected by INC-5377?': ['Customers', 'affectedBy']
+treatment run 1: exit 1, 10 questions with gaps, 3 declined gaps
+   ops:KubernetesCluster: reappeared in proposed.ttl no; reported declined: ['Kubernetes cluster by eval']; other proposals ['runs']
+   ops:Revenue: reappeared in proposed.ttl no; reported declined: ['revenue by eval']; other proposals ['lost']
+   ops:Customers: reappeared in proposed.ttl no; reported declined: ['customers by eval']; other proposals ['affectedBy']
+
+| question | baseline runs with a gap | treatment runs with a gap |
+|---|---|---|
+| How much error budget does search-api have left this month? | 1 | 1 |
+| Which SLO did checkout breach during the incident? | 1 | 1 |
+| Which business processes are affected if ledger-db fails? | 1 | 1 |
+| Which facts about checkout did a model propose, and with what confidence? | 1 | 1 |
+| Which feature flags are enabled for web-frontend? | 1 | 1 |
+| Which on-call engineer was paged for INC-5377? | 1 | 1 |
+| Which runbook covers ledger-db? | 1 | 1 |
+
+other questions found with a gap, summed over runs: baseline 7, treatment 7
+1. declined gaps never proposed again and reported as declined: True
+2. other gaps found as often as before: True
+3. every treatment run exits 1: True
+COVERAGE DECLINE GATE: PASS

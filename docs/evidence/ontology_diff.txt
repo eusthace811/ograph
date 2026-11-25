@@ -1,0 +1,20 @@
+# scripts/eval/ontology_diff_eval.py --demo <demo on ontology 1.2>
+| mutation | BREAKING lines | predicted facts quarantined (per graph) | re-harvest quarantined | match |
+|---|---|---|---|---|
+| remove used class evt:ConfigChange | BREAKING class removed: evt:ConfigChange (2 uses) | config/config.jsonl 12 | config/config.jsonl 12 | yes |
+| remove unused class evt:TraceSlow | class removed: evt:TraceSlow (unused) | none | none | yes |
+| remove used property evt:template | BREAKING property removed: evt:template (1 uses) | logs/logs.jsonl 1 | logs/logs.jsonl 1 | yes |
+| remove unused property evt:codeLocation | property removed: evt:codeLocation (unused) | none | none | yes |
+| narrow range disc:about to inc:Incident | BREAKING range narrowed: disc:about from <https://ograph.dev/meta#Thing> to inc:Incident (21 uses) | discussions/discussions/ops.json 21 | discussions/discussions/ops.json 21 | yes |
+| widen range evt:on to og:Thing | range widened: evt:on from ops:Application to <https://ograph.dev/meta#Thing> | none | none | yes |
+| narrow domain evt:summary to evt:Alert | BREAKING domain narrowed: evt:summary from evt:Event to evt:Alert (13 uses) | config/config.jsonl 2, news/news.jsonl 15 | config/config.jsonl 2, news/news.jsonl 15 | yes |
+| drop subclass edge evt:Deployment < evt:Event | BREAKING superclass lost: evt:Deployment is no longer a evt:Event (3 uses) | deployments/deployments.jsonl 21 | deployments/deployments.jsonl 21 | yes |
+| drop subclass edge of unused evt:Commit | superclass lost: evt:Commit is no longer a evt:Event (unused) | none | none | yes |
+| close vocabulary evt:metric to one value | BREAKING vocabulary closed: evt:metric (2 uses) | metrics/metrics.csv 2 | metrics/metrics.csv 2 | yes |
+| close vocabulary of unused evt:codeLocation | vocabulary closed: evt:codeLocation (unused) | none | none | yes |
+| remove vocabulary value evt:severity SEV4 | BREAKING vocabulary value removed: evt:severity "SEV4" (5 uses) | config/config.jsonl 2, deployments/deployments.jsonl 3 | config/config.jsonl 2, deployments/deployments.jsonl 3 | yes |
+| make disc:about functional | BREAKING became functional: disc:about (21 uses) | discussions/discussions/ops.json 12 | discussions/discussions/ops.json 12 | yes |
+| require inc:mitigation on incidents | none | incidents/all 8 | incidents/all 8 | yes |
+
+mutations: 14, mismatched or falsely BREAKING: 0
+ONTOLOGY DIFF GATE: PASS

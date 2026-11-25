@@ -15,7 +15,7 @@
 # (ALERT, LOG, METRIC, TIMELINE), INCIDENT, SLACK (disc), CORRELATION, RCA and HARVEST.
 # Only what the four benchmark questions need is modeled.
 
-<https://ograph.dev/ontology> a owl:Ontology ; owl:versionInfo "1.1" .
+<https://ograph.dev/ontology> a owl:Ontology ; owl:versionInfo "1.3" .
 
 # ---------- OPS: the catalog ----------
 og:Thing a owl:Class ; rdfs:comment "Anything the graph can name." .
@@ -43,8 +43,6 @@ evt:LogError a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A burst of 
 evt:MetricAnomaly a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A metric of an application left its normal band." .
 evt:TraceFailed a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "Request spans through an application ended with an error status." .
 evt:TraceSlow a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "Request spans through an application took far longer than usual." .
-evt:Experiment a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An A/B test or canary started or changed allocation." .
-evt:E2EFailure a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A synthetic end-to-end check failed." .
 evt:NewsItem a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An external news development about a vendor or a technology we run." .
 evt:Commit a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A commit to an application's code or configuration in its repository." .
 evt:Exception a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An error report with a stack trace from an error tracker." .
@@ -144,11 +142,7 @@ evt:signal og:vocabulary
   [ og:value "METRIC_ANOMALY" ; rdfs:comment "A metric left its normal band." ],
   [ og:value "TRACE_FAILED" ; rdfs:comment "Spans ended with an error status." ],
   [ og:value "TRACE_SLOW" ; rdfs:comment "Spans took far longer than usual." ],
-  [ og:value "EXPERIMENT" ; rdfs:comment "An A/B test or canary started or changed allocation." ],
-  [ og:value "E2E_FAILURE" ; rdfs:comment "A synthetic end-to-end check failed." ],
-  [ og:value "DISCUSSION" ; rdfs:comment "People discussed a problem in chat." ],
   [ og:value "NEWS" ; rdfs:comment "An external news development." ],
-  [ og:value "DEPENDENCY_CHANGE" ; rdfs:comment "A library, base image or upstream API version changed." ],
   [ og:value "COMMIT" ; rdfs:comment "A commit changed an application's code or configuration." ],
   [ og:value "EXCEPTION" ; rdfs:comment "An error tracker reported an exception with a stack trace." ],
   [ og:value "OPERATOR_ACTION" ; rdfs:comment "A person acted on a running application: a rollback, a restart, a scale change." ] .

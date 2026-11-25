@@ -12,7 +12,7 @@
 # properties are derived from ograph.ttl in code, so they are not repeated here.
 
 shape:Event a sh:NodeShape ;
-  sh:targetClass evt:Deployment, evt:ConfigChange, evt:Alert, evt:LogError, evt:MetricAnomaly, evt:TraceFailed, evt:TraceSlow, evt:E2EFailure, evt:Commit, evt:Exception, evt:OperatorAction, inc:Incident ;
+  sh:targetClass evt:Deployment, evt:ConfigChange, evt:Alert, evt:LogError, evt:MetricAnomaly, evt:TraceFailed, evt:TraceSlow, evt:Commit, evt:Exception, evt:OperatorAction, inc:Incident ;
   sh:property [ sh:path evt:at ; sh:minCount 1 ; sh:message "an event needs a time" ] ;
   sh:property [ sh:path evt:on ; sh:minCount 1 ; sh:message "an event needs the application it happened on" ] .
 
@@ -52,3 +52,13 @@ shape:Verdict a sh:NodeShape ;
   sh:property [ sh:path rca:state ; sh:minCount 1 ; sh:maxCount 1 ] ;
   sh:property [ sh:path rca:evidence ; sh:minCount 1 ] ;
   sh:property [ sh:path rca:supersededBy ; sh:maxCount 1 ] .
+
+# Time order. The start is what places a node on the timeline, so a violation quarantines the
+# end time alone (the gateway drops the sh:lessThanOrEquals side) and the node keeps its start.
+shape:EpisodeOrder a sh:NodeShape ;
+  sh:targetSubjectsOf evt:until ;
+  sh:property [ sh:path evt:at ; sh:lessThanOrEquals evt:until ; sh:message "an episode cannot end before it starts" ] .
+
+shape:IncidentOrder a sh:NodeShape ;
+  sh:targetSubjectsOf inc:resolvedAt ;
+  sh:property [ sh:path evt:at ; sh:lessThanOrEquals inc:resolvedAt ; sh:message "an incident cannot be resolved before it opened" ] .

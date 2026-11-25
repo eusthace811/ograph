@@ -346,6 +346,24 @@ pub fn app(name: &str) -> Object {
     Object::Entity(EntityRef::Provisional { class: ops::APPLICATION, name: name.to_owned() })
 }
 
+/// Every event class and signal value an enricher writes. `ontology check` reports the event
+/// classes and signal values outside it as declared terms nothing writes.
+pub const WRITES: &[(&str, &str)] = &[
+    (evt::DEPLOYMENT, "DEPLOYMENT"),
+    (evt::CONFIG_CHANGE, "CONFIG_CHANGE"),
+    (evt::ALERT, "ALERT"),
+    (crate::vocab::inc::INCIDENT, "INCIDENT"),
+    (evt::LOG_ERROR, "LOG_ERROR"),
+    (evt::LOG_ERROR, "LOG_NEW"),
+    (evt::METRIC_ANOMALY, "METRIC_ANOMALY"),
+    (evt::TRACE_FAILED, "TRACE_FAILED"),
+    (evt::TRACE_SLOW, "TRACE_SLOW"),
+    (evt::NEWS_ITEM, "NEWS"),
+    (evt::COMMIT, "COMMIT"),
+    (evt::EXCEPTION, "EXCEPTION"),
+    (evt::OPERATOR_ACTION, crate::correlate::ACTION_SIGNAL),
+];
+
 /// The facts every event carries. `details` go between its time and its value.
 pub struct Event<'a> {
     pub class: &'a str,
@@ -357,6 +375,7 @@ pub struct Event<'a> {
 }
 
 pub fn event<const N: usize>(b: &mut Batch, s: &EntityRef, e: Event<'_>, details: [(&str, Object); N], ev: &EvidenceRef, m: &Extraction) {
+    debug_assert!(WRITES.contains(&(e.class, e.signal)), "{} {} is missing from enrich::WRITES", e.class, e.signal);
     b.add(s.clone(), RDF_TYPE, obj(oxrdf::NamedNode::new_unchecked(e.class)), ev, m);
     b.add(s.clone(), evt::ON, app(e.on), ev, m);
     b.add(s.clone(), evt::AT, dt(e.at), ev, m);
