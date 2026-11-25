@@ -178,3 +178,59 @@ Candidate 2 (rcaeval-heldout-2, misses, demo): NOT MEASURED. Not started: the us
 reached during the first command, and the instructions for this rerun stop all model work at a
 usage-limit refusal. Its gate above is unchanged and its command is ready.
 Seen, and runs 2 and 3: NOT MEASURED (not attempted, as planned).
+
+================================================================================
+GATE AMENDMENT, Haiku on Claude Code (2026-11-25), written before any Haiku scored run
+================================================================================
+Why. pi's usage limit is spent and pi has no Anthropic login. To finish the gate, the agent arms
+run in headless Claude Code (`claude -p`, v2.1.332) on Haiku instead.
+
+What changes: the model and the runner, nothing else.
+  model   claude-haiku-5-5 (`claude --model claude-haiku-5-5 -p "Reply with OK"` resolves to
+          claude-haiku-5-5, the canonical ID in modelUsage; no alias fallback was needed).
+  runner  agent_rca_eval.py --runner claude (commit 8091a7a). Per arm, the same tools and text
+          pi gets: mcp has only ograph's MCP server (`ograph serve --mcp`, the server pi's
+          extension wraps; its 12 tools, nothing built in) with scripts/agent/SKILL.md of the
+          arm's revision appended to the system prompt; skill has Bash and Read, `ograph` on
+          PATH, and the <available_skills> block pi writes for --skill, pointing at the arm's
+          revision of skills/ograph/SKILL.md. Isolation flags: --setting-sources "" (no user,
+          project or local settings, so no hooks or permissions), autoMemoryEnabled false,
+          --strict-mcp-config, --disable-slash-commands, --no-session-persistence,
+          --permission-mode dontAsk; the run's cwd is its workspace outside the repository; the
+          environment drops every CLAUDE* variable. --bare cannot be used: it reads no OAuth
+          login and the call fails. Every run's init event is checked: tools must be exactly
+          the arm's, MCP servers only ograph (mcp) or none (skill), no skills, no slash commands
+          except ograph's own MCP prompt, only Claude Code's built-in plugins, no memory path. A
+          run that shows more is voided. Trial (one run per family on demo INC-4120, not scored):
+          agent-rca-guidance-haiku/isolation-trial/, init line at the top of each transcript.
+Unchanged: binary target/eval-bin/ograph, reference target/rcaeval-ref.json (chain AC@1 0.93),
+revisions (Parent 0be3918, Candidate 1 34f7625, Candidate 2 ea05982), prompt, timeout 600 s,
+leak checks, case sets, criteria 1-3 and 4, the Decision paragraph and the sign test.
+
+Rows. A fresh out directory, docs/evidence/agent-rca-guidance-haiku. Every arm, Parent
+included, runs from scratch on Haiku. No row of passes 1 and 2 (gpt-5.6-terra on pi) is read,
+kept or compared: they are a different model. Runs: 1 per case and arm (the written first pass;
+seen and runs 2 and 3 are not run). Per-run safety cap --run-budget 1.0 (claude
+--max-budget-usd); total cap $40 across all Haiku gates by claude's total_cost_usd. A limit
+refusal backs off once (240 s); a second stops all model work, and what did not finish is NOT
+MEASURED.
+
+Commands (from the lane-s-skill worktree; WORK=/private/tmp/claude-501/haiku-gates/agent-rca-guidance):
+  (a) Candidate 1 against Parent on held-out (25), misses (5) and demo (4):
+    python3 scripts/eval/agent_rca_eval.py --runner claude --model claude-haiku-5-5 \
+      --bin target/eval-bin/ograph --cases "/Volumes/External Disk/Github/graph-rag/data/rcaeval-cases" \
+      --demo examples/demo --reference target/rcaeval-ref.json --misses --holdout 25 --holdout-seed 13 \
+      --skip-sample --runs 1 --parallel 5 --guidance parent=0be3918,candidate=34f7625 \
+      --arms mcp@parent,mcp@candidate,skill@parent,skill@candidate,chains --work $WORK \
+      --out docs/evidence/agent-rca-guidance-haiku
+  (b) Candidate 2 against Parent on rcaeval-heldout-2 (30), misses and demo (Parent's rows on
+      misses and demo are those of (a): same case, arm, revision and run):
+    python3 scripts/eval/agent_rca_eval.py --runner claude --model claude-haiku-5-5 \
+      --bin target/eval-bin/ograph --cases "/Volumes/External Disk/Github/graph-rag/data/rcaeval-cases" \
+      --demo examples/demo --reference target/rcaeval-ref.json --misses --holdout 25 --holdout-seed 13 \
+      --holdout-rest --skip-holdout --skip-sample --runs 1 --parallel 5 \
+      --guidance parent=0be3918,candidate=34f7625,candidate2=ea05982 \
+      --arms mcp@parent,mcp@candidate2,skill@parent,skill@candidate2,chains --work $WORK \
+      --out docs/evidence/agent-rca-guidance-haiku
+The result is reported as Haiku's: it says nothing about gpt-5.6-terra, the model of the gate as
+first written, and a decision taken on it is a decision on Haiku's evidence.

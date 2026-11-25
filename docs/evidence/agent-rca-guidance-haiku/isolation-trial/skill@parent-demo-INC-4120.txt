@@ -1,0 +1,389 @@
+# demo/demo/INC-4120 arm skill@parent run 1: pass, answered ledger-db, labeled ledger-db
+
+init {"model": "claude-haiku-5-5", "tools": ["Bash", "Read"], "mcp_servers": [], "skills": [], "slash_commands": [], "plugins": [{"name": "cc-plugin-agents-md", "path": "builtin", "source": "cc-plugin-agents-md@builtin"}, {"name": "cc-plugin-telemetry", "path": "builtin", "source": "cc-plugin-telemetry@builtin"}, {"name": "cc-plugin-privacy", "path": "builtin", "source": "cc-plugin-privacy@builtin"}, {"name": "cc-plugin-plugin-authoring", "path": "builtin", "source": "cc-plugin-plugin-authoring@builtin"}], "agents": ["claude", "Explore", "general-purpose", "Plan", "statusline-setup", "web-fetch"], "memory_paths": null, "permissionMode": "dontAsk", "claude_code_version": "2.1.332"}
+
+$ read {"file_path": "/private/tmp/claude-501/haiku-gates/trial-work/guide/parent/skills/ograph/SKILL.md"}
+1	---
+2	name: ograph
+3	description: Investigate production incidents with ograph, an ontology-driven observability knowledge graph. Use when asked why an incident happened, what changed before it, what a failing service affects, whether it happened before and how it was fixed, which vendor news touches our services, or for any question about services, dependencies, deployments, alerts, incidents and their evidence, in a directory that has (or should have) an .ograph/ workspace.
+4	allowed-tools: Bash(ograph:*)
+5	---
+6	
+7	# Incident investigation with ograph
+8	
+9	ograph keeps a knowledge graph of the service catalog, dependencies, business processes,
+10	vendors, deployments, config changes, commits, alerts, incidents, log and metric anomalies, slow
+11	or failed traces, exceptions, chat threads and news. Raw logs, metrics and traces stay in their own systems;
+12	every event points back to its first raw record (`source_record`).
+13	
+14	## Quick start
+15	
+16	ograph needs `ogrep` on `PATH` (`ogrep --version`) to read the service catalog. Without it the
+17	catalog harvest line says `DEGRADED: ogrep not runnable` and every fact about a service is
+18	quarantined, so every answer comes back empty. Fix that first.
+19	
+20	```bash
+21	ograph harvest    # commands search upward for .ograph/; the last line counts quarantined facts
+22	```
+23	
+24	## Commands
+25	
+26	### Investigate
+27	
+28	```bash
+29	ograph before INC-5377                 # default window 10m, 4 dependency hops
+30	ograph before INC-5377 --window 45m    # widen when nothing shows up
+31	ograph chains INC-5377                 # top 5 applications, each with its best chain
+32	ograph chains INC-5377 --top 10
+33	ograph chains INC-5377 --rank propagation   # second opinion: anomaly spread, not chain score
+34	ograph blast ledger-db                 # name, alias or IRI of an application
+35	ograph similar INC-5377 --top 3
+36	ograph code INC-5377                   # lines, commits, files and past write-ups behind it (needs a code source)
+37	ograph suspects INC-5377               # likely causes from dependencies and recent commits, no telemetry needed
+38	ograph suspects checkout,payments --since 3d   # the same for failing applications
+39	ograph news                            # all news; --since 24h, 7d counts back from now
+40	```
+41	
+42	### Explain
+43	
+44	```bash
+45	ograph why INC-5377                    # every fact: graph, source, extractor, time, model provenance
+46	ograph why id:app/ledger-db            # also lists quarantined proposals about the node
+47	ograph why id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000
+48	ograph changes --since 2d              # facts the sources added, removed or changed since then
+49	ograph chains INC-5377 --known-at 2026-11-20T09:00:00Z   # the answer the store gave then; also on before, blast, sparql
+50	```
+51	
+52	`--known-at` and `--since` take a dateTime with a zone or how long ago (`90m`, `2d`). The time is
+53	when ograph recorded a fact, not when it became true
+... [6589 more characters]
+
+$ bash {"command": "ls -la && ls -la .ograph 2>/dev/null", "description": "List workspace and .ograph directory contents"}
+total 520
+drwxr-xr-x@ 15 juan  wheel     480 Nov 25 17:50 .
+drwxr-xr-x@  3 juan  wheel      96 Nov 25 17:50 ..
+drwxr-xr-x@  8 juan  wheel     256 Nov 25 17:48 .ograph
+-rw-r--r--@  1 juan  wheel     968 Nov 25 11:38 alerts.json
+drwxr-xr-x@  4 juan  wheel     128 Nov 25 11:38 catalog
+drwxr-xr-x@  3 juan  wheel      96 Nov 25 11:35 chat-actions
+-rw-r--r--@  1 juan  wheel     135 Nov 25 11:38 config.jsonl
+-rw-r--r--@  1 juan  wheel     192 Nov 25 11:38 deployments.jsonl
+drwxr-xr-x@  3 juan  wheel      96 Nov 25 11:35 discussions
+-rw-r--r--@  1 juan  wheel     892 Nov 25 11:38 incidents.json
+-rw-r--r--@  1 juan  wheel  198567 Nov 25 11:38 logs.jsonl
+-rw-r--r--@  1 juan  wheel   38546 Nov 25 11:38 metrics.csv
+-rw-r--r--@  1 juan  wheel     463 Nov 25 11:38 news.jsonl
+-rw-r--r--@  1 juan  wheel     503 Nov 25 11:38 ownership.jsonl
+drwxr-xr-x@  4 juan  wheel     128 Nov 25 11:35 runbooks
+total 1696
+drwxr-xr-x@  8 juan  wheel     256 Nov 25 17:48 .
+drwxr-xr-x@ 15 juan  wheel     480 Nov 25 17:50 ..
+drwxr-xr-x@  3 juan  wheel      96 Nov 25 11:35 cache
+-rw-r--r--@  1 juan  wheel     927 Nov 25 17:48 config.toml
+-rw-r--r--@  1 juan  wheel     278 Nov 25 17:48 harvested
+-rw-r--r--@  1 juan  wheel   21870 Nov 25 11:35 ontology.ttl
+-rw-r--r--@  1 juan  wheel       0 Nov 25 17:48 store.lock
+-rw-r--r--@  1 juan  wheel  835584 Nov 25 17:48 store.redb
+
+$ bash {"command": "which ograph ogrep; ograph --version; ograph before INC-4120 --window 45m; echo \"exit=$?\"; ograph chains INC-4120; echo \"exit=$?\"", "description": "Run ograph before and chains on INC-4120"}
+/private/tmp/claude-501/haiku-gates/trial-work/bin/ograph
+/Users/juan/.cargo/bin/ogrep
+ograph 0.2.0
+id:inc/inc-4120 on payments-api at 2026-11-01T22:26:40Z; scope: payments-api(0) auth-service(1) ledger-db(1)
+  -  3.3 min  payments-api     ALERT           sev 1.00  id:ev/alert-payments-api-paymentserrorrate-1793571800000
+  -  6.7 min  ledger-db        ALERT           sev 1.00  id:ev/alert-ledger-db-ledgerpoolsaturated-1793571600000
+exit=0
+id:inc/inc-4120 on payments-api at 2026-11-01T22:26:40Z: 2 candidate events
+  1. ledger-db              score 0.917
+     id:chain/inc-4120-9d64d6f59f2253eb 0.92: ledger-db:ALERT -> payments-api:ALERT -> incident
+       0.93  ledger-db:ALERT -> payments-api:ALERT  (time 0.89, severity 1.00, catalog dependency)
+       0.90  payments-api:ALERT -> incident  (known pair, same application)
+       weakest link: payments-api:ALERT -> incident at 0.90
+  2. payments-api           score 0.900
+     id:chain/inc-4120-52cadabc49ab6d7d 0.90: payments-api:ALERT -> incident
+       0.90  payments-api:ALERT -> incident  (known pair, same application)
+exit=0
+
+$ bash {"command": "cat incidents.json; echo; cat alerts.json; echo; cat deployments.jsonl; echo; cat config.jsonl; echo; cat news.jsonl; echo; cat ownership.jsonl", "description": "Read incident, alert, deploy, config and news files"}
+[
+ {
+  "id": "INC-4120",
+  "title": "Card payments failing",
+  "service": "payments-api",
+  "opened": 1793572000,
+  "severity": "SEV2",
+  "status": "resolved",
+  "resolved": 1793575600,
+  "mitigation": "raised ledger-db connection pool to 200"
+ },
+ {
+  "id": "INC-4388",
+  "title": "Checkout errors after release",
+  "service": "checkout",
+  "opened": 1794263200,
+  "severity": "SEV2",
+  "status": "resolved",
+  "resolved": 1794265000,
+  "mitigation": "rolled back checkout v4.1.0"
+ },
+ {
+  "id": "INC-4501",
+  "title": "Search timeouts",
+  "service": "search-api",
+  "opened": 1794868000,
+  "severity": "SEV3",
+  "status": "resolved",
+  "resolved": 1794875200,
+  "mitigation": "replaced failed elasticsearch data nodes"
+ },
+ {
+  "id": "INC-5377",
+  "title": "Checkout latency and payment errors",
+  "service": "checkout",
+  "opened": 1795386400,
+  "severity": "SEV2",
+  "status": "open"
+ }
+]
+{"alerts": [{"labels": {"alertname": "LedgerPoolSaturated", "service": "ledger-db", "severity": "critical"}, "startsAt": 1795385980}, {"labels": {"alertname": "PaymentsErrorRate", "service": "payments-api", "severity": "critical"}, "startsAt": 1795386220}, {"labels": {"alertname": "CheckoutLatencyP99", "service": "checkout", "severity": "warning"}, "startsAt": 1795386340}, {"labels": {"alertname": "PaymentsErrorRate", "service": "payments-api", "severity": "critical"}, "startsAt": 1793571800}, {"labels": {"alertname": "LedgerPoolSaturated", "service": "ledger-db", "severity": "critical"}, "startsAt": 1793571600}, {"labels": {"alertname": "SearchTimeouts", "service": "search-api", "severity": "warning"}, "startsAt": 1794867700}, {"labels": {"alertname": "PayGwQueueDepth", "service": "pay-gw", "severity": "warning"}, "startsAt": 1794608800}, {"labels": {"alertname": "FinderSlowQueries", "service": "finder", "severity": "warning"}, "startsAt": 1794522400}]}
+{"service": "checkout", "version": "4.1.0", "at": 1794263080}
+{"service": "payments-api", "version": "2.3.1", "at": 1795386160}
+{"service": "search-api", "version": "1.9.0", "at": 1795375600}
+
+{"service": "ledger-db", "key": "max_connections", "at": 1795385920}
+{"service": "auth-service", "key": "fast_auth", "at": 1795127200}
+
+{"at": 1795379200, "title": "CardRail reports elevated authorization latency", "summary": "CardRail says authorizations are slow for some merchants in North America", "mentions": ["CardRail"]}
+{"at": 1795300000, "title": "MailRelay deprecates v1 send API", "summary": "MailRelay will turn off the v1 send API in 60 days", "mentions": ["MailRelay"]}
+{"at": 1795382800, "title": "Chip supply news", "summary": "Unrelated hardware news", "mentions": ["SomeChipCo"]}
+
+{"app": "web-frontend", "process": "online sales"}
+{"app": "checkout", "process": "online sales"}
+{"app": "payments-api", "process": "card payments"}
+{"app": "ledger-db", "process": "card payments"}
+{"app": "orders-api", "process": "order fulfilment"}
+{"app": "notifications", "process": "customer notifications"}
+{"app": "payments-api", "vendor
+... [157 more characters]
+
+$ bash {"command": "ograph status; echo \"---\"; ograph why id:chain/inc-4120-9d64d6f59f2253eb; echo \"exit=$?\"; echo \"---\"; ograph similar INC-4120 --top 3; echo \"exit=$?\"; echo \"---\"; ograph suspects INC-4120; echo \"exit=$?\"; echo \"---\"; ograph blast ledger-db; echo \"exit=$?\"", "description": "Check graph status, provenance, similar incidents and blast radius"}
+ograph: 4 incidents have chains but no verdict (INC-5377, INC-4501, INC-4388, INC-4120).
+---
+id:chain/inc-4120-9d64d6f59f2253eb
+  rdf:type corr:Chain
+      from g:harvest/correlation/inc-4120 [correlation via correlator-v1 at 2026-11-25T17:48:38.096Z]
+  corr:confidence 0.9165
+      from g:harvest/correlation/inc-4120 [correlation via correlator-v1 at 2026-11-25T17:48:38.096Z]
+  corr:leadsTo id:inc/inc-4120
+      from g:harvest/correlation/inc-4120 [correlation via correlator-v1 at 2026-11-25T17:48:38.096Z]
+  corr:rootCause id:ev/alert-ledger-db-ledgerpoolsaturated-1793571600000
+      from g:harvest/correlation/inc-4120 [correlation via correlator-v1 at 2026-11-25T17:48:38.096Z]
+  corr:candidateApp id:app/ledger-db
+      from g:harvest/correlation/inc-4120 [correlation via correlator-v1 at 2026-11-25T17:48:38.096Z]
+  corr:link id:ev/alert-payments-api-paymentserrorrate-1793571800000
+      from g:harvest/correlation/inc-4120 [correlation via correlator-v1 at 2026-11-25T17:48:38.096Z]
+  corr:rank 1
+      from g:harvest/correlation/inc-4120 [correlation via correlator-v1 at 2026-11-25T17:48:38.096Z]
+  corr:settings 653e4d25ef9dd492
+      from g:harvest/correlation/inc-4120 [correlation via correlator-v1 at 2026-11-25T17:48:38.096Z]
+exit=0
+---
+exit=1
+---
+ograph: DEGRADED: catalog: this ogrep cannot stop at 2026-11-01T22:26:40Z, so commits made after it count too
+  1. payments-api           score 1.00  distance 0  explains payments-api
+  2. auth-service           score 0.91  distance 1  explains payments-api
+  3. ledger-db              score 0.91  distance 1  explains payments-api
+exit=0
+---
+ledger-db is depended on by 5 applications
+  1  inventory
+  1  orders-api
+  1  payments-api
+  2  checkout
+  3  web-frontend
+  process card payments: via payments-api, ledger-db
+  process online sales: via checkout, web-frontend
+  process order fulfilment: via orders-api
+  open incidents: id:inc/inc-5377
+exit=0
+
+$ bash {"command": "grep -n '\"ts\"\\|1793571' logs.jsonl | head -0; python3 -I -c \"\nimport json,sys\nrows=[json.loads(l) for l in open('logs.jsonl') if l.strip()]\nprint(len(rows), rows[0].keys() if rows else '')\n\" ; head -c 600 logs.jsonl; echo; echo ---; head -5 metrics.csv; echo ---; grep -i 'ledger' metrics.csv | awk -F, 'NR<=3'", "description": "Inspect provenance, similar incidents, logs and metrics formats"}
+head: illegal line count -- 0
+2149 dict_keys(['ts', 'service', 'message'])
+{"ts": 1795382800, "service": "payments-api", "message": "charge ok id=6305 took 80ms"}
+{"ts": 1795382802, "service": "payments-api", "message": "charge ok id=3471 took 45ms"}
+{"ts": 1795382804, "service": "payments-api", "message": "charge ok id=1791 took 24ms"}
+{"ts": 1795382806, "service": "payments-api", "message": "charge ok id=9779 took 26ms"}
+{"ts": 1795382808, "service": "payments-api", "message": "charge ok id=6991 took 57ms"}
+{"ts": 1795382810, "service": "payments-api", "message": "charge ok id=1950 took 78ms"}
+{"ts": 1795382812, "service": "payments-api", "message": "charge ok id=9
+---
+time,ledger-db_connections,ledger-db_cpu,payments-api_latency-p99,checkout_latency-p99,search-api_cpu
+1795382800,61.64832687077102,23.827189561905985,128.57121397704952,193.04162004994444,39.36323485007766
+1795382810,63.338172239299176,25.643777013248044,107.31931585011856,206.79014650766885,44.30109126533885
+1795382820,60.75873665063331,24.925648270099266,136.26024089578868,185.11180451868583,38.375890650995444
+1795382830,65.0130542012748,30.12401041738127,120.45447433835662,203.9357608035353,42.15974235396336
+---
+time,ledger-db_connections,ledger-db_cpu,payments-api_latency-p99,checkout_latency-p99,search-api_cpu
+
+$ bash {"command": "python3 -I -c \"\nimport json\nrows=[json.loads(l) for l in open('logs.jsonl') if l.strip()]\nw=[r for r in rows if 1793570400<=r['ts']<=1793576000 and not r['message'].startswith('charge ok')]\nfor r in w[:40]: print(r['ts'], r['service'], r['message'])\nprint('total in window', len([r for r in rows if 1793570400<=r['ts']<=1793576000]))\n\"; echo ---; python3 -I -c \"\nimport csv\nrows=list(csv.DictReader(open('metrics.csv')))\nfor r in rows:\n    t=int(float(r['time']))\n    if 1793570400<=t<=1793574000 and int(t)%60<10:\n        print(t, round(float(r['ledger-db_connections']),1), round(float(r['ledger-db_cpu']),1), round(float(r['payments-api_latency-p99']),1), round(float(r['checkout_latency-p99']),1))\n\" | head -60", "description": "Examine logs and metrics around INC-4120 window"}
+total in window 0
+---
+
+$ bash {"command": "python3 -I -c \"\nimport json,csv\nrows=[json.loads(l) for l in open('logs.jsonl') if l.strip()]\nts=[r['ts'] for r in rows]; print('log range',min(ts),max(ts))\nm=list(csv.DictReader(open('metrics.csv'))); mt=[int(float(r['time'])) for r in m]; print('metric range',min(mt),max(mt))\nbad=[r for r in rows if not r['message'].startswith('charge ok')]\nprint('non-routine lines',len(bad))\nfor r in bad[:30]: print(r['ts'],r['service'],r['message'])\n\"; ls chat-actions discussions runbooks catalog; ls -R chat-actions discussions | head -30", "description": "Check time ranges and non-routine log lines"}
+log range 1795382800 1795386518
+metric range 1795382800 1795386510
+non-routine lines 289
+1795386000 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=67
+1795386002 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=43
+1795386006 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=75
+1795386010 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=79
+1795386012 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=59
+1795386014 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=28
+1795386016 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=21
+1795386020 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=23
+1795386024 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=18
+1795386026 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=26
+1795386028 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=69
+1795386030 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=13
+1795386032 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=98
+1795386034 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=94
+1795386040 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=44
+1795386042 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=61
+1795386044 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=35
+1795386046 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=15
+1795386048 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=32
+1795386050 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=76
+1795386052 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=97
+1795386054 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=93
+1795386056 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=84
+1795386058 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=14
+1795386060 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=54
+1795386062 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=60
+1795386064 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=54
+1795386068 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=90
+1795386070 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=99
+1795386072 payments-api ERROR ledger-db connection pool exhausted after 3000ms waiting=26
+catalog:
+catalog-info.yaml
+
+chat-actions:
+actions.json
+
+discussions:
+ops.json
+
+runbooks:
+payments.md
+platform.md
+chat-actions:
+actions.json
+
+discussions:
+ops.json
+
+$ bash {"command": "cat discussions/ops.json; echo; cat chat-actions/actions.json; echo; cat catalog/catalog-info.yaml | head -80; echo ---; grep -n -i 'ledger\\|4120' runbooks/*.md | head -20", "description": "Read chat discussions, actions, catalog and runbook mentions"}
+[
+ {
+  "ts": "1795242400.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "payments-api latency spiked right after the 2.3.1 deploy, but traces show the ledger-db connection pool exhausted on every request since 13:50, before the deploy. Raised pool size to 200, latency recovered. INC-4120"
+ },
+ {
+  "ts": "1795246000.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "checkout 500s started 2 min after we rolled out checkout v4.1.0, NullPointerException in the new PromoService code path, rolled back, errors gone. INC-4388"
+ },
+ {
+  "ts": "1795249600.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "someone flipped feature flag fast_auth=true in the prod config of auth-service at 09:12, p99 jumped from 80ms to 2s, flipped back, fixed"
+ },
+ {
+  "ts": "1795253200.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "orders-api pods OOMKilled during the traffic peak, HPA maxed out at 40 replicas, bumped max to 80 and the memory limit, stable now"
+ },
+ {
+  "ts": "1795256800.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "does anyone know who owns the ledger-db terraform module? need to request a quota change next week"
+ },
+ {
+  "ts": "1795260400.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "search-api timeouts again; the elasticsearch cluster shows red status, 2 data nodes lost disks. Infra replacing nodes. No deploys today. INC-4501"
+ },
+ {
+  "ts": "1795264000.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "notifications are delayed because MailRelay is returning 503s for every send since 10:00; our queue and workers look healthy"
+ },
+ {
+  "ts": "1795267600.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "TLS handshake failures between web-frontend and checkout after the load balancer certificate expired at midnight, renewed it"
+ },
+ {
+  "ts": "1795271200.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "the inventory migration dropped the reserved_qty column default, so new rows have nulls and checkout shows wrong stock"
+ },
+ {
+  "ts": "1795274800.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "we saw a burst of login attempts from one ASN against auth-service using leaked credentials, blocked the range and forced resets"
+ },
+ {
+  "ts": "1795278400.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "web-frontend DNS lookups for checkout failing intermittently from one zone, resolvers there were overloaded, moved to the other resolver pool"
+ },
+ {
+  "ts": "1795282000.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "ledger-db disk filled up at 03:00 because WAL archiving stopped, cleared space and restarted archiving"
+ },
+ {
+  "ts": "1795285600.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "payments-api started returning 400s after we changed the currency rounding setting in its config from 2 to 0 decimals, reverted the setting"
+ },
+ {
+  "ts": "1795289200.000100",
+  "channel": "ops",
+  "user": "U1",
+  "text": "rolled out search-api 1.9.0 and the new query parser reject
+... [16850 more characters]
+
+**Root cause: ledger-db.** The fault started in its connection pool. payments-api showed only the downstream errors.
+
+**Evidence**
+
+- **Timing:** `ledger-db` raised `LedgerPoolSaturated` at 1793571600, about 6.7 minutes before the incident opened. `payments-api` raised `PaymentsErrorRate` at 1793571800, about 3.3 minutes before. The incident itself opened at 1793572000 (`incidents.json`).
+- **Dependency:** the catalog has `payments-api` depending on `ledger-db`, so the ledger-db saturation can explain the payments errors.
+- **Chat record:** the #incidents thread for INC-4120 says "payments failing, ledger-db pool exhausted." The ops discussion says traces showed the ledger-db pool exhausted on every request since 13:50, before the payments-api 2.3.1 deploy. That rules out the deploy as the start.
+- **Fix:** raising the ledger-db connection pool to 200 made payments recover. The mitigation was applied to ledger-db, not payments-api.
+- **ograph:** `chains INC-4120` ranks `ledger-db` first at 0.92, with `payments-api` at 0.90 as the lower-ranked chain. The chain's `rootCause` is the ledger-db alert.
+
+**Caveats**
+
+- The workspace has no logs or metrics from the INC-4120 window (Nov 1). Their time range covers only the open INC-5377 window (Nov 25), so the pool-exhaustion evidence for INC-4120 comes from alerts, the chat record and the mitigation, not raw telemetry.
+- ograph's catalog harvest is marked DEGRADED because this `ogrep` cannot stop at a past timestamp. `suspects` output is therefore unreliable here. `similar` returned no matches.
+- ograph has no verdict for this chain, so it is a hypothesis until someone confirms it.
+
+ROOT: ledger-db
