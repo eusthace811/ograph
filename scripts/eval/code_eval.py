@@ -297,7 +297,7 @@ def main():
     print(f"| the same after `ogrep index .` in the repository | {t_indexed:.2f} s | {quads(with_code)} |")
     print(f"\n{last_code}")
     rc, problems = with_code.run("validate")
-    print(f"`ograph validate` on the workspace with code: {len(problems) if isinstance(problems, list) else problems} violations")
+    print(f"`ograph validate` on the workspace with code: {len(problems['violations']) if isinstance(problems, dict) else problems} violations")
     kinds = collections.Counter(r[0] for r in with_code.rows("SELECT ?s WHERE { ?e evt:signal ?s }"))
     print(f"events by signal: {dict(sorted(kinds.items()))}\n")
 

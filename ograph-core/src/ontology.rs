@@ -39,6 +39,8 @@ pub struct Ontology {
     pub properties: BTreeMap<String, Property>,
     pub vocabularies: BTreeMap<String, Vec<Term_>>,
     pub shapes: Shapes,
+    /// How many of `shapes` are derived from the ontology; the rest come from shapes.ttl.
+    derived: usize,
     pub version: String,
 }
 
@@ -124,8 +126,10 @@ impl Ontology {
                 other => other.to_string(),
             })
             .unwrap_or_default();
-        let mut ont = Self { graph, classes, properties, vocabularies, shapes: Shapes::from_shapes(vec![]), version };
-        ont.shapes = Shapes::parse(&parse(shapes_ttl)?).after(ont.derived_shapes());
+        let mut ont = Self { graph, classes, properties, vocabularies, shapes: Shapes::from_shapes(vec![]), derived: 0, version };
+        let derived = ont.derived_shapes();
+        ont.derived = derived.len();
+        ont.shapes = Shapes::parse(&parse(shapes_ttl)?).after(derived);
         Ok(ont)
     }
 
@@ -185,9 +189,109 @@ impl Ontology {
         out
     }
 
-    /// Code-to-ontology drift: every IRI in `vocab.rs` must be declared here.
+    /// The shapes written in shapes.ttl, node and property shapes alike.
+    pub fn handwritten_shapes(&self) -> &[Shape] {
+        &self.shapes.shapes[self.derived..]
+    }
+
+    fn comment(&self, iri: &str) -> Option<String> {
+        match self.graph.object_for_subject_predicate(NamedNode::new_unchecked(iri).as_ref(), rdfs::COMMENT) {
+            Some(oxrdf::TermRef::Literal(l)) => Some(l.value().to_owned()),
+            _ => None,
+        }
+    }
+
+    /// Instances of `class` and of its subclasses, as `usage` counted them.
+    fn instances(&self, class: &str, usage: &Usage) -> usize {
+        self.classes.iter().filter(|(_, sups)| sups.contains(class)).map(|(c, _)| usage.instances(c)).sum()
+    }
+
+    /// What is declared but not finished: no domain or range, no comment or still a proposal,
+    /// nothing in the code writes it, nothing in the store uses it (given `usage`), or an event
+    /// class no shape requires a time of. Warnings only: each can be deliberate.
+    pub fn lints(&self, usage: Option<&Usage>) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut report = |what: &str, terms: Vec<String>| {
+            if !terms.is_empty() {
+                out.push(format!("{what} ({}): {}", terms.len(), terms.join(", ")));
+            }
+        };
+        let props = || self.properties.values();
+        report("property without a domain", props().filter(|p| p.domain.is_none()).map(|p| vocab::compact(&p.iri)).collect());
+        report("property without a range", props().filter(|p| p.range.is_none()).map(|p| vocab::compact(&p.iri)).collect());
+        let terms: Vec<&String> = self.classes.keys().chain(self.properties.keys()).collect();
+        report("term without rdfs:comment", terms.iter().filter(|t| self.comment(t).is_none()).map(|t| vocab::compact(t)).collect());
+        report("term still marked Proposed", terms.iter().filter(|t| self.comment(t).is_some_and(|c| c.starts_with("Proposed:"))).map(|t| vocab::compact(t)).collect());
+        let named: BTreeSet<&str> = vocab::all().collect();
+        let event = vocab::evt::EVENT;
+        let parents: BTreeSet<&String> = self.classes.iter().flat_map(|(c, sups)| sups.iter().filter(move |s| *s != c)).collect();
+        let written = |t: &str| {
+            let is_event = self.classes.get(t).is_some_and(|s| s.contains(event));
+            if is_event { crate::enrich::WRITES.iter().any(|(c, _)| *c == t) } else { named.contains(t) }
+        };
+        let mut unwritten: Vec<String> = terms.iter().filter(|t| !parents.contains(*t) && !written(t)).map(|t| vocab::compact(t)).collect();
+        for v in self.vocabulary(vocab::evt::SIGNAL).unwrap_or_default() {
+            if !crate::enrich::WRITES.iter().any(|(_, s)| *s == v.value) {
+                unwritten.push(format!("evt:signal \"{}\"", v.value));
+            }
+        }
+        report("declared but no code writes it", unwritten);
+        if let Some(u) = usage.filter(|u| !u.predicates.is_empty()) {
+            let mut unused: Vec<String> = self.classes.keys().filter(|c| self.instances(c, u) == 0).map(|c| vocab::compact(c)).collect();
+            unused.extend(self.properties.keys().filter(|p| u.uses(p) == 0).map(|p| vocab::compact(p)));
+            report("declared but the store has none", unused);
+        }
+        let at = NamedNode::new_unchecked(vocab::evt::AT);
+        let requires_at = |shape: &Shape| {
+            shape.constraints.iter().any(|c| match c {
+                Constraint::Property(id) => self.shapes.get(id).is_some_and(|ps| {
+                    matches!(&ps.path, Some(Path::Pred(p)) if *p == at) && ps.constraints.iter().any(|c| matches!(c, Constraint::MinCount(n) if *n >= 1))
+                }),
+                _ => false,
+            })
+        };
+        let timed = |class: &str| {
+            let sups = &self.classes[class];
+            self.handwritten_shapes().iter().any(|s| s.targets.iter().any(|t| matches!(t, Target::Class(Term::NamedNode(c)) if sups.contains(c.as_str()))) && requires_at(s))
+        };
+        report(
+            "event class no shape requires an evt:at of",
+            self.classes.iter().filter(|(c, sups)| *c != event && sups.contains(event) && !parents.contains(c) && !timed(c)).map(|(c, _)| vocab::compact(c)).collect(),
+        );
+        out
+    }
+
+    /// Code-to-ontology drift: every IRI in `vocab.rs` must be declared here, and every class
+    /// and property shapes.ttl names, or the shape that names it can never match.
     pub fn check(&self) -> Vec<String> {
         let mut problems = Vec::new();
+        for shape in self.handwritten_shapes() {
+            let name = shape_name(&shape.id);
+            let mut named: Vec<(&str, &str)> = Vec::new();
+            for t in &shape.targets {
+                match t {
+                    Target::Class(Term::NamedNode(c)) => named.push(("class", c.as_str())),
+                    Target::SubjectsOf(p) | Target::ObjectsOf(p) => named.push(("property", p.as_str())),
+                    _ => {}
+                }
+            }
+            if let Some(Path::Pred(p)) = &shape.path {
+                named.push(("property", p.as_str()));
+            }
+            for c in &shape.constraints {
+                match c {
+                    Constraint::Class(Term::NamedNode(c)) => named.push(("class", c.as_str())),
+                    Constraint::LessThan(p) | Constraint::LessThanOrEquals(p) | Constraint::Equals(p) | Constraint::Disjoint(p) => named.push(("property", p.as_str())),
+                    _ => {}
+                }
+            }
+            for (kind, iri) in named {
+                let declared = if kind == "class" { self.is_class(iri) } else { self.properties.contains_key(iri) || iri == rdf::TYPE.as_str() || iri == rdfs::LABEL.as_str() };
+                if !declared {
+                    problems.push(format!("{name} in shapes.ttl names undeclared {kind} {}", vocab::compact(iri)));
+                }
+            }
+        }
         for iri in vocab::all() {
             if !self.classes.contains_key(iri) && !self.properties.contains_key(iri) {
                 problems.push(format!("{} is used by code but not declared in the ontology", vocab::compact(iri)));
@@ -311,6 +415,14 @@ impl Ontology {
     }
 }
 
+/// A shape's IRI as `shape:Name`, or "a property shape" for a blank one.
+pub fn shape_name(id: &Term) -> String {
+    match id {
+        Term::NamedNode(n) => n.as_str().strip_prefix("https://ograph.dev/shape/").map_or_else(|| vocab::compact(n.as_str()), |l| format!("shape:{l}")),
+        _ => "a property shape".to_owned(),
+    }
+}
+
 /// A change that removes or narrows what `uses` stored facts rely on.
 fn breaking(what: String, uses: usize) -> String {
     if uses == 0 { format!("{what} (unused)") } else { format!("BREAKING {what} ({uses} uses)") }
@@ -403,5 +515,42 @@ mod tests {
         let used = Usage { types: [(vocab::evt::COMMIT.to_owned(), 3)].into(), ..Usage::default() };
         assert_eq!(old.diff(&new, &used), ["BREAKING superclass lost: evt:Commit is no longer a evt:Event (3 uses)"]);
         assert_eq!(old.diff(&new, &Usage::default()), ["superclass lost: evt:Commit is no longer a evt:Event (unused)"]);
+    }
+
+    #[test]
+    fn the_shipped_ontology_warns_about_its_unwritten_and_untimed_events() {
+        let ont = Ontology::load_default().unwrap();
+        assert_eq!(
+            ont.lints(None),
+            [
+                "declared but no code writes it (6): evt:E2EFailure, evt:Experiment, evt:signal \"DEPENDENCY_CHANGE\", evt:signal \"DISCUSSION\", evt:signal \"E2E_FAILURE\", evt:signal \"EXPERIMENT\"",
+                "event class no shape requires an evt:at of (1): evt:Experiment",
+            ]
+        );
+    }
+
+    #[test]
+    fn merged_proposals_are_flagged_until_reviewed() {
+        let need = |text: &str, kind: &str| crate::coverage::Need { text: text.into(), kind: kind.into(), name: None };
+        let report = [crate::coverage::Coverage {
+            question: "Which cluster runs checkout?".into(),
+            covered: vec![],
+            gaps: vec![need("cluster", "class"), need("runs on cluster", "property")],
+            notes: vec![],
+            failed: None,
+        }];
+        let ont = Ontology::load(&format!("{DEFAULT_TTL}\n{}", crate::coverage::proposals(&report)), DEFAULT_SHAPES).unwrap();
+        let lints = ont.lints(None);
+        assert_eq!(lints[0], "property without a domain (1): ops:runsOnCluster");
+        assert_eq!(lints[1], "property without a range (1): ops:runsOnCluster");
+        assert_eq!(lints[2], "term still marked Proposed (2): ops:Cluster, ops:runsOnCluster");
+        assert_eq!(lints[3], "declared but no code writes it (8): evt:E2EFailure, evt:Experiment, ops:Cluster, ops:runsOnCluster, evt:signal \"DEPENDENCY_CHANGE\", evt:signal \"DISCUSSION\", evt:signal \"E2E_FAILURE\", evt:signal \"EXPERIMENT\"");
+    }
+
+    #[test]
+    fn a_misspelled_target_class_is_a_problem() {
+        let shapes = format!("{DEFAULT_SHAPES}\nshape:Paged a sh:NodeShape ; sh:targetClass evt:Aletr ; sh:property [ sh:path evt:severity ; sh:minCount 1 ] .\n");
+        let ont = Ontology::load(DEFAULT_TTL, &shapes).unwrap();
+        assert_eq!(ont.check(), ["shape:Paged in shapes.ttl names undeclared class evt:Aletr"]);
     }
 }

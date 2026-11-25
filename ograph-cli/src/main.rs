@@ -424,11 +424,18 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             let snap = ws.store.snapshot()?;
             let t = std::time::Instant::now();
             let r = ograph_core::gateway::audit(&snap, &ws.ontology);
-            print(json, &r, |r| {
+            let shapes = ograph_core::gateway::shape_focus(&snap, &ws.ontology);
+            let unmatched: Vec<&str> = shapes.iter().filter(|(_, n)| *n == 0).map(|(s, _)| s.as_str()).collect();
+            let secs = t.elapsed().as_secs_f64();
+            print(json, &serde_json::json!({"violations": r, "shapes": shapes, "unmatched": unmatched}), |_| {
                 for v in r.iter().take(50) {
                     println!("{} {} {:?}: {}", v.component, v.focus, v.path, v.message);
                 }
-                println!("{} violations ({:.1} s)", r.len(), t.elapsed().as_secs_f64());
+                println!("shapes.ttl focus nodes: {}", shapes.iter().map(|(s, n)| format!("{s} {n}")).collect::<Vec<_>>().join(", "));
+                if !unmatched.is_empty() {
+                    println!("warning: {} shapes matched nothing: {}", unmatched.len(), unmatched.join(", "));
+                }
+                println!("{} violations ({secs:.1} s)", r.len());
             });
             Ok(r.is_empty())
         }
@@ -466,11 +473,17 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             }
             if action == "check" {
                 let p = ws.ontology.check();
-                print(json, &p, |p| {
-                    for x in p {
+                let snap = ws.store.snapshot()?;
+                let usage = ograph_core::ontology::Usage::from_snapshot(&snap)?;
+                let w = ws.ontology.lints(Some(&usage));
+                print(json, &serde_json::json!({"problems": p, "warnings": w}), |_| {
+                    for x in &p {
                         println!("{x}");
                     }
-                    println!("ontology v{}: {} classes, {} properties, {} closed vocabularies, {} shapes; {} problems", ws.ontology.version, ws.ontology.classes.len(), ws.ontology.properties.len(), ws.ontology.vocabularies.len(), ws.ontology.shapes.shapes.len(), p.len());
+                    for x in &w {
+                        println!("warning: {x}");
+                    }
+                    println!("ontology v{}: {} classes, {} properties, {} closed vocabularies, {} shapes; {} problems, {} warnings", ws.ontology.version, ws.ontology.classes.len(), ws.ontology.properties.len(), ws.ontology.vocabularies.len(), ws.ontology.shapes.shapes.len(), p.len(), w.len());
                 });
                 Ok(p.is_empty())
             } else {

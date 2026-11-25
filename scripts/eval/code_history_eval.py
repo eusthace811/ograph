@@ -143,7 +143,7 @@ def main():
     for line in sorted({l.strip() for l in sh([bin_, "harvest"], root).stdout.splitlines() if "DEGRADED" in l.upper()})[:5]:
         print(f"  {line[:300]}")
     rc, problems = ws.run("validate")
-    print(f"`ograph validate`: {len(problems) if isinstance(problems, list) else problems} violations\n")
+    print(f"`ograph validate`: {len(problems['violations']) if isinstance(problems, dict) else problems} violations\n")
 
     # H
     n = len(h_cases)

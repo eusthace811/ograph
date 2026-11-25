@@ -780,6 +780,22 @@ pub fn audit(snap: &Snapshot, ont: &Ontology) -> Vec<shacl::ValidationResult> {
     shacl::Validator::new(&ont.shapes, &view).validate_all()
 }
 
+/// How many focus nodes each shape of shapes.ttl that has a target selects in the store. A
+/// shape that selects none checks nothing, whether by a misspelled target or by data that
+/// never came.
+pub fn shape_focus(snap: &Snapshot, ont: &Ontology) -> Vec<(String, usize)> {
+    let view = Overlay { snap, ont, add: oxrdf::Graph::new(), replaced: None, ids: RefCell::default() };
+    let v = shacl::Validator::new(&ont.shapes, &view);
+    let mut out: Vec<(String, usize)> = ont
+        .handwritten_shapes()
+        .iter()
+        .filter(|s| !s.targets.is_empty() && !s.deactivated)
+        .map(|s| (crate::ontology::shape_name(&s.id), v.focus_nodes(s).len()))
+        .collect();
+    out.sort();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::{sibling, words};
