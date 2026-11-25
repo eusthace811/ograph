@@ -132,3 +132,49 @@ Command, once pi answers again (resumes; the first command above finishes Candid
     --arms mcp@parent,mcp@candidate2,skill@parent,skill@candidate2,chains --work $WORK --out docs/evidence/agent-rca-guidance
 Estimated cost at Phase 12's per-run prices: 35 cases x (2 x $0.036 + 2 x $0.098) = $9.4.
 Candidate 2 result: NOT MEASURED (the usage limit had not reset when lane S ended).
+
+================================================================================
+RESULT, pass 2 (2026-11-25, resume of the first command; Candidate 1 against Parent): PARTIAL,
+then the usage limit again
+================================================================================
+STATUS: NOT MEASURED for the decision. The first command above was rerun once, unchanged except
+that --cases names the read-only data directory by absolute path and --work is outside the
+repository. It had 92 runs to do (the error rows of pass 1) and kept 78. 33 more runs were scored,
+all on held-out; then pi refused with its usage-limit message ("... usage limit. Ask the user to
+try again after their usage limit resets ...") and the harness stopped every later model call.
+No agent run on misses or demo finished, again. Rows: docs/evidence/agent-rca-guidance/runs.jsonl
+(170 rows: 88 pass, 22 fail, 59 error, 1 leak, the pass-1 leak). New transcripts:
+agent-rca-guidance/transcripts-pass2.tar.gz. Leak check: 0 new runs voided.
+
+Cost at pi list price: pass 2 $2.43. Total for lane S: $7.41.
+
+held-out, on the cases both revisions answered (passes 1 and 2 together):
+  arm              AC@1           says hypothesis   departs from rank 1 (right)   arm cost
+  mcp@parent       13/20 (0.65)   20/20             7 of 20 (0)                   $0.83
+  mcp@candidate    20/20 (1.00)   9/20              0 of 20                       $0.62
+  skill@parent     12/17 (0.71)   2/17              6 of 18 (0)                   $2.44
+  skill@candidate  14/17 (0.82)   5/17              3 of 18 (0)                   $2.16
+  chains           25/25 (1.00)   -                 -                             -
+  mcp: Candidate better on 7 cases, worse on 0, equal on 13 (sign test p = 0.016, significant).
+  skill: better on 4, worse on 2, equal on 11 (p = 0.688, not significant).
+  Of the 16 departures, 13 named redis; none named the label.
+  Missing pairs: mcp 5 held-out cases (c-011f3b9bc3 c-3a0764b124 c-c923bc4f2d c-0ae1ec693f
+  c-9a8d5cecc6), skill 8.
+
+Against the gate, per family:
+  1. held-out AC@1, Candidate >= Parent: mcp holds (1.00 against 0.65, p = 0.016); skill holds
+     on the paired 17 (0.82 against 0.71, p = 0.688, not significant). 5 and 8 cases unpaired.
+  2. fraction of departures that name the label: measured on held-out only. mcp: Candidate never
+     departs (vacuous) against Parent's 0 of 7; skill: 0 of 3 against 0 of 6. Equal at 0 in both
+     families. Misses and demo, where a departure could be right: NOT MEASURED.
+  3. misses recovered: NOT MEASURED in both families (no agent run on a miss finished).
+Decision: none. Criterion 3 is the one that separates a better reader from one that repeats
+rank 1, and it is still unmeasured, so the Decision paragraph cannot be applied: not KEEP
+Candidate 1, not revert on this gate's evidence. What held-out shows is that Candidate 1 stops the
+mcp agent leaving rank 1 for redis (7 wrong departures to 0, significant), and that the
+says-hypothesis regression of pass 1 persists on more cases: mcp 9/20 against Parent's 20/20.
+
+Candidate 2 (rcaeval-heldout-2, misses, demo): NOT MEASURED. Not started: the usage limit was
+reached during the first command, and the instructions for this rerun stop all model work at a
+usage-limit refusal. Its gate above is unchanged and its command is ready.
+Seen, and runs 2 and 3: NOT MEASURED (not attempted, as planned).
