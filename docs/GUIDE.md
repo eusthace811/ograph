@@ -196,8 +196,14 @@ confirms):
 ./x install-skill .claude/skills               # or any directory an agent reads skills from
 ```
 
+**A note at session start.** `./x install-hook` adds a Claude Code `SessionStart` hook that runs
+`ograph status`. In a workspace it prints one line when source files changed since the last
+full harvest or incidents have chains but no verdict, and nothing otherwise.
+
 **MCP clients.** Point them at `ograph serve --mcp --root /path/to/workspace`. The tools are
-`before`, `chains`, `blast`, `similar`, `code`, `suspects`, `why`, `news`, `sparql` and `verdict`.
+`before`, `chains`, `blast`, `similar`, `code`, `suspects`, `why`, `news`, `sparql`, `resolve`,
+`cite_check` and `verdict`. The resources are `ograph://ontology`, `ograph://incidents` and
+`ograph://incident/{id}`, and the prompt `investigate` carries the investigation order.
 
 **pi.** `python3 scripts/agent/install.py --bin "$(which ograph)" --root /path/to/workspace --out ~/.pi/agent/extensions/ograph.ts`.
 

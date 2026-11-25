@@ -17,6 +17,10 @@ python3 scripts/eval/coverage_eval.py --bin $B/ograph --demo examples/demo --que
 python3 scripts/eval/sparql_agent_eval.py --bin $B/ograph --demo examples/demo --repeat 3 > $E/sparql-agent.txt
 python3 scripts/eval/sparql_agent_eval.py --bin $B/ograph --demo examples/demo --repeat 3 --no-skill >> $E/sparql-agent.txt
 python3 scripts/agent/install.py --bin $B/ograph --root examples/demo --out target/ograph-pi.ts >/dev/null && node scripts/agent/test_pi.mjs target/ograph-pi.ts "$PWD/examples/demo" "$PWD/$B/ograph" > $E/pi-contract.txt
+python3 scripts/eval/resolve_eval.py --bin $B/ograph --demo examples/demo --boutique data/fixtures/online-boutique --work target/resolve-eval > $E/resolve.txt
+python3 scripts/eval/hook_eval.py --bin $B/ograph --demo examples/demo --case data/rcaeval-cases/c-011f3b9bc3 --work target/hook-eval > $E/hook.txt
+# $E/cite-check.txt keeps the first, failing run of set "first" above these two
+for s in first fresh; do python3 scripts/eval/cite_eval.py --bin $B/ograph --demo examples/demo --work target/cite-eval --set $s > target/cite-$s.txt; done
 python3 scripts/eval/rcaeval_score.py --bin $B/ograph --cases data/rcaeval-cases --out data/rcaeval-final.json > $E/rcaeval-final.txt
 $B/confirm_eval data/rcaeval-cases > $E/confirm.txt
 python3 scripts/eval/similar_eval.py --bin $B/ograph --cases data/rcaeval-cases --out data/rcaeval-merged > $E/similar-eval.txt

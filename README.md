@@ -22,6 +22,7 @@ Or build from source, where downloaded executables are not allowed. That needs R
 ./x doctor          # checks cargo, the crate registry (Artifactory on a corporate network) and ogrep
 ./x install         # ~/.cargo/bin/ograph, or ~/bin/ograph.exe on Windows
 ./x install-skill   # the agent skill, into ~/.claude/skills and ~/.agents/skills
+./x install-hook    # optional: a Claude Code session-start line when the graph is stale
 ```
 
 ```sh

@@ -1,0 +1,30 @@
+# First run of set first, before a name that extends a catalog name counted:
+## planted answer: 51 citations; 31 should be flagged (8 stale, 23 unknown), 20 present
+extracted 48 of 51; status exactly right for 48
+  MISMATCH legacy-payments-api: want unknown, got not extracted
+  MISMATCH legacy-checkout: want unknown, got not extracted
+  MISMATCH legacy-orders-api: want unknown, got not extracted
+flags 28, right 28; precision 1.000  recall 0.903
+CITE-CHECK GATE: FAIL
+
+# After that change, set first, then set fresh (written before its first run):
+## agent answer (docs/evidence/agent-run.txt): 9 citations, 0 flagged
+  present  incident  INC-5377  (an incident in the graph)
+  present  app       ledger-db  (the catalog application id:app/ledger-db)
+  present  app       payments  (the catalog application id:app/payments-api)
+  present  app       checkout  (the catalog application id:app/checkout)
+  present  app       payments-api  (the catalog application id:app/payments-api)
+  present  app       orders-api  (the catalog application id:app/orders-api)
+  present  app       inventory  (the catalog application id:app/inventory)
+  present  app       web-frontend  (the catalog application id:app/web-frontend)
+  present  incident  INC-4120  (an incident in the graph)
+
+## planted answer (set first): 51 citations; 31 should be flagged (8 stale, 23 unknown), 20 present
+extracted 51 of 51; status exactly right for 51
+flags 31, right 31; precision 1.000  recall 1.000
+CITE-CHECK GATE: PASS
+
+## planted answer (set fresh): 64 citations; 44 should be flagged (8 stale, 36 unknown), 20 present
+extracted 64 of 64; status exactly right for 64
+flags 44, right 44; precision 1.000  recall 1.000
+CITE-CHECK GATE: PASS

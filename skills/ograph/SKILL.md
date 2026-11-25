@@ -47,6 +47,14 @@ ograph why id:app/ledger-db            # also lists quarantined proposals about 
 ograph why id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000
 ```
 
+### Check names and answers
+
+```bash
+ograph resolve chekout ledger-service    # names to catalog applications, at most 5, by the harvest's rules
+ograph cite-check answer.md              # every chain, incident, application and IRI an answer cites
+ograph status                            # a line when the graph is stale or chains wait for a verdict
+```
+
 ### Record (only after a person confirms)
 
 ```bash
@@ -127,7 +135,11 @@ Inside SPARQL, escape a `/` in a prefixed name, and the dots of a version (`id:a
    `ogrep --callers -w NAME .` for the functions that call it (references/investigation.md).
 9. When `before` and `chains` find little, run `suspects`. Say that its list comes from the
    dependency graph and recent commits, not from telemetry.
-10. The graph keeps episodes and pointers, not raw detail. For a config change's old and new
+10. Before you name an application no answer showed you, `resolve` it. `ambiguous` (a sibling
+   such as `-canary`, or a tie) and `unresolved` are not applications: say so.
+11. Run `cite-check` on your answer before you give it. Fix or drop every `stale` or `unknown`
+   citation; a stale chain means the graph changed since you read it.
+12. The graph keeps episodes and pointers, not raw detail. For a config change's old and new
    value, a log line or a metric curve, open the event's `source_record` (`--json`) in its file.
 
 Report what [references/investigation.md](references/investigation.md) lists under "What to report".

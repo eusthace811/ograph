@@ -381,3 +381,48 @@ These are the reasons, each measured above:
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.
+
+## Phase 12, lane E: agent surface (`resolve.txt`, `cite-check.txt`, `hook.txt`, `pi-contract.txt`)
+
+### MCP resources, a prompt and read-only hints (`pi-contract.txt`)
+
+`ograph serve --mcp` now declares resources and prompts as well as tools. `scripts/agent/test_pi.mjs` calls every MCP method on the demo and checks literal values: `initialize` capabilities, `tools/list` (12 tools, only `verdict` without `readOnlyHint`), `resources/list`, `resources/templates/list`, `resources/read` for the ontology (byte-equal to `.ograph/ontology.ttl`), the incidents (4, INC-5377 first) and `ograph://incident/INC-5377` (top application ledger-db, chain `inc-5377-a7370ff7d4358525`, blast on ledger-db, INC-4120 similar), an unknown incident, `prompts/list`, `prompts/get` with and without its argument, `ping`, `resolve` and `cite_check` through `tools/call`, and an unknown method. Both parts pass. The pi extension's tool list had not been updated for `code` and `suspects`, so the committed contract test failed before this lane; it now lists all 12.
+
+The `investigate` prompt is built at compile time from `skills/ograph/references/investigation.md`. Each section keeps its rules, drops its example output, names the tool its `ograph VERB` command maps to, and stops at the ogrep hand-over. "What to report" is carried word for word. A unit test checks the tool order (before, chains, similar, blast, code, suspects, news) and the report text against the file. Whether the resources and the prompt help an agent is lane F's measurement. `scripts/agent/mcp_only.sh WORKSPACE INCIDENT` runs pi with MCP tools and resources only and the prompt's text as the task. Its one trial here stopped at the model call: the subscription's usage limit was reached, so no MCP-only answer was recorded.
+
+### `ograph resolve` (`resolve.txt`)
+
+`scripts/eval/resolve_eval.py` labels 228 mentions by a rule fixed before the first run: each catalog name, upper-cased, with `-` and `_` swapped, with one middle letter deleted or two swapped, and with a `-svc` suffix names its application; `-canary`, `-v2`, `legacy-` and a replaced last word (`-eu` to `-uk`) name none. Three catalogs: the demo (10 applications), RCAEval's online-boutique (11) and the gateway gate's six with its four bad names.
+
+| | mentions | name an application | resolved | wrong | recall |
+|---|---|---|---|---|---|
+| demo | 92 | 56 | 56 | 0 | 1.000 |
+| online-boutique | 86 | 53 | 52 | 0 | 0.981 |
+| gateway gate | 50 | 29 | 26 | 0 | 0.897 |
+| all | 228 | 138 | 134 | 0 | 0.971 |
+
+Precision is 1.000. The four misses are short names with `-svc` (`redis-svc`, `cart-svc`, `email-svc` score 0.91 to 0.93) and `currencies-svc` (0.88), which the gateway also quarantines: resolve refuses what a harvest refuses. The gate passes.
+
+### `ograph cite-check` (`cite-check.txt`)
+
+`scripts/eval/cite_eval.py` runs on a copy of the demo. The agent answer in `agent-run.txt` holds 9 citations (2 incidents, 7 application names), all real, and all 9 come back present. A planted answer adds fabricated citations to real ones: random chain digests, incident ids and IRIs no harvest wrote, application near-twins, a real chain cited at the wrong rank, and the 7 chains a narrower window (1800 s to 120 s) stops producing while their events stay.
+
+The first run of the first set missed 3 of 31: `legacy-checkout`, `legacy-payments-api` and `legacy-orders-api` score under 0.80 against their catalog name, so they read as plain words (precision 1.000, recall 0.903, gate FAIL). A name that extends a catalog name with words that are not filler now counts as an unknown application, by the gateway's own sibling rule. A second set, written after that change and before its first run, uses other twin forms (`-staging`, `-blue`, `old-`, `next-`, `-replica`) on other applications and another random seed.
+
+| set | citations | flagged as they should be (stale, unknown) | precision | recall | status exactly right |
+|---|---|---|---|---|---|
+| first, before the change | 51 | 31 (8, 23) | 1.000 | 0.903 | 48 |
+| first | 51 | 31 (8, 23) | 1.000 | 1.000 | 51 |
+| fresh | 64 | 44 (8, 36) | 1.000 | 1.000 | 64 |
+
+The real-answer sample is small: one answer, 9 citations, no chain ids. On `references/investigation.md`, run against the demo, cite-check flagged file names such as `2026-01-ledger-pool.md` as applications; a word joined to a path or a longer identifier no longer counts. That check is not part of the gate.
+
+### Session-start hook (`hook.txt`)
+
+`./x install-hook` adds a Claude Code `SessionStart` hook that runs `ograph status 2>/dev/null || true`. `scripts/eval/hook_eval.py` runs that command with `sh -c`, 20 times per state, on copies of the demo and of one RCAEval case. It is silent with no workspace, with every incident judged after a fresh harvest, and after a re-harvest. It prints one line naming the unjudged incidents, or the file edited after the harvest. All 9 states print what they should.
+
+The first run failed the time limit: medians of 92 to 111 ms and a slowest run of 248 ms. Every read command opened the store for writing, which writes and syncs `store.redb`; its modification time changed on each `ograph status`. On this external disk, with other builds running, that took about 100 ms; a copy on the internal disk took 20 ms. `ograph status` now opens the store read-only and falls back to a normal open when that fails. The store file is no longer touched, medians are 13 to 14 ms and the slowest run is 17.6 ms. The gate passes. The other read commands still open the store for writing.
+
+### What it does not change
+
+`cargo test --workspace` passes. The gateway gate's output is the same as `gateway.txt` except for timings. Correlation, ranking and similarity code did not change, so the RCAEval scores were not rerun.
