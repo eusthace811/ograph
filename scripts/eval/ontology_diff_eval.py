@@ -33,14 +33,14 @@ def drop_line(text, start):
 # name -> (ograph.ttl, shapes.ttl, the term a change to which must not be BREAKING, or None)
 MUTATIONS = {
     "remove used class evt:ConfigChange": (drop_line(TTL, "evt:ConfigChange a "), SHAPES, None),
-    "remove unused class evt:Experiment": (drop_line(TTL, "evt:Experiment a "), SHAPES, "evt:Experiment"),
+    "remove unused class evt:TraceSlow": (drop_line(TTL, "evt:TraceSlow a "), SHAPES, "evt:TraceSlow"),
     "remove used property evt:template": (drop_line(TTL, "evt:template a "), SHAPES, None),
     "remove unused property evt:codeLocation": (drop_line(TTL, "evt:codeLocation a "), SHAPES, "evt:codeLocation"),
     "narrow range disc:about to inc:Incident": (line_sub(TTL, "disc:about a ", r"rdfs:range og:Thing", "rdfs:range inc:Incident"), SHAPES, None),
     "widen range evt:on to og:Thing": (line_sub(TTL, "evt:on a ", r"rdfs:range ops:Application", "rdfs:range og:Thing"), SHAPES, None),
     "narrow domain evt:summary to evt:Alert": (line_sub(TTL, "evt:summary a ", r"rdfs:domain evt:Event", "rdfs:domain evt:Alert"), SHAPES, None),
     "drop subclass edge evt:Deployment < evt:Event": (line_sub(TTL, "evt:Deployment a ", r"rdfs:subClassOf evt:Event", "rdfs:subClassOf og:Thing"), SHAPES, None),
-    "drop subclass edge of unused evt:E2EFailure": (line_sub(TTL, "evt:E2EFailure a ", r"rdfs:subClassOf evt:Event", "rdfs:subClassOf og:Thing"), SHAPES, "evt:E2EFailure"),
+    "drop subclass edge of unused evt:Commit": (line_sub(TTL, "evt:Commit a ", r"rdfs:subClassOf evt:Event", "rdfs:subClassOf og:Thing"), SHAPES, "evt:Commit"),
     "close vocabulary evt:metric to one value": (TTL + '\nevt:metric og:vocabulary [ og:value "connections" ] .\n', SHAPES, None),
     "close vocabulary of unused evt:codeLocation": (TTL + '\nevt:codeLocation og:vocabulary [ og:value "a.rs:1" ] .\n', SHAPES, "evt:codeLocation"),
     "remove vocabulary value evt:severity SEV4": (line_sub(TTL, '  [ og:value "SEV4"', r'.*', '') .replace('"SEV3" ; rdfs:comment "Minor: limited impact." ],', '"SEV3" ; rdfs:comment "Minor: limited impact." ] .'), SHAPES, None),

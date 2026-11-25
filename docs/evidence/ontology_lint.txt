@@ -1,3 +1,4 @@
+# ontology_lint_eval.py at 645b52a (ontology 1.1, before deleting the dead terms)
 1. shipped ontology, empty store
    warning: declared but no code writes it (6): evt:E2EFailure, evt:Experiment, evt:signal "DEPENDENCY_CHANGE", evt:signal "DISCUSSION", evt:signal "E2E_FAILURE", evt:signal "EXPERIMENT"
    warning: event class no shape requires an evt:at of (1): evt:Experiment
@@ -18,4 +19,35 @@
    check exit 1; reported by check and validate: True
 4. 91 harvested stores: shapes matching nothing {'shape:IncidentOrder': 90, 'shape:News': 90, 'shape:Thread': 90, 'shape:Verdict': 91}
    check warnings by kind (stores with it) {'declared but no code writes it': 91, 'declared but the store has none': 91, 'event class no shape requires an evt:at of': 91}
+ONTOLOGY LINT GATE: PASS
+
+# diff_stores.py: ontology 1.2 (dead terms deleted) against the 91 stores harvested under 1.1
+workspaces: 91
+    1  class removed: evt:E2EFailure (unused)
+    1  class removed: evt:Experiment (unused)
+    1  vocabulary value removed: evt:signal "DEPENDENCY_CHANGE" (unused)
+    1  vocabulary value removed: evt:signal "DISCUSSION" (unused)
+    1  vocabulary value removed: evt:signal "E2E_FAILURE" (unused)
+    1  vocabulary value removed: evt:signal "EXPERIMENT" (unused)
+workspaces with a BREAKING change or a predicted quarantine: 0; stored facts that would be quarantined: 0
+DIFF STORES: PASS
+
+# ontology_lint_eval.py on ontology 1.2. In part 4 the one store with warnings is the demo copy, whose .ograph/ontology.ttl is still 1.1.
+1. shipped ontology, empty store
+   expected from the sources, unwritten: []
+   expected from the sources, untimed:   []
+   exit 0, problems 0; warnings equal the sources: True
+2. after merging a sample proposed.ttl
+   warning: property without a domain (2): ops:region, ops:runsOnCluster
+   warning: property without a range (2): ops:region, ops:runsOnCluster
+   warning: term still marked Proposed (3): ops:Cluster, ops:region, ops:runsOnCluster
+   warning: declared but no code writes it (3): ops:Cluster, ops:region, ops:runsOnCluster
+   proposed terms ['ops:Cluster', 'ops:region', 'ops:runsOnCluster']; flagged as proposed ['ops:Cluster', 'ops:region', 'ops:runsOnCluster']; exit 0; every term flagged: True
+3. shapes.ttl with sh:targetClass evt:Aletr
+   problem: shape:Paged in shapes.ttl names undeclared class evt:Aletr
+   validate: 0 violations, exit 0; focus nodes [['shape:Application', 10], ['shape:Chain', 7], ['shape:EpisodeOrder', 3], ['shape:Event', 21], ['shape:Incident', 4], ['shape:IncidentOrder', 3], ['shape:News', 3], ['shape:Paged', 0], ['shape:Thread', 16], ['shape:Verdict', 0]]
+   validate: matched nothing ['shape:Paged', 'shape:Verdict']
+   check exit 1; reported by check and validate: True
+4. 91 harvested stores: shapes matching nothing {'shape:IncidentOrder': 90, 'shape:News': 90, 'shape:Thread': 90, 'shape:Verdict': 91}
+   check warnings by kind (stores with it) {'declared but no code writes it': 1, 'declared but the store has none': 91, 'event class no shape requires an evt:at of': 1}
 ONTOLOGY LINT GATE: PASS

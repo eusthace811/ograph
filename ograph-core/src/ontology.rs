@@ -518,15 +518,15 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_ontology_warns_about_its_unwritten_and_untimed_events() {
-        let ont = Ontology::load_default().unwrap();
-        assert_eq!(
-            ont.lints(None),
-            [
-                "declared but no code writes it (6): evt:E2EFailure, evt:Experiment, evt:signal \"DEPENDENCY_CHANGE\", evt:signal \"DISCUSSION\", evt:signal \"E2E_FAILURE\", evt:signal \"EXPERIMENT\"",
-                "event class no shape requires an evt:at of (1): evt:Experiment",
-            ]
-        );
+    fn the_shipped_ontology_has_no_warnings() {
+        assert!(Ontology::load_default().unwrap().lints(None).is_empty());
+    }
+
+    #[test]
+    fn an_event_class_without_a_writer_or_a_required_time_is_flagged() {
+        let ttl = format!("{DEFAULT_TTL}\nevt:Experiment a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment \"An A/B test changed allocation.\" .\n");
+        let ont = Ontology::load(&ttl, DEFAULT_SHAPES).unwrap();
+        assert_eq!(ont.lints(None), ["declared but no code writes it (1): evt:Experiment", "event class no shape requires an evt:at of (1): evt:Experiment"]);
     }
 
     #[test]
@@ -544,7 +544,7 @@ mod tests {
         assert_eq!(lints[0], "property without a domain (1): ops:runsOnCluster");
         assert_eq!(lints[1], "property without a range (1): ops:runsOnCluster");
         assert_eq!(lints[2], "term still marked Proposed (2): ops:Cluster, ops:runsOnCluster");
-        assert_eq!(lints[3], "declared but no code writes it (8): evt:E2EFailure, evt:Experiment, ops:Cluster, ops:runsOnCluster, evt:signal \"DEPENDENCY_CHANGE\", evt:signal \"DISCUSSION\", evt:signal \"E2E_FAILURE\", evt:signal \"EXPERIMENT\"");
+        assert_eq!(lints[3], "declared but no code writes it (2): ops:Cluster, ops:runsOnCluster");
     }
 
     #[test]

@@ -11,7 +11,7 @@ ograph ontology check
 ```
 
 ```
-ontology v1.1: 26 classes, 62 properties, 8 closed vocabularies, 132 shapes; 0 problems
+ontology v1.2: 24 classes, 62 properties, 8 closed vocabularies, 136 shapes; 0 problems, 0 warnings
 ```
 
 It reports drift between the code and the file, such as a property the code writes that the
