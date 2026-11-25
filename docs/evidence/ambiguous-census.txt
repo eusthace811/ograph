@@ -1,0 +1,11 @@
+demo (deterministic, 31 threads without a cached answer): 34 quarantined facts, 0 facts quarantined for an ambiguous application name {}
+  demo catalog: 10 application names, closest pair ordersapi / paymentsapi at 0.670
+demo store with model answers #0 (0 failed model calls): 3 quarantined facts, 0 facts quarantined for an ambiguous application name {}
+demo store with model answers #1 (0 failed model calls): 3 quarantined facts, 0 facts quarantined for an ambiguous application name {}
+demo store with model answers #2 (0 failed model calls): 3 quarantined facts, 0 facts quarantined for an ambiguous application name {}
+demo store with model answers #3 (0 failed model calls): 3 quarantined facts, 0 facts quarantined for an ambiguous application name {}
+rcaeval: 90 cases, 666 quarantined facts, 74 facts quarantined for an ambiguous application name {'low score': 74} in 42 cases
+  rcaeval catalog (online-boutique fixture): 11 application names, closest pair emailservice / paymentservice at 0.816
+gateway gate (synthetic, by construction): 27 facts quarantined for an ambiguous application name {'sibling': 18, 'low score': 9}
+
+ties, the only kind context can settle, on real or realistic data (demo + stores + rcaeval): 0
