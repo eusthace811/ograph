@@ -244,7 +244,7 @@ fn asked(name: &str, discussions: &str) -> Vec<String> {
 
 #[test]
 fn the_first_harvest_tells_the_model_the_catalog_names_a_thread_shares_a_word_with() {
-    let inputs = asked("known-apps", "known_apps = true\n");
+    let inputs = asked("known-apps", "actions = false\nknown_apps = true\n");
     assert_eq!(inputs.len(), 2, "{inputs:?}");
     assert_eq!(inputs[0], "CardRail is down");
     assert!(inputs[1].starts_with("the gateway is down again\n\nKnown applications ("), "{}", inputs[1]);
@@ -253,5 +253,5 @@ fn the_first_harvest_tells_the_model_the_catalog_names_a_thread_shares_a_word_wi
 
 #[test]
 fn without_known_apps_a_thread_goes_to_the_model_alone() {
-    assert_eq!(asked("known-apps-off", ""), ["CardRail is down", "the gateway is down again"]);
+    assert_eq!(asked("known-apps-off", "actions = false\n"), ["CardRail is down", "the gateway is down again"]);
 }

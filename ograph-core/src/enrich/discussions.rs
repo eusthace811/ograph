@@ -140,6 +140,9 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>, actions: bool, known_apps:
         threads_out.push(Thread { node, ev, name, text, msgs, during });
     }
     let Some(llm) = ctx.llm else { return Ok(b) };
+    if known_apps && actions {
+        b.degraded.push("known_apps = true is used only with actions = false; the threads were sent without the catalog list".into());
+    }
     let p = prompt(ctx.ontology, actions);
     let prompt_hash = crate::llm::hash(&p);
     for (th, answer) in threads_out.into_iter().zip(llm.ask_all(&p, &texts)) {
