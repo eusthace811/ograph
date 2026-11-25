@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 const tools = new Map(), hooks = new Map();
 const { default: extension } = await import(pathToFileURL(process.argv[2]).href);
 extension({ registerTool(t) { tools.set(t.name, t); }, on(n, h) { hooks.set(n, h); } });
-assert.deepEqual([...tools.keys()].sort(), ["ograph_before", "ograph_blast", "ograph_chains", "ograph_cite_check", "ograph_code", "ograph_news", "ograph_resolve", "ograph_similar", "ograph_sparql", "ograph_suspects", "ograph_verdict", "ograph_why"]);
+assert.deepEqual([...tools.keys()].sort(), ["ograph_before", "ograph_blast", "ograph_chains", "ograph_cite_check", "ograph_code", "ograph_news", "ograph_resolve", "ograph_similar", "ograph_sparql", "ograph_suspects", "ograph_uses", "ograph_verdict", "ograph_why"]);
 const prompt = await hooks.get("before_agent_start")({ systemPrompt: "base" });
 assert.ok(prompt.systemPrompt.includes("ograph_before"));
 const ctx = { cwd: process.argv[3] };
@@ -60,7 +60,7 @@ const [init, list, resources, templates, ontology, incidents, incident, badUri, 
 ]);
 assert.deepEqual(init.result.capabilities, { prompts: {}, resources: {}, tools: {} });
 assert.deepEqual(list.result.tools.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name), ["verdict"]);
-assert.equal(list.result.tools.length, 12);
+assert.equal(list.result.tools.length, 13);
 assert.deepEqual(resources.result.resources.map((r) => [r.uri, r.mimeType]), [["ograph://ontology", "text/turtle"], ["ograph://incidents", "application/json"]]);
 assert.deepEqual(templates.result.resourceTemplates.map((r) => r.uriTemplate), ["ograph://incident/{id}"]);
 assert.equal(ontology.result.contents[0].text, readFileSync(`${ctx.cwd}/.ograph/ontology.ttl`, "utf8"));

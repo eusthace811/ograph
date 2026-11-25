@@ -941,6 +941,81 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn uses_lists_what_a_file_feeds_and_the_chains_and_verdicts_that_rest_on_it() {
+        let root = fixture("uses", &[
+            ("alerts", "db.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600))),
+            ("alerts", "api.json", &format!("[{}]", alert("payments-api", "ErrorRate", T - 300))),
+            ("incidents", "more.json", &format!(r#"[{{"id":"INC-1","title":"Checkout down"}},{{"id":"INC-2","service":"checkout","opened":{}}}]"#, T + 86_400)),
+        ]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let st = &ws.config.correlation;
+        let rank1 = sparql(&root, "SELECT ?c WHERE { ?c corr:rank 1 ; corr:leadsTo [ inc:id \"INC-1\" ] }")[0][0].clone();
+        ws.verdict(&rank1, true, "oncall", &["PM-1".into()]).unwrap();
+
+        let u = crate::query::uses(&ws.store, &ws.ontology, st, "db.json").unwrap();
+        assert_eq!(u.graphs, ["g:harvest/alerts/db.json"]);
+        let events: Vec<_> = u.events.iter().map(|e| (e.app.as_deref(), e.signal.as_str(), e.record.as_deref())).collect();
+        assert_eq!(events, [(Some("ledger-db"), "ALERT", Some("db.json#1"))]);
+        assert!(u.facts.iter().all(|f| f.also_in.is_empty() && f.graph == "g:harvest/alerts/db.json"));
+        let chains: Vec<_> = u.chains.iter().map(|c| (c.change, c.incident.as_str(), c.rank, c.rank_after, c.uses.len())).collect();
+        assert_eq!(chains, [("gone", "INC-1", Some(1), None, 1), ("moved", "INC-1", Some(2), Some(1), 0)]);
+        assert_eq!(u.chains[0].chain, rank1);
+        let verdicts: Vec<_> = u.verdicts.iter().map(|v| (v.chain.as_str(), v.state.as_str(), v.by.as_str())).collect();
+        assert_eq!(verdicts, [(rank1.as_str(), "accepted", "oncall")]);
+
+        // INC-1 is stated in both incident files, so it stays without one; INC-2 only in more.json.
+        let u = crate::query::uses(&ws.store, &ws.ontology, st, "more.json").unwrap();
+        assert_eq!(u.shared, ["id:inc/inc-1"]);
+        assert_eq!(u.events.iter().map(|e| e.node.as_str()).collect::<Vec<_>>(), ["id:inc/inc-2"]);
+        assert!(u.facts.iter().any(|f| f.subject == "id:inc/inc-1" && f.predicate == "evt:sourceRecord" && f.object == "more.json#1"));
+        assert!(!u.facts.iter().any(|f| f.subject == "id:inc/inc-1" && f.predicate != "evt:sourceRecord"));
+        assert!(u.chains.iter().all(|c| c.incident == "INC-2"));
+
+        let u = crate::query::uses(&ws.store, &ws.ontology, st, "incidents.json#1").unwrap();
+        assert_eq!(u.shared, ["id:inc/inc-1"]);
+        assert!(u.events.is_empty() && u.chains.is_empty());
+        assert!(crate::query::uses(&ws.store, &ws.ontology, st, "nothing.json").unwrap().facts.is_empty());
+    }
+
+    #[test]
+    fn uses_names_the_facts_of_other_files_that_would_lose_what_they_point_at() {
+        let thread = format!(r#"[{{"ts":"{}.000100","channel":"ops","text":"INC-10: rolled back checkout to 4.0.9"}}]"#, T - 100);
+        let root = fixture("uses-cascade", &[("discussions", "ops.json", &thread), ("incidents", "more.json", &format!(r#"[{{"id":"INC-10","service":"checkout","opened":{T}}}]"#))]);
+        let answer = r#"{"category":"UNKNOWN","sentiment":"urgent","apps":[],"calls":[],"actions":[{"kind":"ROLLBACK","app":"checkout","message":1,"quote":"rolled back checkout"}],"confidence":0.9}"#;
+        std::fs::write(root.join("answer.json"), answer).unwrap();
+        let cfg = root.join(".ograph/config.toml");
+        let model = format!("[llm.extract]\ncommand = [\"sh\", \"-c\", \"cat >/dev/null; cat '{}'\"]\nmodel = \"fixture\"\n", root.join("answer.json").display());
+        let config = std::fs::read_to_string(&cfg).unwrap().replace("path = \"ops.json\"\n", "path = \"ops.json\"\nactions = true\n");
+        std::fs::write(&cfg, config.clone() + &model).unwrap();
+        harvest(&root, None);
+        let during = "SELECT ?a WHERE { ?a evt:during ?i }";
+        assert_eq!(sparql(&root, during).len(), 1);
+        let ws = Workspace::open(&root).unwrap();
+        let u = crate::query::uses(&ws.store, &ws.ontology, &ws.config.correlation, "more.json").unwrap();
+        drop(ws);
+        let elsewhere: Vec<_> = u.facts.iter().filter(|f| f.because.is_some()).map(|f| (f.predicate.as_str(), f.object.as_str(), f.graph.as_str())).collect();
+        assert_eq!(elsewhere, [("evt:during", "id:inc/inc-10", "g:harvest/discussions/ops.json")]);
+
+        std::fs::remove_file(root.join("more.json")).unwrap();
+        std::fs::write(&cfg, config.replace("[[source]]\nkind = \"incidents\"\npath = \"more.json\"\n", "") + &model).unwrap();
+        harvest(&root, None);
+        assert!(sparql(&root, during).is_empty());
+    }
+
+    #[test]
+    fn a_source_path_is_keyed_as_the_harvest_keys_it() {
+        use crate::query::{source_key, split_record};
+        assert_eq!(split_record("runbooks/db.md:12"), ("runbooks/db.md", Some(":12")));
+        assert_eq!(split_record("logs.jsonl@1795386000000"), ("logs.jsonl", Some("@1795386000000")));
+        assert_eq!(split_record("notes#draft"), ("notes#draft", None));
+        let (root, cwd) = (Path::new("/w"), Path::new("/w/logs"));
+        assert_eq!(source_key(root, cwd, "a.jsonl#3"), "logs/a.jsonl#3");
+        assert_eq!(source_key(root, cwd, "/data/case/metrics.csv"), "/data/case/metrics.csv");
+        assert_eq!(source_key(Path::new("."), Path::new("/w"), "/w/runbooks/"), "runbooks");
+    }
+
+    #[test]
     fn similar_reports_only_the_current_verdict() {
         let root = fixture("similar-latest", &[("alerts", "alerts.json", &format!("[{},{}]", alert("ledger-db", "PoolSaturated", T - 600), alert("ledger-db", "PoolSaturated", T + 86_400 - 600)))]);
         std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T}}},{{"id":"INC-2","service":"checkout","opened":{}}}]"#, T + 86_400)).unwrap();
@@ -1321,7 +1396,7 @@ pub(crate) mod tests {
         let root = fixture("conflict-count", &[("incidents", "later.json", &later)]);
         let out = harvest(&root, None);
         let o = out.iter().find(|o| o.graph.contains("/incidents/")).unwrap();
-        assert_eq!((o.proposed, o.accepted, o.quarantined.len()), (10, 9, 1));
+        assert_eq!((o.proposed, o.accepted, o.quarantined.len()), (12, 11, 1));
     }
 
     #[test]

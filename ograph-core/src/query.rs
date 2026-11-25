@@ -1,4 +1,4 @@
-//! The investigation verbs on native paths: `before`, `blast`, `similar`, `why`, `news`, `code`.
+//! The investigation verbs on native paths: `before`, `blast`, `similar`, `why`, `uses`, `news`, `code`.
 //! SPARQL stays for ad hoc questions; these run on the indexes directly.
 
 use crate::correlate::{self, Ids, Settings, app_name, literal};
@@ -816,6 +816,343 @@ fn mentions(text: &str, node: &str) -> bool {
     text.match_indices(node).any(|(i, _)| {
         !text[..i].ends_with(name_char) && !text[i + node.len()..].starts_with(name_char)
     })
+}
+
+#[derive(Serialize)]
+pub struct Uses {
+    /// The file, directory or record, as harvests name it.
+    pub source: String,
+    /// The harvest graphs that hold its facts.
+    pub graphs: Vec<String>,
+    /// The naming source (`catalog`, `ownership` or `docs`) it feeds. Every other file's
+    /// application names are checked against it, so without it facts elsewhere can change too.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub naming: Option<String>,
+    pub facts: Vec<UsedFact>,
+    /// The events and incidents that no other source states.
+    pub events: Vec<UsedEvent>,
+    /// Nodes it states together with records of other files. They stay without it, and a
+    /// field only it set may take another record's value.
+    pub shared: Vec<String>,
+    /// The stored chains that would change without it, and those that would enter.
+    pub chains: Vec<ChainChange>,
+    /// The current verdict on each chain that would go or be relinked.
+    pub verdicts: Vec<UsedVerdict>,
+    pub quarantined: Vec<UsedQuarantine>,
+}
+
+#[derive(Serialize)]
+pub struct UsedFact {
+    pub subject: String,
+    pub predicate: String,
+    pub object: String,
+    pub graph: String,
+    /// Other sources that state the same fact; when there are none it goes with this source.
+    pub also_in: Vec<String>,
+    /// For a fact of another source: why its next harvest would quarantine it without this
+    /// one, such as an action whose incident goes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub because: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct UsedEvent {
+    pub node: String,
+    pub signal: String,
+    pub app: Option<String>,
+    pub at: Option<String>,
+    pub record: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ChainChange {
+    pub chain: String,
+    pub incident: String,
+    /// `gone`, `relinked` (another root or set of links), `moved` (another rank) or `new`.
+    pub change: &'static str,
+    pub rank: Option<usize>,
+    pub rank_after: Option<usize>,
+    /// Its root, links and incident that go with the source. Empty when the chain changes
+    /// through something else the source states, such as a dependency its links cross.
+    pub uses: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct UsedVerdict {
+    pub chain: String,
+    pub incident: String,
+    pub state: String,
+    pub by: String,
+    pub at: String,
+}
+
+#[derive(Serialize)]
+pub struct UsedQuarantine {
+    pub node: String,
+    pub fact: String,
+    pub reason: String,
+}
+
+/// A record id's file and its suffix: `path#n` (a JSON record), `path:n` (a line) or `path@n`
+/// (a time in milliseconds).
+pub fn split_record(t: &str) -> (&str, Option<&str>) {
+    match t.rfind(['#', ':', '@']) {
+        Some(i) if i > 0 && i + 1 < t.len() && t[i + 1..].bytes().all(|b| b.is_ascii_digit()) => (&t[..i], Some(&t[i..])),
+        _ => (t, None),
+    }
+}
+
+/// A path given relative to `cwd`, with an optional record suffix, as harvests key its file:
+/// relative to the workspace root when it is below it, absolute otherwise.
+pub fn source_key(root: &Path, cwd: &Path, arg: &str) -> String {
+    let (path, record) = split_record(arg);
+    let key = rel(&cwd.join(root), &cwd.join(path));
+    format!("{}{}", key.trim_end_matches('/'), record.unwrap_or_default())
+}
+
+const NAMING: [&str; 3] = ["catalog", "ownership", "docs"];
+
+/// `ograph uses`: what depends on a source file, a directory of them or one record. Its facts
+/// are those of the graphs keyed by the file and, in a graph that spans several files (the
+/// incidents), those of the nodes whose `evt:sourceRecord` names it. Chains are ranked again
+/// for every incident over a view of the store without those facts, so a chain that changes
+/// through a dependency the file states is found as well as one whose events go.
+pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &Settings, target: &str) -> anyhow::Result<Uses> {
+    let s = &store.snapshot()?;
+    let (key, record) = split_record(target);
+    let enc = crate::model::path_iri(key);
+    let below = |path: &str, top: &str| path == top || path.strip_prefix(top).is_some_and(|r| r.starts_with('/'));
+    let names = |r: &str| match record {
+        Some(suffix) => r.strip_prefix(key) == Some(suffix),
+        None => below(split_record(r).0, key),
+    };
+    let (harvest, quarantine) = (format!("{}harvest/", vocab::GRAPH), format!("{}/", vocab::QUARANTINE));
+    let (file_p, rec_p) = (s.iri(harv::FILE)?, s.iri(evt::SOURCE_RECORD)?);
+    let mut out = Uses { source: target.to_owned(), graphs: vec![], naming: None, facts: vec![], events: vec![], shared: vec![], chains: vec![], verdicts: vec![], quarantined: vec![] };
+    // Graphs keyed by the file, graphs of several files that read it, and every input graph.
+    let (mut own, mut spanning, mut input) = (Vec::new(), Vec::new(), FxHashSet::default());
+    let mut quarantines: Vec<(Id, bool)> = Vec::new();
+    let mut spanning_keys = Vec::new();
+    let graphs = s.graphs()?;
+    for &(g, _) in &graphs {
+        let Some(iri) = literal(s, g) else { continue };
+        let Some((source, path)) = iri.strip_prefix(&harvest).and_then(|r| r.split_once('/')) else { continue };
+        if source == "correlation" || source == "verdicts" {
+            continue;
+        }
+        input.insert(g);
+        let read = |p: Id| -> anyhow::Result<bool> {
+            for q in s.quads([Some(g), Some(p), None], GraphSel::Named(g)) {
+                if literal(s, q?[2]).is_some_and(|f| below(&f, key)) {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        };
+        if below(path, &enc) {
+            own.push(g);
+        } else if file_p.map(read).transpose()?.unwrap_or(false) {
+            spanning.push(g);
+            spanning_keys.push(format!("{source}/{path}"));
+        } else if source == "catalog" && below(&enc, path) {
+            out.naming = Some(source.to_owned());
+            out.graphs.push(vocab::compact(&iri));
+            continue;
+        } else {
+            continue;
+        }
+        if NAMING.contains(&source) {
+            out.naming = Some(source.to_owned());
+        }
+        out.graphs.push(vocab::compact(&iri));
+    }
+    for &(g, _) in &graphs {
+        let Some(rest) = literal(s, g).and_then(|iri| iri.strip_prefix(&quarantine).map(str::to_owned)) else { continue };
+        let own = rest.split_once('/').is_some_and(|(_, p)| below(p, &enc));
+        if own || spanning_keys.contains(&rest) {
+            // A record's entries, and a shared graph's, are those whose reason names it first.
+            quarantines.push((g, own && record.is_none()));
+        }
+    }
+
+    let mut derived: FxHashSet<[Id; 4]> = FxHashSet::default();
+    if record.is_none() {
+        for &g in &own {
+            for q in s.quads([None; 3], GraphSel::Named(g)) {
+                let q = q?;
+                if q[0] != g {
+                    derived.insert(q);
+                }
+            }
+        }
+    }
+    let mut shared = FxHashSet::default();
+    let by_record: Vec<Id> = if record.is_some() { own.iter().chain(&spanning).copied().collect() } else { spanning.clone() };
+    if let Some(rp) = rec_p {
+        for &g in &by_record {
+            let mut subjects = FxHashSet::default();
+            for q in s.quads([None, Some(rp), None], GraphSel::Named(g)) {
+                let q = q?;
+                if literal(s, q[2]).is_some_and(|r| names(&r)) {
+                    subjects.insert(q[0]);
+                }
+            }
+            for x in subjects {
+                let quads: Vec<[Id; 4]> = s.quads([Some(x), None, None], GraphSel::Named(g)).collect::<Result<_, _>>()?;
+                let only_here = quads.iter().filter(|q| q[1] == rp).all(|q| literal(s, q[2]).is_some_and(|r| names(&r)));
+                if only_here {
+                    derived.extend(quads);
+                } else {
+                    shared.insert(x);
+                    derived.extend(quads.into_iter().filter(|q| q[1] == rp && literal(s, q[2]).is_some_and(|r| names(&r))));
+                }
+            }
+        }
+    }
+
+    let gone_of = |derived: &FxHashSet<[Id; 4]>| -> anyhow::Result<(Vec<Id>, FxHashSet<Id>)> {
+        let mut subjects: Vec<Id> = derived.iter().map(|q| q[0]).collect::<FxHashSet<_>>().into_iter().collect();
+        subjects.sort_unstable();
+        let mut gone = FxHashSet::default();
+        'node: for &x in &subjects {
+            if shared.contains(&x) {
+                continue;
+            }
+            for q in s.quads([Some(x), None, None], GraphSel::AnyNamed) {
+                let q = q?;
+                if input.contains(&q[3]) && !derived.contains(&q) {
+                    continue 'node;
+                }
+            }
+            gone.insert(x);
+        }
+        Ok((subjects, gone))
+    };
+    let (subjects, gone) = gone_of(&derived)?;
+    // Other sources' facts that name what goes, or describe a node that loses a fact, are
+    // checked again by their next harvest, and SHACL can quarantine them.
+    let mut again = FxHashSet::default();
+    for &x in &subjects {
+        let side = if gone.contains(&x) { [None, None, Some(x)] } else { [Some(x), None, None] };
+        for q in s.quads(side, GraphSel::AnyNamed) {
+            let q = q?;
+            if input.contains(&q[3]) && !derived.contains(&q) {
+                again.insert(q[3]);
+            }
+        }
+    }
+    let mut because: FxHashMap<[Id; 4], String> = FxHashMap::default();
+    if !again.is_empty() {
+        let view = store.snapshot()?.without(derived.iter().copied())?;
+        let mut again: Vec<Id> = again.into_iter().collect();
+        again.sort_unstable();
+        for g in again {
+            let now: FxHashSet<oxrdf::Triple> = crate::gateway::rejected_again(s, ont, g)?.into_iter().map(|(t, _)| t).collect();
+            for (t, why) in crate::gateway::rejected_again(&view, ont, g)?.into_iter().filter(|(t, _)| !now.contains(t)) {
+                let ids = [s.id(&t.subject.clone().into())?, s.id(&t.predicate.clone().into())?, s.id(&t.object)?];
+                let [Some(x), Some(p), Some(o)] = ids else { continue };
+                because.insert([x, p, o, g], why);
+                if let Some(f) = s.iri(crate::gateway::fact_node(&t).as_str())? {
+                    for q in s.quads([Some(f), None, None], GraphSel::Named(g)) {
+                        derived.insert(q?);
+                    }
+                }
+            }
+        }
+        derived.extend(because.keys().copied());
+    }
+    let (subjects, gone) = if because.is_empty() { (subjects, gone) } else { gone_of(&derived)? };
+
+    let mut cache = FxHashMap::default();
+    let mut facts: Vec<UsedFact> = Vec::with_capacity(derived.len());
+    for q in &derived {
+        let [x, p, o, g] = *q;
+        let mut also_in: Vec<String> = s.graphs_of([x, p, o])?.into_iter().filter(|h| *h != g && input.contains(h) && !derived.contains(&[x, p, o, *h])).map(|h| graph_info(s, h, &mut cache).graph).collect();
+        also_in.sort();
+        facts.push(UsedFact { subject: vocab::compact(&literal(s, x).unwrap_or_default()), predicate: vocab::compact(&literal(s, p).unwrap_or_default()), object: crate::sparql::show(&s.term(o)?), graph: graph_info(s, g, &mut cache).graph, also_in, because: because.get(q).cloned() });
+    }
+    facts.sort_by(|a, b| (&a.subject, &a.predicate, &a.object, &a.graph).cmp(&(&b.subject, &b.predicate, &b.object, &b.graph)));
+    out.facts = facts;
+
+    let ids = Ids::new(s)?;
+    let one = |x: Id, p: &str| -> anyhow::Result<Option<Id>> { Ok(match s.iri(p)? { Some(p) => s.object(x, p)?, None => None }) };
+    for &x in &subjects {
+        if !gone.contains(&x) {
+            continue;
+        }
+        let Some(signal) = one(x, evt::SIGNAL)?.and_then(|v| literal(s, v)) else { continue };
+        out.events.push(UsedEvent {
+            node: vocab::compact(&literal(s, x).unwrap_or_default()),
+            signal,
+            app: one(x, evt::ON)?.map(|a| app_name(s, &ids, a)),
+            at: one(x, evt::AT)?.and_then(|v| literal(s, v)),
+            record: one(x, evt::SOURCE_RECORD)?.and_then(|v| literal(s, v)),
+        });
+    }
+    out.events.sort_by(|a, b| (&a.at, &a.node).cmp(&(&b.at, &b.node)));
+    out.shared = shared.iter().filter_map(|&x| literal(s, x)).map(|x| vocab::compact(&x)).collect();
+    out.shared.sort();
+
+    let gone_iris: FxHashSet<String> = gone.iter().filter_map(|&x| literal(s, x)).collect();
+    if !derived.is_empty() {
+        out.chains = chain_changes(s, store.snapshot()?.without(derived.iter().copied())?, st, &gone_iris)?;
+    }
+    for c in out.chains.iter().filter(|c| matches!(c.change, "gone" | "relinked")) {
+        let Some(chain) = s.iri(&crate::workspace::resolve_iri(&c.chain))? else { continue };
+        let Some(&v) = verdicts(s, chain)?.last() else { continue };
+        let e = verdict_event(s, v)?;
+        out.verdicts.push(UsedVerdict { chain: c.chain.clone(), incident: c.incident.clone(), state: e.state, by: e.by, at: e.at });
+    }
+
+    if let (Some(fp), Some(rp)) = (s.iri(harv::FACT)?, s.iri(harv::REASON)?) {
+        for (g, whole) in quarantines {
+            for q in s.quads([None, Some(fp), None], GraphSel::Named(g)) {
+                let q = q?;
+                let reason = s.object(q[0], rp)?.and_then(|r| literal(s, r)).unwrap_or_default();
+                if whole || reason.split_whitespace().next().is_some_and(names) {
+                    out.quarantined.push(UsedQuarantine { node: vocab::compact(&literal(s, q[0]).unwrap_or_default()), fact: literal(s, q[2]).unwrap_or_default(), reason });
+                }
+            }
+        }
+        out.quarantined.sort_by(|a, b| (&a.fact, &a.reason).cmp(&(&b.fact, &b.reason)));
+    }
+    Ok(out)
+}
+
+/// Every incident ranked as a harvest stores it, over the store and over `view`, the store
+/// without a source's facts, and the chains that differ.
+fn chain_changes(s: &Snapshot, view: Snapshot, st: &Settings, gone: &FxHashSet<String>) -> anyhow::Result<Vec<ChainChange>> {
+    type Stored = std::collections::BTreeMap<String, (usize, String, std::collections::BTreeSet<String>)>;
+    let stored = |a: &correlate::Analysis| -> Stored {
+        a.apps.iter().take(st.max_chains).enumerate().filter_map(|(k, r)| r.chain.as_ref().map(|c| (c.id.clone(), (k + 1, c.root.iri.clone(), c.links.iter().map(|l| l.iri.clone()).collect())))).collect()
+    };
+    let (ids, view_ids) = (Ids::new(s)?, Ids::new(&view)?);
+    let (Some(ty), Some(class)) = (s.iri(vocab::RDF_TYPE)?, s.iri(inc::INCIDENT)?) else { return Ok(vec![]) };
+    let mut out = Vec::new();
+    for i in s.subjects(ty, class)? {
+        let Ok(now) = ranked(s, &ids, i, st) else { continue };
+        let (before, after) = (stored(&now), ranked(&view, &view_ids, i, st).map(|a| stored(&a)).unwrap_or_default());
+        let incident = match s.iri(inc::ID)? {
+            Some(p) => s.object(i, p)?.and_then(|x| literal(s, x)),
+            None => None,
+        }
+        .unwrap_or_else(|| vocab::compact(&now.incident));
+        for (id, (rank, root, links)) in &before {
+            let change = match after.get(id) {
+                None => "gone",
+                Some((_, r, l)) if r != root || l != links => "relinked",
+                Some((k, ..)) if k != rank => "moved",
+                _ => continue,
+            };
+            let uses = std::iter::once(root).chain(links).chain(std::iter::once(&now.incident)).filter(|x| gone.contains(*x)).map(|x| vocab::compact(x)).collect();
+            out.push(ChainChange { chain: vocab::compact(id), incident: incident.clone(), change, rank: Some(*rank), rank_after: after.get(id).map(|a| a.0), uses });
+        }
+        for (id, (rank, ..)) in after.iter().filter(|(id, _)| !before.contains_key(*id)) {
+            out.push(ChainChange { chain: vocab::compact(id), incident: incident.clone(), change: "new", rank: None, rank_after: Some(*rank), uses: vec![] });
+        }
+    }
+    out.sort_by(|a, b| (&a.incident, a.rank.or(a.rank_after), &a.chain).cmp(&(&b.incident, b.rank.or(b.rank_after), &b.chain)));
+    Ok(out)
 }
 
 #[derive(Serialize)]

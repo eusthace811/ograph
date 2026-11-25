@@ -13,7 +13,7 @@ printf '{"jsonrpc":"2.0","id":1,"method":"blast","params":{"app":"ledger-db"}}\n
 - One JSON request per line, one JSON response per line.
 - Methods: `before {incident, window?}`, `chains {incident, rank?}`, `blast {app}`,
   `similar {incident}`, `code {incident, top?}`, `suspects {target, since?}`, `why {node}`,
-  `news {since?}`, `sparql {query, limit?}`, `resolve {mentions[]}`, `cite_check {text}`,
+  `uses {source}`, `news {since?}`, `sparql {query, limit?}`, `resolve {mentions[]}`, `cite_check {text}`,
   `verdict {chain, decision, evidence[], by}`.
 - `code` and `suspects` run ogrep on each call, so they are slower than the graph-only methods.
 - Every 5 s the server checks the files a harvest reads (for a `code` repository, its
@@ -27,7 +27,7 @@ printf '{"jsonrpc":"2.0","id":1,"method":"blast","params":{"app":"ledger-db"}}\n
 ograph serve --mcp
 ```
 
-The same twelve tools, named `before`, `chains`, `blast`, `similar`, `code`, `suspects`, `why`,
+The same thirteen tools, named `before`, `chains`, `blast`, `similar`, `code`, `suspects`, `why`, `uses`,
 `news`, `sparql`, `resolve`, `cite_check` and `verdict`, for any MCP client. Every tool but
 `verdict` carries `annotations.readOnlyHint: true`. There is no file watcher in this mode; run
 `ograph harvest` to refresh (it works while the MCP server is open).

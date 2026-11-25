@@ -896,3 +896,60 @@ Each changed file costs two rankings in views, about 8 ms at 88 files, so the co
 - **Interactions beyond one file.** A move that needs two files together, where neither alone is `needed` or `enough`, names no file; the output then says the changes move it together. No pair is tested. The gate has no case of this kind, so that message is not measured.
 - **Chains and quarantine are not candidates.** A view keeps them as its base has them. Verdict graphs are candidates, since a verdict can move a ranking through `precedent_weight`.
 - **Not in `serve` or the MCP tools.** Only the CLI has `--since`.
+
+## Phase 13, lane R: what depends on a source file (`uses.txt`)
+
+`ograph why` goes from a fact to the record it came from. The reverse question comes up when a log export or an incident file turns out to be wrong: which answers does it put in doubt? `ograph uses PATH[#n]` lists the facts a file or record gave, the events and incidents that would go without it, the chains it would change or remove (with their incidents and ranks), the verdicts on those chains, and its quarantined proposals. Chains are not traced link by link alone: a file can also state the dependency edge a link crosses. So `uses` ranks every incident again over a view of the store without the file's facts, and compares that with the ranking over the store as it is.
+
+### Gate, written before the code
+
+Prediction against reality. For each sampled file: run `ograph --json uses FILE` on a copy of the store, delete the file, run `ograph harvest`, and compare the store before and after.
+
+| Category | Measured (before minus after) | Predicted (from `uses`) |
+|---|---|---|
+| Facts | Triples of the union graph outside correlation, verdict and quarantine graphs, leaving out facts about harvest graph nodes (`harv:` bookkeeping), present before and absent after | `facts` that no other source states (`also_in` empty) |
+| Chains | Chains present before that are absent after, or whose incident, root or set of links differs | `chains` with change `gone` or `relinked` |
+| Verdicts | Current verdicts (not superseded) on a measured chain | `verdicts` |
+| New chains (reported, not in the pass) | Chains present after and absent before | `chains` with change `new` |
+| Rank moves (reported, not in the pass) | Chains present before and after with another `corr:rank` | `chains` with change `moved` |
+| Quarantine (reported, not in the pass) | Quarantine entries present before and absent after | `quarantined` |
+
+Data. (1) A copy of `examples/demo` after `python3 generate.py`, harvested with the model answers its `.ograph/cache` holds; every source file is a trial. (2) A workspace under `target/` of 12 RCAEval cases drawn with seed 13 (inputs symlinked read-only from `data/rcaeval-cases`): each case's incidents, metrics, logs and traces, the first case's ownership and the online-boutique catalog. All incident files are one `incidents` batch, so a case's incident file shares its graph with the others. 16 of its files are drawn with seed 13. Before any trial each incident's rank-1 chain is accepted as a verdict, so the verdict category is not empty. Each trial starts from a copy of the same store.
+
+Out of scope, stated before the run:
+- Files of naming sources (`catalog`, `ownership`, `docs`). Every other file's names are checked against them, so removing one can quarantine or rename facts anywhere. They are run and reported apart, and `uses` says so for such a file.
+- Facts of an incident that records in another file also state. Without the file, a field may take another record's value rather than go. These triples are left out of both sets and counted.
+
+Pass: precision and recall 1.000 on facts, chains and verdicts over the in-scope files. Also: `uses` time per file on the 90-case merged store, `cargo test --workspace` passes, and RCAEval chain AC@1 0.93 and `similar_eval.py` 82/89 = 0.92 unchanged (`--out` under `target/`).
+
+### Results
+
+**Gate: PASS** (`uses.txt`). Over the 25 in-scope trials (9 demo files, 16 RCAEval files), precision and recall are 1.000 in every category:
+
+| Category | Correct / measured / predicted |
+|---|---|
+| Facts | 1773 / 1773 / 1773 |
+| Chains gone or relinked | 95 / 95 / 95 |
+| Verdicts on them | 19 / 19 / 19 |
+| New chains | 9 / 9 / 9 |
+| Rank moves | 3 / 3 / 3 |
+| Quarantine entries | 20 / 20 / 20 |
+
+No sampled incident was stated in two files, so the shared-incident exclusion left out 0 triples; `uses_lists_what_a_file_feeds_and_the_chains_and_verdicts_that_rest_on_it` covers that case. Of the naming sources, `ownership.jsonl` and the catalog file were exact. Each runbook missed the facts of an alert in another file whose application it had named by alias (`pay-gw`, `finder`): facts recall 0.659 (27 of 41), precision 1.000. That is the out-of-scope cascade, and `uses` marks such a file with `naming`.
+
+In this sample, every chain that went or was relinked had a root, link or incident from the file (a non-empty `uses`). The 9 new chains and 3 rank moves came from ranking again: following links to the file's events finds the chains that go, but not the chains that move up to take their place.
+
+`uses` on the 90-case merged store from `similar_eval.py`, 12 files: median 0.26 s, max 0.61 s. Most of that time ranks all 90 incidents twice.
+
+**What changed during the gate.** These were fixes to the measurement and to the command, made before the passing run. No prediction was tuned against a held-out file.
+
+- **Deleting the file.** The first run deleted only the file, and nothing was removed. A harvest keeps the last facts of a configured path it cannot read, or of a directory that now lists nothing, as it would for an unmounted share. The gate now also removes the `[[source]]` entry when that entry names the file, or names a directory the file was the last one in. `docs/REFERENCE.md` gives the same instruction to users.
+- **The graph node.** The chain dump counted the correlation graph's own node as a chain. It now counts only chains.
+- **Facts of other files.** On the demo with the model's answers, removing `incidents.json` also removed 16 facts of `chat-actions`: the `evt:during` link of operator actions, and their model provenance. SHACL quarantines an `evt:during` whose incident is gone at the next harvest of that file. `uses` now runs the gateway's checks again on every other graph that names a node that goes, over a view of the store without the file's facts, and lists what they would reject, with `because`. `uses_names_the_facts_of_other_files_that_would_lose_what_they_point_at` checks this against a real re-harvest.
+- **The model.** A thread whose answer is not JSON is not cached, so every harvest asks the model again. The trials now use a stub model that answers no JSON, with the answers the demo's cache holds. This costs nothing, and the harvests before and after see the same answers.
+
+**Not measured.** I could not measure the operator-action cascade on the demo with live model answers. The passing run uses the cached answers, which hold no actions. A run with the model (`--model`) stopped when pi reported the subscription's usage limit. The unit test above covers that case with a stand-in model.
+
+**No regression.** `rcaeval_score.py` on the 90 cases gives chain AC@1 0.93 with per-case rankings identical to `integrate-phase-12`. `similar_eval.py --out target/rcaeval-merged` gives 82/89 = 0.92. Apart from timings, both outputs are identical to `rcaeval-final.txt` and `similar-eval.txt`. `incident_conflicts_eval.py`, `known_at_gate.py`, `hook_eval.py` and the pi and MCP contract pass. `cargo test --workspace` passes 90 + 20 + 12, and clippy with `--all-targets` reports nothing. Each incident now carries one `evt:sourceRecord` per record that states it, so an incident batch proposes one more fact per record: `a_withheld_value_counts_as_proposed` now expects 12 proposed and 11 accepted.
+
+**Verdict: KEEP.** `ograph uses PATH[#n]` (text and `--json`) and the MCP and JSON-RPC tool `uses {source}` ship on by default.

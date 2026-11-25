@@ -677,9 +677,18 @@ impl Snapshot {
 
     /// This view with the graphs `which` selects taken back to the time of `d`, and every other
     /// graph as it is now.
-    pub fn revert(mut self, d: &Delta, which: impl Fn(Id) -> bool) -> Result<Self> {
+    pub fn revert(self, d: &Delta, which: impl Fn(Id) -> bool) -> Result<Self> {
         let hidden: FxHashMap<[Id; 4], i64> = d.hidden.iter().filter(|(q, _)| which(q[3])).map(|(&q, &t)| (q, t)).collect();
         let restored: FxHashMap<[Id; 4], i64> = d.restored.iter().filter(|(q, _)| which(q[3])).map(|(&q, &t)| (q, t)).collect();
+        self.apply(hidden, restored)
+    }
+
+    /// This view without `quads` (`[s, p, o, g]`), as if no graph had stated them.
+    pub fn without(self, quads: impl IntoIterator<Item = [Id; 4]>) -> Result<Self> {
+        self.apply(quads.into_iter().map(|q| (q, 0)).collect(), FxHashMap::default())
+    }
+
+    fn apply(mut self, hidden: FxHashMap<[Id; 4], i64>, restored: FxHashMap<[Id; 4], i64>) -> Result<Self> {
         let mut hidden_per_triple: FxHashMap<[Id; 3], u32> = FxHashMap::default();
         for q in hidden.keys() {
             *hidden_per_triple.entry([q[0], q[1], q[2]]).or_default() += 1;

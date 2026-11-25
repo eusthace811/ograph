@@ -40,3 +40,22 @@ Each fact names its graph (`g:harvest/<source>/<file>`), extractor and time. For
 model-proposed fact it adds the model, the prompt hash and the confidence. Events also carry
 `evt:sourceRecord` (`alerts.json#3`, `metrics.csv:347`, `logs.jsonl@1795386000000`): open that
 record in its own system for the raw detail.
+
+## What a wrong source puts in doubt
+
+When a log export, an incident file or a runbook turns out to be wrong, ask what rests on it:
+
+```bash
+ograph uses logs/2026-11-22.jsonl          # a file, or a directory of them
+ograph uses incidents.json#4               # one record, as evt:sourceRecord names it
+```
+
+It lists the file's facts (`also_in` names other sources that state the same fact, so those
+stay), the events and incidents only it states, facts of other files that would be quarantined
+without it (`because`), the chains that would go, be relinked, move or enter (with incident
+and rank), the current verdicts on chains that go or are relinked, and its quarantined
+proposals. Re-open each listed verdict before you rely on it. For a `catalog`, `ownership` or
+`docs` file the answer says `naming`: names in every other file resolve against it, so more
+can change than it lists. To take a file out, delete it and remove its `[[source]]` entry if
+the entry names it; ograph keeps the facts of a configured path it cannot read.
+

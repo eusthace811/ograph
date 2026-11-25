@@ -46,6 +46,7 @@ python3 scripts/eval/rcaeval_score.py --bin $B/ograph --cases $M --out target/rc
 python3 scripts/eval/chain_scores_gate.py --bin $B/ograph --cases $M --reuse --also examples/demo > target/chain-scores-gate.txt
 python3 scripts/eval/precedent_eval.py --bin $B/ograph --cases $M --out target/precedent > $E/precedent.txt
 python3 scripts/eval/incident_conflicts_eval.py --bin $B/ograph --demo examples/demo --cases $M --work target/incident-conflicts > $E/incident-conflicts.txt
+python3 scripts/eval/uses_gate.py --bin $B/ograph --demo examples/demo --cases data/rcaeval-cases --work target/uses-gate --merged data/rcaeval-merged > $E/uses.txt
 # $E/lab-check.txt and $E/lab-browser.txt keep the lane's notes above these outputs. The browser gate needs Chrome.
 for w in examples/demo data/rcaeval-merged; do n=$(basename $w); python3 scripts/eval/lab_check.py --bin $B/ograph --root $w --out target/lab-$n.html > target/lab-check-$n.txt; node scripts/eval/lab_browser.mjs target/lab-$n.html target/lab-$n > target/lab-browser-$n.txt; done
 # Ontology tooling, on a copy of the demo with no model and no source that asks for one.
