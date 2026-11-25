@@ -1,0 +1,137 @@
+
+examples/demo, INC-5377
+| step | top 5 moved (plain chains) | files named by --since | pass |
+|---|---|---|---|
+| d1 edit alerts.json: drop the LedgerPoolSaturated alert before INC-5377 | yes | g:harvest/alerts/alerts.json | yes |
+| d2 edit news.jsonl: one more vendor item | no | none | yes |
+| W1 since t0 after d2 | yes | g:harvest/alerts/alerts.json (needed, enough) | yes |
+| d3 edit deployments.jsonl: drop payments-api 2.3.1 | no | none | yes |
+| d4 edit runbooks/platform.md: one more line | no | none | yes |
+| d5 edit config.jsonl: drop the ledger-db max_connections change | no | none | yes |
+| W2 since t3 after d5 | no | none | yes |
+| d6 edit alerts.json: back as generated | yes | g:harvest/alerts/alerts.json | yes |
+
+c-011f3b9bc3 (INC-011F3B, top 5 before: emailservice, redis, currencyservice, cartservice, checkoutservice; Z = adservice, Z3 = paymentservice); the steps moved the ranking as designed: yes
+
+c-011f3b9bc3
+| step | top 5 moved (plain chains) | files named by --since | pass |
+|---|---|---|---|
+| s1 add alerts/a1.json (adservice, 60 s before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s2 add alerts/old.json (3 days before) | no | none | yes |
+| s3 edit ownership.jsonl | no | none | yes |
+| s4 add alerts/a2.json (paymentservice, 90 s before) | yes | g:harvest/alerts/alerts/a2.json | yes |
+| s5 add alerts/a2dup.json (same alert) | no | none | yes |
+| W1 since t0 after s5 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (enough), g:harvest/alerts/alerts/a2dup.json (enough) | yes |
+| s6 edit alerts/a1.json (3 days before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s7 remove alerts/old.json | no | none | yes |
+| s8 remove alerts/a2.json | no | none | yes |
+| s9 remove alerts/a2dup.json | yes | g:harvest/alerts/alerts/a2dup.json | yes |
+| s10 edit metrics.csv (drop emailservice) | no | none | yes |
+| W2 since t5 after s10 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (needed), g:harvest/alerts/alerts/a2dup.json (needed), g:harvest/metrics/metrics.csv (enough) | yes |
+| W3 since t0 after s10 | no | none | yes |
+
+c-025a43e8ef (INC-025A43, top 5 before: checkoutservice, emailservice, redis, cartservice, recommendationservice; Z = adservice, Z3 = currencyservice); the steps moved the ranking as designed: yes
+
+c-025a43e8ef
+| step | top 5 moved (plain chains) | files named by --since | pass |
+|---|---|---|---|
+| s1 add alerts/a1.json (adservice, 60 s before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s2 add alerts/old.json (3 days before) | no | none | yes |
+| s3 edit ownership.jsonl | no | none | yes |
+| s4 add alerts/a2.json (currencyservice, 90 s before) | yes | g:harvest/alerts/alerts/a2.json | yes |
+| s5 add alerts/a2dup.json (same alert) | no | none | yes |
+| W1 since t0 after s5 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (enough), g:harvest/alerts/alerts/a2dup.json (enough) | yes |
+| s6 edit alerts/a1.json (3 days before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s7 remove alerts/old.json | no | none | yes |
+| s8 remove alerts/a2.json | no | none | yes |
+| s9 remove alerts/a2dup.json | yes | g:harvest/alerts/alerts/a2dup.json | yes |
+| s10 edit metrics.csv (drop checkoutservice) | yes | g:harvest/metrics/metrics.csv | yes |
+| W2 since t5 after s10 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (needed), g:harvest/alerts/alerts/a2dup.json (needed), g:harvest/metrics/metrics.csv (needed, enough) | yes |
+| W3 since t0 after s10 | yes | g:harvest/metrics/metrics.csv (needed, enough) | yes |
+
+c-073e220e96 (INC-073E22, top 5 before: recommendationservice, frontend, adservice, cartservice, productcatalogservice; Z = checkoutservice, Z3 = currencyservice); the steps moved the ranking as designed: yes
+
+c-073e220e96
+| step | top 5 moved (plain chains) | files named by --since | pass |
+|---|---|---|---|
+| s1 add alerts/a1.json (checkoutservice, 60 s before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s2 add alerts/old.json (3 days before) | no | none | yes |
+| s3 edit ownership.jsonl | no | none | yes |
+| s4 add alerts/a2.json (currencyservice, 90 s before) | yes | g:harvest/alerts/alerts/a2.json | yes |
+| s5 add alerts/a2dup.json (same alert) | no | none | yes |
+| W1 since t0 after s5 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (enough), g:harvest/alerts/alerts/a2dup.json (enough) | yes |
+| s6 edit alerts/a1.json (3 days before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s7 remove alerts/old.json | no | none | yes |
+| s8 remove alerts/a2.json | no | none | yes |
+| s9 remove alerts/a2dup.json | yes | g:harvest/alerts/alerts/a2dup.json | yes |
+| s10 edit metrics.csv (drop recommendationservice) | yes | g:harvest/metrics/metrics.csv | yes |
+| W2 since t5 after s10 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (needed), g:harvest/alerts/alerts/a2dup.json (needed), g:harvest/metrics/metrics.csv (needed, enough) | yes |
+| W3 since t0 after s10 | yes | g:harvest/metrics/metrics.csv (needed, enough) | yes |
+
+c-0776f54cd9 (INC-0776F5, top 5 before: checkoutservice, paymentservice, redis; Z = adservice, Z3 = cartservice); the steps moved the ranking as designed: yes
+
+c-0776f54cd9
+| step | top 5 moved (plain chains) | files named by --since | pass |
+|---|---|---|---|
+| s1 add alerts/a1.json (adservice, 60 s before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s2 add alerts/old.json (3 days before) | no | none | yes |
+| s3 edit ownership.jsonl | no | none | yes |
+| s4 add alerts/a2.json (cartservice, 90 s before) | yes | g:harvest/alerts/alerts/a2.json | yes |
+| s5 add alerts/a2dup.json (same alert) | no | none | yes |
+| W1 since t0 after s5 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (enough), g:harvest/alerts/alerts/a2dup.json (enough) | yes |
+| s6 edit alerts/a1.json (3 days before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s7 remove alerts/old.json | no | none | yes |
+| s8 remove alerts/a2.json | no | none | yes |
+| s9 remove alerts/a2dup.json | yes | g:harvest/alerts/alerts/a2dup.json | yes |
+| s10 edit metrics.csv (drop checkoutservice) | yes | g:harvest/metrics/metrics.csv | yes |
+| W2 since t5 after s10 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (needed), g:harvest/alerts/alerts/a2dup.json (needed), g:harvest/metrics/metrics.csv (needed, enough) | yes |
+| W3 since t0 after s10 | yes | g:harvest/metrics/metrics.csv (needed, enough) | yes |
+
+c-0abf02c950 (INC-0ABF02, top 5 before: emailservice, redis; Z = adservice, Z3 = cartservice); the steps moved the ranking as designed: yes
+
+c-0abf02c950
+| step | top 5 moved (plain chains) | files named by --since | pass |
+|---|---|---|---|
+| s1 add alerts/a1.json (adservice, 60 s before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s2 add alerts/old.json (3 days before) | no | none | yes |
+| s3 edit ownership.jsonl | no | none | yes |
+| s4 add alerts/a2.json (cartservice, 90 s before) | yes | g:harvest/alerts/alerts/a2.json | yes |
+| s5 add alerts/a2dup.json (same alert) | no | none | yes |
+| W1 since t0 after s5 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (enough), g:harvest/alerts/alerts/a2dup.json (enough) | yes |
+| s6 edit alerts/a1.json (3 days before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s7 remove alerts/old.json | no | none | yes |
+| s8 remove alerts/a2.json | no | none | yes |
+| s9 remove alerts/a2dup.json | yes | g:harvest/alerts/alerts/a2dup.json | yes |
+| s10 edit metrics.csv (drop emailservice) | no | none | yes |
+| W2 since t5 after s10 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (needed), g:harvest/alerts/alerts/a2dup.json (needed), g:harvest/metrics/metrics.csv (enough) | yes |
+| W3 since t0 after s10 | no | none | yes |
+
+c-0ae1ec693f (INC-0AE1EC, top 5 before: checkoutservice, cartservice, emailservice, redis, paymentservice; Z = adservice, Z3 = currencyservice); the steps moved the ranking as designed: yes
+
+c-0ae1ec693f
+| step | top 5 moved (plain chains) | files named by --since | pass |
+|---|---|---|---|
+| s1 add alerts/a1.json (adservice, 60 s before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s2 add alerts/old.json (3 days before) | no | none | yes |
+| s3 edit ownership.jsonl | no | none | yes |
+| s4 add alerts/a2.json (currencyservice, 90 s before) | yes | g:harvest/alerts/alerts/a2.json | yes |
+| s5 add alerts/a2dup.json (same alert) | no | none | yes |
+| W1 since t0 after s5 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (enough), g:harvest/alerts/alerts/a2dup.json (enough) | yes |
+| s6 edit alerts/a1.json (3 days before) | yes | g:harvest/alerts/alerts/a1.json | yes |
+| s7 remove alerts/old.json | no | none | yes |
+| s8 remove alerts/a2.json | no | none | yes |
+| s9 remove alerts/a2dup.json | yes | g:harvest/alerts/alerts/a2dup.json | yes |
+| s10 edit metrics.csv (drop checkoutservice) | yes | g:harvest/metrics/metrics.csv | yes |
+| W2 since t5 after s10 | yes | g:harvest/alerts/alerts/a1.json (needed, enough), g:harvest/alerts/alerts/a2.json (needed), g:harvest/alerts/alerts/a2dup.json (needed), g:harvest/metrics/metrics.csv (needed, enough) | yes |
+| W3 since t0 after s10 | yes | g:harvest/metrics/metrics.csv (needed, enough) | yes |
+
+merged store of 90 cases: first harvest 8.6 s
+
+one process per call, median of 5 (range)
+| incident | files changed since T | graphs changed | ranking moved | causes named | chains (ms) | chains --since T (ms) |
+|---|---|---|---|---|---|---|
+| INC-011F3B | 1 | 1 | yes | g:harvest/metrics/c-011f3b9bc3/metrics.csv | 11 (11 to 12) | 16 (15 to 17) |
+| INC-025A43 | 10 | 9 | yes | g:harvest/metrics/c-025a43e8ef/metrics.csv | 11 (10 to 12) | 42 (42 to 42) |
+| INC-073E22 | 90 | 88 | yes | g:harvest/metrics/c-073e220e96/metrics.csv | 12 (11 to 12) | 630 (624 to 638) |
+
+GATE PASSED

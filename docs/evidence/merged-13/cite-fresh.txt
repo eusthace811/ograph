@@ -1,0 +1,15 @@
+## agent answer (docs/evidence/agent-run.txt): 9 citations, 0 flagged
+  present  incident  INC-5377  (an incident in the graph)
+  present  app       ledger-db  (the catalog application id:app/ledger-db)
+  present  app       payments  (the catalog application id:app/payments-api)
+  present  app       checkout  (the catalog application id:app/checkout)
+  present  app       payments-api  (the catalog application id:app/payments-api)
+  present  app       orders-api  (the catalog application id:app/orders-api)
+  present  app       inventory  (the catalog application id:app/inventory)
+  present  app       web-frontend  (the catalog application id:app/web-frontend)
+  present  incident  INC-4120  (an incident in the graph)
+
+## planted answer (set fresh): 64 citations; 44 should be flagged (8 stale, 36 unknown), 20 present
+extracted 64 of 64; status exactly right for 64
+flags 44, right 44; precision 1.000  recall 1.000
+CITE-CHECK GATE: PASS

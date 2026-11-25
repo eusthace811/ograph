@@ -1,0 +1,47 @@
+generated 3520099 quads in 767.924 ms (scale 1, 30 days of history)
+compaction: 1088.0 MiB -> 658.4 MiB in 1683.597 ms
+
+| load (s) | quads/s | on disk (MiB) | bytes/quad | open (ms) | union triples |
+|---|---|---|---|---|---|
+| 17.5 | 200864 | 658.4 | 196 | 2.450 | 3520099 |
+
+| table | entries | stored MiB | overhead MiB |
+|---|---|---|---|
+| id2term | 1120065 | 42.6 | 5.1 |
+| hash2id | 1120065 | 25.6 | 11.2 |
+| time | 1100000 | 16.8 | 7.9 |
+| app_time | 1100000 | 25.2 | 11.9 |
+| graphs | 32 | 0.0 | 0.0 |
+| born | 32 | 0.0 | 0.0 |
+| added | 0 | 0.0 | 0.0 |
+| history | 0 | 0.0 | 0.0 |
+| uspo | 3520099 | 94.0 | 2.4 |
+| upos | 3520099 | 94.0 | 2.4 |
+| uosp | 3520099 | 94.0 | 2.4 |
+| gspo | 3520099 | 107.4 | 3.9 |
+| spog | 3520099 | 107.4 | 3.9 |
+
+oxigraph in-memory load: 2217.734 ms
+
+correctness: 0 mismatches over 41 queries (against Oxigraph and native)
+
+| workload | rows | SPARQL p50 (ms) | SPARQL max (ms) | native p50 (ms) | native max (ms) | Oxigraph p50 (ms) |
+|---|---|---|---|---|---|---|
+| W1 Bedrock incidents in us-east-1 | 1938 | 11.708 | 11.708 | 9.673 | 9.673 | 8.457 |
+| W2 10 min before incident (20) | 76 | 0.170 | 0.450 | 0.004 | 0.004 | 0.101 |
+| W3 blast radius, hub app | 19999 | 20.086 | 20.086 | 15.680 | 15.680 | 142.376 |
+| W3 blast radius (20 apps) | 42185 | 0.015 | 19.689 | 0.005 | 17.210 | 0.016 |
+
+re-harvest of one day graph (98268 quads), unchanged: removed 0, added 0 in 63.762 ms
+re-harvest with changed timestamps: removed 3276, added 3276 in 191.507 ms
+re-harvest back to the original: removed 3276, added 3276 in 1853.285 ms
+
+history after the two replaces: 6552 rows in `history` (480 KiB), 3276 in `added` (136 KiB)
+view of the store between them: built in 4.374 ms, hides 3276 quads, restores 3276; 0 mismatches over 44 answers (native and SPARQL on the view against the native answers saved then)
+
+| workload on the view | native p50 (ms) | SPARQL p50 (ms) |
+|---|---|---|
+| W1 | 12.111 | 15.090 |
+| W2, one incident | 0.142 | 0.218 |
+| W3 blast radius, hub app | 19.240 | 20.840 |
+after the replaces: W2 native rows 76, SPARQL rows 76 (must equal the W2 rows above)

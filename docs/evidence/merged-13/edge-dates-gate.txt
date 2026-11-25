@@ -1,0 +1,53 @@
+dated harvest:
+  harvest/catalog//Volumes/External%20Disk/Github/graph-rag/.claude/worktrees/integrate-phase-13/target/p13/edge-dates-gate/shop: 13 proposed, 13 accepted, 0 quarantined, +18 -0 quads (0.01 s)
+  harvest/alerts/alerts.json: 28 proposed, 28 accepted, 0 quarantined, +33 -0 quads (0.01 s)
+  harvest/incidents/all: 16 proposed, 16 accepted, 0 quarantined, +22 -0 quads (0.00 s)
+  harvest/correlation/inc-a: 7 proposed, 7 accepted, 0 quarantined, +12 -0 quads (0.00 s)
+  harvest/correlation/inc-b: 14 proposed, 14 accepted, 0 quarantined, +19 -0 quads (0.00 s)
+  harvested 5 batches in 0.1 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+
+undated harvest:
+  harvest/catalog//Volumes/External%20Disk/Github/graph-rag/.claude/worktrees/integrate-phase-13/target/p13/edge-dates-gate/shop: 8 proposed, 8 accepted, 0 quarantined, +14 -0 quads, DEGRADED: /Volumes/External Disk/Github/graph-rag/.claude/worktrees/integrate-phase-13/target/p13/edge-dates-gate/shop: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0 (0.01 s)
+  harvest/alerts/alerts.json: 28 proposed, 28 accepted, 0 quarantined, +33 -0 quads (0.01 s)
+  harvest/incidents/all: 16 proposed, 16 accepted, 0 quarantined, +22 -0 quads (0.00 s)
+  harvest/correlation/inc-a: 14 proposed, 14 accepted, 0 quarantined, +19 -0 quads (0.00 s)
+  harvest/correlation/inc-b: 14 proposed, 14 accepted, 0 quarantined, +19 -0 quads (0.00 s)
+  harvested 5 batches in 0.0 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+
+chains INC-A, dated:
+  id:inc/inc-a on web at 2026-01-11T00:00:00Z: 1 candidate events
+    1. api                    score 0.700
+       id:chain/inc-a-f6bfa7b90a9ff6b8 0.70: api:ALERT -> incident
+         0.70  api:ALERT -> incident  (time 0.50, severity 1.00, catalog dependency)
+    not followed: web -> fraud, added to the repository at 2026-01-21T00:00:00Z, after the incident opened
+
+chains INC-A, undated:
+  id:inc/inc-a on web at 2026-01-11T00:00:00Z: 2 candidate events
+    1. fraud                  score 0.960
+       id:chain/inc-a-e783040ab41f8565 0.96: fraud:ALERT -> incident
+         0.96  fraud:ALERT -> incident  (time 0.93, severity 1.00, catalog dependency)
+    2. api                    score 0.700
+       id:chain/inc-a-f6bfa7b90a9ff6b8 0.70: api:ALERT -> incident
+         0.70  api:ALERT -> incident  (time 0.50, severity 1.00, catalog dependency)
+
+chains INC-B, dated:
+  id:inc/inc-b on web at 2026-01-31T00:00:00Z: 2 candidate events
+    1. fraud                  score 0.960
+       id:chain/inc-b-4f85324a057c0dca 0.96: fraud:ALERT -> incident
+         0.96  fraud:ALERT -> incident  (time 0.93, severity 1.00, catalog dependency)
+    2. api                    score 0.700
+       id:chain/inc-b-9ad6dde112a13fa4 0.70: api:ALERT -> incident
+         0.70  api:ALERT -> incident  (time 0.50, severity 1.00, catalog dependency)
+
+PASS  chains INC-A with dated edges equals chains INC-A at commit 1, apart from `withheld` and store row numbers: rank 1 api and api; byte for byte different only in store row numbers
+PASS  chains INC-A names the dependency it did not follow: [{"caller": "web", "callee": "fraud", "valid_from": "2026-01-21T00:00:00Z"}]
+PASS  chains INC-A without dates ranks fraud first: fraud
+PASS  chains INC-B with dated edges still ranks fraud first: fraud
+PASS  before INC-A leaves fraud out of the scope: ['api', 'web']
+PASS  before INC-B keeps fraud in the scope: ['api', 'fraud', 'web']
+PASS  blast fraud --at INC-A lists no web: []
+PASS  blast fraud lists web: ['web']
+PASS  an ogrep that cannot date: the harvest says so
+PASS  an ogrep that cannot date: answers equal the build before this lane, apart from store row numbers: 7 of 7 identical apart from store row numbers, 5 byte for byte
+
+GATE PASSED: 10 of 10 checks

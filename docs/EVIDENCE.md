@@ -1041,3 +1041,54 @@ The enrichers used to run before any batch was committed, so on a first harvest 
 Round 1 recovered 11 of 12 refused mentions, but it primed the model on plain words. Its new false positives were the decoys: `checkout` from "git checkout", `inventory` from "an inventory of our EC2 hosts", `notifications` from "PagerDuty notifications", `web-frontend` from "frontend team" and `search-api` from "search the runbooks". A thread that holds a whole name or alias needs no list, because the gateway resolves that name exactly. Round 2 therefore lists only applications the thread names some other way. It was designed after round 1's failures were known, so set B was written before it was built, and only set B decides it. The model refused every call before round 2 could run.
 
 **Verdict: KEEP-OFF.** The list ships behind `known_apps = true` on a `discussions` source, off by default and only without `actions`. The naming-first harvest order ships on, because it changes no output. To decide round 2, rerun `catalog_slice_gate.py --parent <old> --candidate <new> --decide heldout --runs 3` when the model answers. Turn the list on by default only if that run passes. Operator actions and incident classification were not changed, because the discussions gate has not shown a gain.
+
+## Phase 13, integration: six lanes in one build (`merged-13/`)
+
+The lanes were merged in the order N, H, R, O, S, P (`integrate-phase-13`, from `integrate-phase-12` 5179213), and every deterministic gate ran again on the merged binary. No gate called a model: a `pi` that refuses stood first on `PATH`, so the demo's `chat-actions` threads without a cached answer were degraded, as in every lane's run. `llm_gate.py` kept 185 cache lines before and after. A file under `docs/evidence/` was overwritten only where the merged output equals the lane's apart from timings (`rcaeval-final.txt`, `similar-eval.txt`, `shacl-core.txt`, `resolve.txt`, `incident-conflicts.txt`, `alias.txt`, `uses.txt`). Every other output is in `docs/evidence/merged-13/`.
+
+| Gate | Lane result | Merged build | File |
+|---|---|---|---|
+| `cargo test --workspace` | passes on every lane | 94 + 22 + 14 passed, 0 failed; clippy `--all-targets` reports nothing | |
+| RCAEval chain AC@1 / AC@3 / Avg@5 | 0.93 / 0.99 / 0.98 | the same | `rcaeval-final.txt` |
+| `similar_eval.py` top-1 | 82/89 = 0.92 | 82/89 = 0.92, identical | `similar-eval.txt` |
+| `ab_compare.sh` against `integrate-phase-12` | P: 12 of 12 identical | 8 of 12 identical with ogrep 0.2.0 and with the dating ogrep; RCAEval per case, `similar`, `before`, `blast`, `news`, `validate` identical; the four others explained below | `merged-13/ab-compare.txt`, `merged-13/ab-compare-dated.txt` |
+| `gateway_eval` | PASS | identical to Phase 12's merged output | `merged-13/gateway.txt` |
+| SHACL core suite | 98 of 98 | identical | `shacl-core.txt` |
+| SPARQL correctness | 0 mismatches over 41 queries | 0 over 41; the known-at view 0 over 44 | `merged-13/store-x1.txt` |
+| `chain_scores_gate.py` | 2454 chains, 3533 links, 0 failures | the same | `merged-13/chain-scores-gate.txt` |
+| `replay_gate.py` (long) | 207/207 points agree, 0 of 18630 cases disagree | the same, with 4 jobs instead of 5 | `merged-13/replay-grid.txt` |
+| `known_at_gate.py` | GATE PASSED | GATE PASSED | `merged-13/known-at.txt` |
+| `incident_conflicts_eval.py` | PASS | identical | `incident-conflicts.txt` |
+| `lab_check.py`, `lab_browser.mjs` | 0 failures, no script errors | 0 failures, no script errors on the demo (39173 bytes, unchanged) and the 90-case store | `merged-13/lab-*.txt` |
+| `resolve_eval.py` | precision 1.000, recall 0.971 | identical | `resolve.txt` |
+| `cite_eval.py`, sets first and fresh | 31 of 31, 44 of 44 | the same | `merged-13/cite-*.txt` |
+| `hook_eval.py` | PASS, slowest 29.6 ms | PASS, slowest 23.8 ms | `merged-13/hook.txt` |
+| pi and MCP contract (`test_pi.mjs`) | PASS | PASS, `uses` among the tools | `merged-13/pi-contract.txt` |
+| `test_agent_rca_eval.py` | passes | 16 tests pass | `merged-13/test-agent-rca-eval.txt` |
+| N `ambiguous_census.py` | 0 ties; 74 low-score names in 42 RCAEval cases | the same | `merged-13/ambiguous-census.txt` |
+| H `chain_delta_gate.py` | GATE PASSED | GATE PASSED, identical apart from timings | `merged-13/chain-delta.txt` |
+| R `uses_gate.py` (no model) | PASS, every category exact | identical apart from timings | `uses.txt` |
+| O gate 1, `edge_dates_gate.py` | 10 of 10 | 10 of 10 | `merged-13/edge-dates-gate.txt` |
+| O gate 3, `ab_compare.sh` with the dating ogrep | 11 of 12, `validate` by the new shape | see the `ab_compare.sh` row | `merged-13/ab-compare-dated.txt` |
+| S `skill_coverage.py` | 0 unmentioned, 0 uncovered, 0 failing | 0, 0, 0 after two fixes below | `merged-13/skill-coverage.txt` |
+| P `llm_gate.py` from the cache, off and with `known_apps` | 16/16 and 15/16, no new model calls, broken model PASS | the same | `merged-13/llm-gate*.txt` |
+| P `alias_eval.py` | PASS | identical | `alias.txt` |
+
+**Outputs that changed, and why.**
+
+- **`ab_compare.sh`.** The demo's harvest gains 4 facts in `incidents/all`, the `evt:sourceRecord` that lane R gives each incident, and `why INC-5377` lists it. With ogrep 0.2.0 the catalog line carries lane O's note that dependencies carry no date, which is one more quad. `chains` differs only in the store row numbers (`id`) of its events, which shift with those terms. Lane P's two-phase harvest changed no output. Lane P compared against its own base, which had neither R's nor O's change.
+- **`known-at.txt`.** The same two changes: one more incident fact and the catalog's note.
+- **`ambiguous-census.txt`.** Each catalog harvest with ogrep 0.2.0 stores lane O's note as a `harv:reason`, which the census counts as a quarantined fact: 35 on the demo instead of 34, 756 on RCAEval instead of 666 (one per case). The ambiguous-name counts are unchanged. The lane's four demo stores with model answers were not at hand, so the census ran on one store whose model calls failed.
+- **`pi-contract.txt`.** The investigation prompt is 8016 characters, not 6368, because lanes H and S added to `investigation.md`.
+- **Demo store size.** A first harvest of the demo writes 0.8 MB, not 0.6 MB (`hook.txt`). Lane O's binary alone gives the same 839680 bytes; `ograph compact` takes it to 0.34 MB. The cause inside lane O was not traced.
+
+**What the merge changed.**
+
+- **Lane S's guidance is reverted.** Its rank-1 guidance (34f7625, and Candidate 2 in c7c0dea) did not pass its gate (NOT MEASURED). Commit 53f27ce reverses both in `skills/ograph/SKILL.md` (rule 2), `skills/ograph/references/investigation.md` (the timeline bullet on the earliest strong events, the rank-1 section after `chains`, item 2 of "What to report") and `scripts/agent/SKILL.md` (step 2). The wording is 0be3918's again, with its rewording of the benchmark-dataset sentence. Every coverage addition of a5d6076, 97034f7 and later stays. The guidance is still on `lane-s-skill` and `lane-s-candidate2`.
+- **`Snapshot` views.** Lane H split `known_at` into `delta` and `revert`; lane R added `without`. Both now end in one `apply`.
+- **`--known-at` and `--since` take any `xsd:dateTime` with a zone.** Six fraction digits, or a zone such as `+01:00`, were "not a time". A finer fraction now rounds down to the millisecond (`a_time_takes_any_xsd_date_time_with_a_zone`).
+- **An incident recorded after T was not known at T.** `chains INC --known-at T` failed with `incident has no evt:on`, because the store's dictionary keeps every name. It now says `INC was not known at that time: the store recorded it later`, and `chains --since T` ranks nothing then instead of failing (`an_incident_recorded_after_the_time_asked_about_was_not_known_then`).
+- **Dated edges in every view.** `every_view_of_the_ranking_follows_a_dependency_only_from_its_date` checks lanes H, R and O together: a `--known-at` view of a time before the catalog was dated ranks the later dependency's callee, `chains --since` names the catalog graph as the cause of the move, and `uses` re-ranks without the withheld dependency.
+- **Skill.** SKILL.md rules 13 to 16 carry the lines lanes H, R, O and P asked for. `skill_coverage.py` then found two gaps: S's coverage of the `edge` values rode on the reverted guidance text, so `investigation.md` states them on one line again, and R's `uses` example named a file the demo lacks, so it now names `alerts.json`. `examples/demo/.ograph/shapes.ttl` is a copy of `ontology/shapes.ttl` at ontology 1.4; `ontology check` gives 0 problems.
+- **clippy.** Lane O took the lab's `hood` to eight arguments; the incident's application and time now travel as one anchor.
+- **Gates write only under `target/`.** `ab_compare.sh` wrote similar_eval's merged store into `data/`; it now writes it under its work directory, and `run_all.sh` writes `rcaeval-final.json` and `rcaeval-merged` under `target/`.
