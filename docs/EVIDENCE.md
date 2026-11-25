@@ -828,3 +828,28 @@ The first rerun of `known_at_gate.py` failed because a time 0.1 s before the his
 The following outputs are the same as before the fixes, apart from timings: `rcaeval_score.py` (chain AC@1 0.93), `similar_eval.py` (82/89 = 0.92), `known_at_gate.py`, `incident_conflicts_eval.py`, `ontology_diff_eval.py` (14 mutations, 0 mismatched), `lab_check.py`, `lab_browser.mjs`, `resolve_eval.py`, `hook_eval.py` (slowest 27.6 ms) and the pi and MCP contract. The 90-case lab page is 34 bytes longer because each run records verdict times of a different length.
 
 **Not run.** `action_gate.py`, `coverage_decline_eval.py`, `agent_rca_eval.py` and `llm_gate.py` need the model. `ruled_out_eval.py` needs `ruled_out_weight`, which lane A1 dropped; it now says so and exits 0, and `ruled-out.txt` keeps the run from commit 5f3ea74.
+
+## Phase 13, lane R: what depends on a source file (`uses.txt`)
+
+`ograph why` goes from a fact to the record it came from. The reverse question comes up when a log export or an incident file turns out to be wrong: which answers does it put in doubt? `ograph uses PATH[#n]` lists the facts a file or record gave, the events and incidents that would go without it, the chains it would change or remove (with their incidents and ranks), the verdicts on those chains, and its quarantined proposals. Chains are not traced link by link alone: a file can also state the dependency edge a link crosses. So `uses` ranks every incident again over a view of the store without the file's facts, and compares that with the ranking over the store as it is.
+
+### Gate, written before the code
+
+Prediction against reality. For each sampled file: run `ograph --json uses FILE` on a copy of the store, delete the file, run `ograph harvest`, and compare the store before and after.
+
+| Category | Measured (before minus after) | Predicted (from `uses`) |
+|---|---|---|
+| Facts | Triples of the union graph outside correlation, verdict and quarantine graphs, leaving out facts about harvest graph nodes (`harv:` bookkeeping), present before and absent after | `facts` that no other source states (`also_in` empty) |
+| Chains | Chains present before that are absent after, or whose incident, root or set of links differs | `chains` with change `gone` or `relinked` |
+| Verdicts | Current verdicts (not superseded) on a measured chain | `verdicts` |
+| New chains (reported, not in the pass) | Chains present after and absent before | `chains` with change `new` |
+| Rank moves (reported, not in the pass) | Chains present before and after with another `corr:rank` | `chains` with change `moved` |
+| Quarantine (reported, not in the pass) | Quarantine entries present before and absent after | `quarantined` |
+
+Data. (1) A copy of `examples/demo` after `python3 generate.py`, harvested with the model answers its `.ograph/cache` holds; every source file is a trial. (2) A workspace under `target/` of 12 RCAEval cases drawn with seed 13 (inputs symlinked read-only from `data/rcaeval-cases`): each case's incidents, metrics, logs and traces, the first case's ownership and the online-boutique catalog. All incident files are one `incidents` batch, so a case's incident file shares its graph with the others. 16 of its files are drawn with seed 13. Before any trial each incident's rank-1 chain is accepted as a verdict, so the verdict category is not empty. Each trial starts from a copy of the same store.
+
+Out of scope, stated before the run:
+- Files of naming sources (`catalog`, `ownership`, `docs`). Every other file's names are checked against them, so removing one can quarantine or rename facts anywhere. They are run and reported apart, and `uses` says so for such a file.
+- Facts of an incident that records in another file also state. Without the file, a field may take another record's value rather than go. These triples are left out of both sets and counted.
+
+Pass: precision and recall 1.000 on facts, chains and verdicts over the in-scope files. Also: `uses` time per file on the 90-case merged store, `cargo test --workspace` passes, and RCAEval chain AC@1 0.93 and `similar_eval.py` 82/89 = 0.92 unchanged (`--out` under `target/`).
