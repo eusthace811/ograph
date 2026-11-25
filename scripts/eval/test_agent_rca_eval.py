@@ -205,6 +205,10 @@ class Guidance(unittest.TestCase):
             self.assertEqual(h.leaks_in_transcript(ctx, ws, [bash(f"cat {ctx.skill_of('old')}/references/investigation.md")], arm), [])
             self.assertEqual(h.leaks_in_transcript(ctx, ws, [bash(f"cat {work}/guide/old/scripts/agent/SKILL.md")], arm), [f"bash: reaches {work}/guide/old/scripts/agent/SKILL.md"])
 
+    def test_a_work_directory_inside_the_repository_is_refused(self):
+        with self.assertRaisesRegex(SystemExit, "is inside"):
+            h.Ctx(types.SimpleNamespace(work=str(h.REPO / "target" / "agent-work"), cases=None, bin="unused"))
+
 
 if __name__ == "__main__":
     unittest.main()

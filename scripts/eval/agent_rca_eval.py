@@ -114,6 +114,8 @@ class Ctx:
         self.secret = [REPO, *( [self.cases_dir] if self.cases_dir else [])]
         main = REPO.parents[2] if REPO.parent.name == "worktrees" else REPO
         if main != REPO: self.secret.append(main)
+        inside = [s for s in self.secret if self.work == s or s in self.work.parents]
+        if inside: raise SystemExit(f"--work {self.work} is inside {inside[0]}: every path an agent reads there names it, and the leak check voids the run")
         self.lock = threading.Lock()
         self.staged = {}
 
