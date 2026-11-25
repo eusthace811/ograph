@@ -1,5 +1,5 @@
-90 cases in 9 s; 0 errors []
-harvest per case: median 0.30 s, max 0.78 s
+90 cases in 14 s; 0 errors []
+harvest per case: median 0.43 s, max 2.42 s
 
 All RE2-OB (90 cases)
 

@@ -1092,3 +1092,30 @@ The lanes were merged in the order N, H, R, O, S, P (`integrate-phase-13`, from 
 - **Skill.** SKILL.md rules 13 to 16 carry the lines lanes H, R, O and P asked for. `skill_coverage.py` then found two gaps: S's coverage of the `edge` values rode on the reverted guidance text, so `investigation.md` states them on one line again, and R's `uses` example named a file the demo lacks, so it now names `alerts.json`. `examples/demo/.ograph/shapes.ttl` is a copy of `ontology/shapes.ttl` at ontology 1.4; `ontology check` gives 0 problems.
 - **clippy.** Lane O took the lab's `hood` to eight arguments; the incident's application and time now travel as one anchor.
 - **Gates write only under `target/`.** `ab_compare.sh` wrote similar_eval's merged store into `data/`; it now writes it under its work directory, and `run_all.sh` writes `rcaeval-final.json` and `rcaeval-merged` under `target/`.
+
+## Phase 13, review fixes (`merged-13/uses.txt` and the files below)
+
+An independent review of the merged build reproduced eight defects. Each got a failing test first, then the fix (commit 340adb0).
+
+1. **`uses FILE` kept fields only that file sets on an incident another file states.** With `INC-9` titled in `inc-a.json` and given its service and time in `inc-b.json`, `uses inc-b.json` predicted nothing, while the harvest without it quarantined `INC-9`. The incident export now gives each kept value every record that states it as evidence. In a graph of several files, the gateway then writes a provenance node for each fact of a node that more than one record states: `harv:fact`, `harv:method "rule"` and one `evt:sourceRecord` per record. `uses` drops the facts that only the file's records state. It then checks the node with SHACL again, as it already did for other graphs, and ranks the chains on that view. An incident that this check quarantines goes with its chains and leaves `shared` (`uses_takes_a_field_that_only_its_file_states_on_an_incident_another_file_states`, which also harvests without the file and checks that `INC-9` and its chain are gone). `uses_lists_what_a_file_feeds_and_the_chains_and_verdicts_that_rest_on_it` asserted the old answer, and now expects INC-1's title to go with `more.json`, and INC-1 with its two chains to go with `incidents.json#1`.
+2. **`uses` read `..` and `.` as written.** `source_key` now normalises both paths lexically before it keys them, and the workspace root (`uses .` there) holds every source (`a_source_path_is_keyed_as_the_harvest_keys_it`, `uses_of_the_workspace_root_lists_every_source`).
+3. **`uses FILE#n` could not trace chat threads.** A thread now names each of its messages in `evt:sourceRecord`, and a quarantine entry names the records that proposed it. An entry belongs to a record when it names the record or its reason does. A record view can still not say how a thread that keeps other messages changes: its text and the model's answers differ. It lists such a thread in `shared` with a warning (`uses_of_a_chat_record_traces_its_thread_and_the_quarantine_it_caused`).
+4. **`chains INC --since T` failed for an incident known at T without its application or time** (custom shapes). It now ranks nothing then (`chains_since_a_time_an_incident_had_no_application_ranks_nothing_then`).
+5. **`uses` on a store harvested before incidents named their records answered 0 in silence.** It now warns on standard error and in `warnings` to harvest once (`uses_warns_when_the_incidents_were_harvested_before_they_named_their_records`).
+6. **`withheld` listed dependencies the depth would not follow.** It lists only those of applications nearer than the depth (`withheld_lists_only_the_dependencies_the_depth_would_follow`).
+7. **`blast --at` listed incidents by today's status.** At a time, an incident is open if it had opened by then and was not resolved by then. Without a resolved time, its status decides (`blast_at_a_time_lists_only_the_incidents_open_then`).
+8. **A name whose facts all left the store was found** and failed later with `incident has no evt:on`. It is now `nothing in the graph is called INC`, or `INC is in quarantine:` with the reasons. `why` still shows a quarantined node's proposals (`an_incident_that_left_the_graph_is_not_found_and_one_in_quarantine_says_so`).
+
+No gate called a model: the refusing `pi` stood first on `PATH`. `cargo test --workspace` passes 101 + 23 + 14 tests, and clippy `--all-targets` reports nothing.
+
+| Gate | Merged build | After the fixes | File |
+|---|---|---|---|
+| RCAEval chain AC@1 / AC@3 / Avg@5 | 0.93 / 1.00 / 0.99 | identical apart from timings | `rcaeval-final.txt` |
+| `similar_eval.py` top-1 | 82/89 = 0.92 | identical apart from timings | `similar-eval.txt` |
+| `uses_gate.py` (no model) | PASS; facts 1773 / 1773 / 1773 | PASS, every category exact; facts 1879 / 1879 / 1879 | `merged-13/uses.txt` |
+| `chain_delta_gate.py` | GATE PASSED | identical apart from timings | `merged-13/chain-delta.txt` |
+| `edge_dates_gate.py`, dating ogrep | 10 of 10 | identical apart from timings | `merged-13/edge-dates-gate.txt` |
+| `skill_coverage.py` | 0, 0, 0 | identical | `merged-13/skill-coverage.txt` |
+| `test_pi.mjs` | PASS, prompt 8016 characters | PASS, prompt 8056 characters | `merged-13/pi-contract.txt` |
+
+The `uses` gate counts 106 more facts, in two files. In each, the facts that went equal the facts predicted. `chat-actions/actions.json` goes from 126 to 216 facts and `discussions/ops.json` from 467 to 483: these are the `evt:sourceRecord` facts that threads now carry, one per message. No file of the gate has an incident that another file states, so finding 1 adds no provenance nodes there. The prompt grew 40 characters because of a74561f's edit to `investigation.md`, which came after the merged run of `test_pi.mjs`. These fixes do not touch the prompt.

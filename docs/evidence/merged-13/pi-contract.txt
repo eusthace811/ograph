@@ -1,2 +1,2 @@
 pi extension contract: PASS { top: 'ledger-db', news: 2 }
-MCP contract: PASS { incidents: 4, top: 'ledger-db', prompt_chars: 8016 }
+MCP contract: PASS { incidents: 4, top: 'ledger-db', prompt_chars: 8056 }

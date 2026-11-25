@@ -70,6 +70,8 @@ without it (`because`), the chains that would go, be relinked, move or enter (wi
 and rank), the current verdicts on chains that go or are relinked, and its quarantined
 proposals. Re-open each listed verdict before you rely on it. For a `catalog`, `ownership` or
 `docs` file the answer says `naming`: names in every other file resolve against it, so more
-can change than it lists. To take a file out, delete it and remove its `[[source]]` entry if
+can change than it lists. Read `warnings` too: it says when the store predates the record
+tracing (harvest once) and when a chat thread keeps other messages, so its model answers can
+change in ways the answer does not list. To take a file out, delete it and remove its `[[source]]` entry if
 the entry names it; ograph keeps the facts of a configured path it cannot read.
 

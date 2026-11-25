@@ -1,18 +1,18 @@
 dated harvest:
-  harvest/catalog//Volumes/External%20Disk/Github/graph-rag/.claude/worktrees/integrate-phase-13/target/p13/edge-dates-gate/shop: 13 proposed, 13 accepted, 0 quarantined, +18 -0 quads (0.01 s)
-  harvest/alerts/alerts.json: 28 proposed, 28 accepted, 0 quarantined, +33 -0 quads (0.01 s)
+  harvest/catalog//Volumes/External%20Disk/Github/graph-rag/.claude/worktrees/integrate-phase-13/target/r13/edge-dates-gate/shop: 13 proposed, 13 accepted, 0 quarantined, +18 -0 quads (0.00 s)
+  harvest/alerts/alerts.json: 28 proposed, 28 accepted, 0 quarantined, +33 -0 quads (0.00 s)
   harvest/incidents/all: 16 proposed, 16 accepted, 0 quarantined, +22 -0 quads (0.00 s)
   harvest/correlation/inc-a: 7 proposed, 7 accepted, 0 quarantined, +12 -0 quads (0.00 s)
   harvest/correlation/inc-b: 14 proposed, 14 accepted, 0 quarantined, +19 -0 quads (0.00 s)
   harvested 5 batches in 0.1 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
 
 undated harvest:
-  harvest/catalog//Volumes/External%20Disk/Github/graph-rag/.claude/worktrees/integrate-phase-13/target/p13/edge-dates-gate/shop: 8 proposed, 8 accepted, 0 quarantined, +14 -0 quads, DEGRADED: /Volumes/External Disk/Github/graph-rag/.claude/worktrees/integrate-phase-13/target/p13/edge-dates-gate/shop: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0 (0.01 s)
-  harvest/alerts/alerts.json: 28 proposed, 28 accepted, 0 quarantined, +33 -0 quads (0.01 s)
+  harvest/catalog//Volumes/External%20Disk/Github/graph-rag/.claude/worktrees/integrate-phase-13/target/r13/edge-dates-gate/shop: 8 proposed, 8 accepted, 0 quarantined, +14 -0 quads, DEGRADED: /Volumes/External Disk/Github/graph-rag/.claude/worktrees/integrate-phase-13/target/r13/edge-dates-gate/shop: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0 (0.00 s)
+  harvest/alerts/alerts.json: 28 proposed, 28 accepted, 0 quarantined, +33 -0 quads (0.00 s)
   harvest/incidents/all: 16 proposed, 16 accepted, 0 quarantined, +22 -0 quads (0.00 s)
   harvest/correlation/inc-a: 14 proposed, 14 accepted, 0 quarantined, +19 -0 quads (0.00 s)
   harvest/correlation/inc-b: 14 proposed, 14 accepted, 0 quarantined, +19 -0 quads (0.00 s)
-  harvested 5 batches in 0.0 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+  harvested 5 batches in 0.1 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
 
 chains INC-A, dated:
   id:inc/inc-a on web at 2026-01-11T00:00:00Z: 1 candidate events
