@@ -64,6 +64,25 @@ ograph chains INC-5377
   similar past incident. Report it as support for the candidate, with the incident it names.
 - The chain id is stable across re-harvests. Use it for verdicts.
 
+When rank 1 is not what it was earlier, such as at the last update or before a harvest, ask why:
+
+```bash
+ograph chains INC-5377 --top 3 --since 2026-11-25T11:53:57.945Z
+```
+
+```
+since 2026-11-25T11:53:57.945Z: the ranking moved; source files changed: 1
+  then  1. ledger-db 0.944  2. payments-api 0.930  3. checkout 0.900
+  now   1. payments-api 0.930  2. ledger-db 0.909  3. checkout 0.900
+  g:harvest/alerts/alerts.json [alerts]: taking it back alone changes the ranking now, and it alone changes the ranking then
+```
+
+- Each named file was tested by ranking again, so report it as the reason: "rank 1 moved from
+  ledger-db to payments-api after alerts.json changed". Read what changed in it with
+  `ograph changes --since T`; here it lost the LedgerPoolSaturated alert before the incident.
+- A file that changed but is not named did not move the ranking on its own. Do not cite it.
+- `the changes move it together` means no single file explains the move. Say so; do not pick one.
+
 ## 3. Has this happened before
 
 ```bash

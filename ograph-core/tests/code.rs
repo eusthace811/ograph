@@ -416,7 +416,7 @@ fn chains_falls_back_to_suspects_only_when_nothing_ranks_and_code_is_configured(
         let ids = ograph_core::correlate::Ids::new(&snap).unwrap();
         let analysis = ograph_core::query::chains(&snap, &ids, ograph_core::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
         let (found, _) = ws.fallback_suspects(&snap, &analysis, "INC-1", &ws.config.correlation);
-        (analysis.apps.len(), serde_json::to_value(ograph_core::query::Chains { analysis, suspects: found }).unwrap())
+        (analysis.apps.len(), serde_json::to_value(ograph_core::query::Chains { analysis, suspects: found, shift: None }).unwrap())
     };
     // A commit twelve minutes before is a candidate, but alone it is too weak to rank.
     let quiet = workspace("fallback", &format!("{CATALOG}{CODE}"), &[]);

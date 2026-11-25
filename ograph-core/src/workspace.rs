@@ -197,16 +197,8 @@ impl Workspace {
     /// answer would silently lack what was removed before then. A time written to the second
     /// may name the second the history starts in.
     pub fn known_at(&self, when: &str) -> anyhow::Result<(crate::store::Snapshot, String)> {
-        let t = when_ms(when)?;
         let snap = self.store.snapshot()?;
-        let since = snap.history_since()?.ok_or_else(|| anyhow::anyhow!("this store has no history yet; it starts with the next harvest"))?;
-        anyhow::ensure!(
-            t >= since || (t.rem_euclid(1000) == 0 && t == since - since.rem_euclid(1000)),
-            "no record of what was known at {}: the history of this store starts at {} (history_days = {})",
-            term::format_millis(t),
-            term::format_millis(since),
-            self.history_days()
-        );
+        let (t, since) = self.history_time(&snap, when)?;
         let snap = snap.known_at(t)?;
         let (hidden, restored) = snap.as_of_counts().unwrap_or_default();
         let note = format!(
@@ -215,6 +207,21 @@ impl Workspace {
             term::format_millis(since)
         );
         Ok((snap, note))
+    }
+
+    /// `when` in milliseconds, and when the history of `snap` starts; an error when the history
+    /// does not reach back to `when`.
+    pub fn history_time(&self, snap: &crate::store::Snapshot, when: &str) -> anyhow::Result<(i64, i64)> {
+        let t = when_ms(when)?;
+        let since = snap.history_since()?.ok_or_else(|| anyhow::anyhow!("this store has no history yet; it starts with the next harvest"))?;
+        anyhow::ensure!(
+            t >= since || (t.rem_euclid(1000) == 0 && t == since - since.rem_euclid(1000)),
+            "no record of what was known at {}: the history of this store starts at {} (history_days = {})",
+            term::format_millis(t),
+            term::format_millis(since),
+            self.history_days()
+        );
+        Ok((t, since))
     }
 
     pub fn llm(&self) -> Option<Llm> {
@@ -812,6 +819,28 @@ pub(crate) mod tests {
         let t = super::now_ms();
         std::thread::sleep(std::time::Duration::from_millis(3));
         t
+    }
+
+    #[test]
+    fn a_rank_shift_names_the_file_that_moved_the_ranking_and_not_the_one_that_did_not() {
+        let root = fixture("rank-shift", &[("alerts", "alerts.json", &format!("[{}]", alert("payments-api", "ErrorRate", T - 300))), ("alerts", "more.json", "[]"), ("ownership", "ownership.jsonl", "{\"app\":\"ledger-db\",\"process\":\"billing\"}\n")]);
+        harvest(&root, None);
+        let t1 = pause();
+        std::fs::write(root.join("ownership.jsonl"), "{\"app\":\"ledger-db\",\"process\":\"settlement\"}\n").unwrap();
+        harvest(&root, None);
+        let t2 = pause();
+        std::fs::write(root.join("more.json"), format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600))).unwrap();
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let shift = |t: i64| crate::query::rank_shift(&ws.store.snapshot().unwrap(), t, "INC-1", &ws.config.correlation, 5).unwrap();
+        let apps = |r: &[crate::query::RankedApp]| r.iter().map(|a| a.app.clone()).collect::<Vec<_>>();
+        let s = shift(t1);
+        assert_eq!((apps(&s.then), apps(&s.now), s.changed_graphs), (vec!["payments-api".to_owned()], vec!["ledger-db".to_owned(), "payments-api".to_owned()], 2));
+        assert_eq!(s.causes, [crate::query::RankCause { graph: "g:harvest/alerts/more.json".into(), source: Some("alerts".into()), needed: true, enough: true }]);
+        std::fs::write(root.join("more.json"), "[]").unwrap();
+        harvest(&root, None);
+        let s = shift(t2);
+        assert_eq!((apps(&s.then), apps(&s.now), s.changed_graphs, s.causes.len()), (vec!["payments-api".to_owned()], vec!["payments-api".to_owned()], 0, 0));
     }
 
     #[test]
