@@ -166,10 +166,13 @@ def rcaeval_cases(cases_dir, sample, seed):
     return [Case("rcaeval", cid, labels[cid]["incident"], labels[cid]["root"], cases_dir / cid) for cid in picks[:sample]]
 
 
-def holdout_cases(cases_dir, n, seed, taken):
-    """`n` cases outside `taken`, drawn by `seed`: data the guidance under test was not written from."""
+def holdout_cases(cases_dir, n, seed, taken, rest=False):
+    """`n` cases outside `taken`, drawn by `seed`: data the guidance under test was not written
+    from. With `rest`, every case outside `taken` that the draw left, as a second held-out set."""
     labels = json.loads((cases_dir / "labels.json").read_text())
-    picks = random.Random(seed).sample([cid for cid in sorted(labels) if cid not in taken], n)
+    pool = [cid for cid in sorted(labels) if cid not in taken]
+    picks = random.Random(seed).sample(pool, n)
+    if rest: return [Case("rcaeval-heldout-2", cid, labels[cid]["incident"], labels[cid]["root"], cases_dir / cid) for cid in pool if cid not in picks]
     return [Case("rcaeval-heldout", cid, labels[cid]["incident"], labels[cid]["root"], cases_dir / cid) for cid in picks]
 
 
@@ -550,6 +553,8 @@ def main(argv=None):
     ap.add_argument("--misses", action="store_true", help="add the cases --reference ranks wrong, as suite rcaeval-miss")
     ap.add_argument("--holdout", type=int, default=0, help="add N cases outside the sample and the misses, as suite rcaeval-heldout")
     ap.add_argument("--holdout-seed", type=int, default=13)
+    ap.add_argument("--holdout-rest", action="store_true", help="add the cases --holdout leaves out of its draw, as suite rcaeval-heldout-2")
+    ap.add_argument("--skip-holdout", action="store_true", help="run no case of the --holdout draw")
     ap.add_argument("--skip-sample", action="store_true", help="run no case of the sample; it still stays out of --holdout and --misses")
     ap.add_argument("--guidance", help="LABEL=REV[,LABEL=REV]: the skill and pi extension text of a git revision, for arms mcp@LABEL and skill@LABEL")
     ap.add_argument("--report-only", action="store_true", help="run nothing; report the rows OUT/runs.jsonl holds")
@@ -566,7 +571,9 @@ def main(argv=None):
     seen = rcaeval_cases(ctx.cases_dir, a.sample, a.seed) if a.cases else []
     misses = missed_cases(ctx.cases_dir, a.reference, {c.id for c in seen}) if a.misses or a.holdout else []
     cases = [] if a.skip_sample else list(seen)
-    if a.holdout: cases += holdout_cases(ctx.cases_dir, a.holdout, a.holdout_seed, {c.id for c in seen + misses})
+    taken = {c.id for c in seen + misses}
+    if a.holdout and not a.skip_holdout: cases += holdout_cases(ctx.cases_dir, a.holdout, a.holdout_seed, taken)
+    if a.holdout and a.holdout_rest: cases += holdout_cases(ctx.cases_dir, a.holdout, a.holdout_seed, taken, rest=True)
     if a.misses: cases += misses
     if a.demo: cases += demo_cases(pathlib.Path(a.demo).resolve())
     arms, skipped = [], {}

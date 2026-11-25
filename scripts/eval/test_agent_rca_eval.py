@@ -50,6 +50,11 @@ class Scoring(unittest.TestCase):
             self.assertEqual(sorted((labels[c.id]["root"], labels[c.id]["fault"]) for c in four), [("a", "x"), ("a", "y"), ("b", "x"), ("b", "y")])
             self.assertEqual([c.id for c in two], [c.id for c in four][:2])
             self.assertEqual([c.id for c in four], [c.id for c in h.rcaeval_cases(d, 4, 12)])
+            first = h.holdout_cases(d, 3, 13, {c.id for c in four})
+            rest = h.holdout_cases(d, 3, 13, {c.id for c in four}, rest=True)
+            self.assertEqual((len(first), len(rest)), (3, 5))
+            self.assertEqual(sorted(c.id for c in first + rest + four), sorted(labels))
+            self.assertEqual({c.suite for c in rest}, {"rcaeval-heldout-2"})
 
 
 class Leaks(unittest.TestCase):

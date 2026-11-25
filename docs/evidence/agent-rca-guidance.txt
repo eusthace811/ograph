@@ -115,3 +115,20 @@ rcaeval-heldout-2. Misses and demo are as before. Arms: mcp and skill at Parent,
 Candidate 2, chains. The pass criteria are those above, Candidate 2 against Parent, plus:
   4. says hypothesis: Candidate 2's rate >= Parent's in each family.
 Candidate 2 ships only if it passes; Candidate 1 is then dropped.
+Revisions: Parent 0be3918, Candidate 1 34f7625, Candidate 2 ea05982 (branch lane-s-candidate2:
+34f7625 plus that sentence only; c7c0dea on lane-s-skill carries the same sentence on top of the
+command documentation, which does not change the guidance).
+rcaeval-heldout-2 (--holdout 25 --holdout-seed 13 --holdout-rest --skip-holdout): c-073e220e96
+c-0776f54cd9 c-0db34b4c7e c-18804bdd7f c-22a7556181 c-2cd85ef30d c-34a5398b52 c-407a9f7eba
+c-50e3775f48 c-5ad5f3d0de c-6775d676c8 c-6ab11c1b3d c-6f03d011b8 c-7041399641 c-75d480fc3d
+c-7c907c38ac c-847b7ca578 c-870814bb24 c-8e8d35d164 c-90376d73d9 c-94e5ae21b2 c-99fc833ae8
+c-9fa5601eb7 c-a254fd4742 c-a28d1285e7 c-aae861ca51 c-be290185f2 c-c4a56b7233 c-e5abfe8ebd
+c-fc745c5f4c.
+Command, once pi answers again (resumes; the first command above finishes Candidate 1 first):
+  python3 scripts/eval/agent_rca_eval.py --bin target/eval-bin/ograph --cases data/rcaeval-cases \
+    --demo examples/demo --reference target/rcaeval-ref.json --misses --holdout 25 --holdout-seed 13 \
+    --holdout-rest --skip-holdout --skip-sample --runs 1 --parallel 5 \
+    --guidance parent=0be3918,candidate=34f7625,candidate2=ea05982 \
+    --arms mcp@parent,mcp@candidate2,skill@parent,skill@candidate2,chains --work $WORK --out docs/evidence/agent-rca-guidance
+Estimated cost at Phase 12's per-run prices: 35 cases x (2 x $0.036 + 2 x $0.098) = $9.4.
+Candidate 2 result: NOT MEASURED (the usage limit had not reset when lane S ended).
