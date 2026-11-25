@@ -1,0 +1,47 @@
+Phase 12 gates that need a model, on Haiku in Claude Code (integrate-phase-13).
+
+GATE AMENDMENT, written and committed before any of these runs (2026-11-25)
+---------------------------------------------------------------------------
+Why. Each of these gates was written for the demo's pi model (openai/gpt-6-luna for harvests,
+openai/gpt-5.6-terra for agents) and stopped at pi's usage limit (docs/EVIDENCE.md, Phase 12 lanes
+B, C1 and F, and "Not run" in the integration). pi has no Anthropic login, so they run on Haiku in
+headless Claude Code (v2.1.332), model ID claude-haiku-5-5.
+
+What changes: the model and the runner, nothing else.
+  Harvest gates (llm_gate.py, action_gate.py C1, coverage_decline_eval.py B): a copy of
+  examples/demo outside the repository (DEMO=/private/tmp/claude-501/haiku-gates/p12/demo), after
+  generate.py, with no model cache and the [llm.extract] command
+    ["python3", "<worktree>/scripts/eval/claude_model.py", "--model", "claude-haiku-5-5", "--cost-log", ...]
+  model name "claude:claude-haiku-5-5", parallel 4. claude_model.py runs `claude -p` with no
+  tools, settings, memory, MCP servers, skills or saved session, thinking off, in a neutral
+  directory: the counterpart of pi's --no-tools --no-session --no-extensions --no-skills
+  --no-context-files --thinking off. DEMO is harvested once; llm_gate.py and action_gate.py read
+  that store, and coverage_decline_eval.py copies its config.
+  Agent gate (agent_rca_eval.py, F): --runner claude --model claude-haiku-5-5 (commit 4f2057d,
+  cherry-picked from lane-s-skill 8091a7a), with the isolation checks that commit describes.
+
+Unchanged: the binary (target/release/ograph at ee48efb), the demo data and labels, the
+questions, the case sample (--sample 30 --seed 12) and --misses against target/rcaeval-ref.json
+(rcaeval_score.py --modes chain on this binary: chain AC@1 0.93), and every pass condition as
+already written:
+  llm_gate.py        accuracy at least 0.85 on threads-labels.json; replay makes no new model
+                     call; the broken model commits nothing out of vocabulary, no invented app,
+                     no low-confidence fact; audit clean.
+  action_gate.py C1  precision >= 0.9 and recall >= 0.8 on (kind, application, time); no action on
+                     a thread that only asks, proposes or plans; every time is its message's; replay
+                     makes no model call; bad_model.py commits nothing. `actions` turns on by
+                     default only if it passes.
+  coverage_decline   3 uncached baseline runs and 3 uncached treatment runs; criteria 1-3 of the
+  B                  script's docstring; a run with an unanswered question is NOT MEASURED.
+  agent_rca_eval F   the plan as written: 30 sampled cases, the misses and the 4 demo incidents,
+                     3 runs, arms mcp, skill, raw and chains; the harness gates (chains reproduces
+                     rcaeval_score.py; the leak check) and the report as in docs/EVIDENCE.md lane F.
+                     All three runs run on Haiku: the gpt rows of docs/evidence/agent-rca/ are not
+                     read or mixed in (fresh --out docs/evidence/agent-rca-haiku).
+C2 (vague titles) has no pre-written gate and is not run: NOT MEASURED.
+
+Each gate runs once. Outputs: llm-gate-haiku.txt, action-gate-haiku.txt,
+coverage_decline-haiku.txt, agent-rca-haiku.txt (+ agent-rca-haiku/), each headed with the model.
+A limit refusal is retried once after a few minutes; a second is NOT MEASURED. The total cap for
+all Haiku gates is $40 by claude's total_cost_usd. These results are Haiku's, not the models the
+gates were first run with, and are not compared with their numbers.
