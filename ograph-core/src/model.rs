@@ -108,13 +108,12 @@ impl Batch {
     }
 
     pub fn add(&mut self, subject: EntityRef, predicate: &str, object: Object, evidence: &EvidenceRef, method: &Extraction) {
-        self.facts.push(ProposedFact {
-            subject,
-            predicate: NamedNode::new_unchecked(predicate),
-            object,
-            evidence: vec![evidence.clone()],
-            method: method.clone(),
-        });
+        self.add_stated(subject, predicate, object, vec![evidence.clone()], method);
+    }
+
+    /// [`Batch::add`] for a fact several records state.
+    pub fn add_stated(&mut self, subject: EntityRef, predicate: &str, object: Object, evidence: Vec<EvidenceRef>, method: &Extraction) {
+        self.facts.push(ProposedFact { subject, predicate: NamedNode::new_unchecked(predicate), object, evidence, method: method.clone() });
     }
 
     pub fn withhold(&mut self, subject: EntityRef, predicate: &str, object: Object, evidence: &EvidenceRef, method: &Extraction, reason: String) {

@@ -13,33 +13,67 @@ use std::path::{Path, PathBuf};
 
 /// Finds a node from an IRI, a prefixed name, an incident id (`INC-5377`), or an app's name or alias.
 pub fn lookup(s: &Snapshot, name: &str) -> anyhow::Result<Id> {
-    let id = find(s, name)?;
-    // The dictionary keeps every name the store ever held, so a view of an earlier time can find
-    // a node that has no facts in it yet.
-    if s.as_of_counts().is_some() && s.quads([Some(id), None, None], crate::store::GraphSel::Union).next().is_none() {
-        anyhow::bail!("{name} was not known at that time: the store recorded it later");
-    }
-    Ok(id)
+    lookup_in(s, name, false)
 }
 
-fn find(s: &Snapshot, name: &str) -> anyhow::Result<Id> {
+/// [`lookup`], which with `quarantined` also finds a node whose only facts are in quarantine.
+fn lookup_in(s: &Snapshot, name: &str, quarantined: bool) -> anyhow::Result<Id> {
+    let found = find(s, name)?;
+    // The dictionary keeps every name the store ever held, so a view of an earlier time can find
+    // a node that has no facts in it yet, and the store can find one whose facts all left.
+    if let Some(id) = found {
+        let as_subject = s.quads([Some(id), None, None], GraphSel::Union).next().is_some();
+        if s.as_of_counts().is_some() {
+            anyhow::ensure!(as_subject, "{name} was not known at that time: the store recorded it later");
+            return Ok(id);
+        }
+        if as_subject || s.quads([None, None, Some(id)], GraphSel::Union).next().is_some() {
+            return Ok(id);
+        }
+    }
+    match (quarantine_reason(s, name)?, found) {
+        (Some(_), Some(id)) if quarantined => Ok(id),
+        (Some(reason), _) => anyhow::bail!("{name} is in quarantine: {reason}"),
+        (None, _) => anyhow::bail!("nothing in the graph is called {name}"),
+    }
+}
+
+/// The reasons, sorted and joined, of the quarantined facts about the node `name` names, if any.
+fn quarantine_reason(s: &Snapshot, name: &str) -> anyhow::Result<Option<String>> {
+    let (Some(fp), Some(rp)) = (s.iri(harv::FACT)?, s.iri(harv::REASON)?) else { return Ok(None) };
+    let mut names: Vec<String> = ["inc", "app", "chain", "ev", "vendor", "process"].iter().map(|k| crate::model::entity(k, name).as_str().to_owned()).collect();
+    names.push(crate::workspace::resolve_iri(name));
+    let names: FxHashSet<String> = names.iter().flat_map(|n| [vocab::compact(n), n.clone()]).collect();
+    let mut reasons = std::collections::BTreeSet::new();
+    for q in s.quads([None, Some(fp), None], GraphSel::Union) {
+        let [sub, _, o, _] = q?;
+        if literal(s, o).is_some_and(|text| text.split_whitespace().next().is_some_and(|first| names.contains(first)))
+            && let Some(r) = s.object(sub, rp)?.and_then(|v| literal(s, v))
+        {
+            reasons.insert(r);
+        }
+    }
+    Ok((!reasons.is_empty()).then(|| reasons.into_iter().collect::<Vec<_>>().join("; ")))
+}
+
+fn find(s: &Snapshot, name: &str) -> anyhow::Result<Option<Id>> {
     let iri = crate::workspace::resolve_iri(name);
     if let Some(id) = s.iri(&iri)? {
-        return Ok(id);
+        return Ok(Some(id));
     }
     for kind in ["inc", "app", "chain", "ev", "vendor", "process"] {
         if let Some(id) = s.iri(crate::model::entity(kind, name).as_str())? {
-            return Ok(id);
+            return Ok(Some(id));
         }
     }
     for p in [inc::ID, ops::NAME, ops::ALIAS] {
         if let (Some(p), Some(v)) = (s.iri(p)?, s.id(&oxrdf::Literal::new_simple_literal(name).into())?)
             && let Some(&i) = s.subjects(p, v)?.first()
         {
-            return Ok(i);
+            return Ok(Some(i));
         }
     }
-    anyhow::bail!("nothing in the graph is called {name}")
+    Ok(None)
 }
 
 #[derive(Serialize)]
@@ -143,13 +177,27 @@ pub fn blast(s: &Snapshot, app: &str, depth: usize, at: Option<i64>) -> anyhow::
                         Some(st) => s.object(i, st)?.and_then(|v| literal(s, v)),
                         None => None,
                     };
-                    // A stated status decides, since a reopened incident can keep an old
-                    // resolved time; without one, a resolved time means closed.
-                    let closed = match state.as_deref() {
-                        Some(st) => st.eq_ignore_ascii_case("resolved") || st.eq_ignore_ascii_case("closed"),
-                        None => match resolved_at {
-                            Some(r) => s.object(i, r)?.is_some(),
-                            None => false,
+                    let resolved = match resolved_at {
+                        Some(r) => s.object(i, r)?,
+                        None => None,
+                    };
+                    // A stated status decides now, since a reopened incident can keep an old
+                    // resolved time; without one, a resolved time means closed. The status is
+                    // today's, so at a time the times decide: open if it had opened by then and
+                    // was not resolved by then. Without a resolved time, the status decides.
+                    let closed = match at {
+                        Some(t) => {
+                            let opened = s.object(i, ids.at)?.and_then(term::millis);
+                            let stated_closed = state.as_deref().is_some_and(|st| st.eq_ignore_ascii_case("resolved") || st.eq_ignore_ascii_case("closed"));
+                            opened.is_none_or(|o| o > t)
+                                || match resolved.and_then(term::millis) {
+                                    Some(r) => r <= t,
+                                    None => stated_closed,
+                                }
+                        }
+                        None => match state.as_deref() {
+                            Some(st) => st.eq_ignore_ascii_case("resolved") || st.eq_ignore_ascii_case("closed"),
+                            None => resolved.is_some(),
                         },
                     };
                     if !closed {
@@ -752,7 +800,11 @@ pub struct RankCause {
 /// `s` holds.
 pub fn rank_shift(s: &Snapshot, t_ms: i64, incident: &str, st: &Settings, top: usize) -> anyhow::Result<RankShift> {
     let ranking = |v: &Snapshot| -> anyhow::Result<Vec<RankedApp>> {
+        // An incident not yet known, or known without its application or time, ranks nothing.
         let (Ok(i), Ok(ids)) = (lookup(v, incident), Ids::new(v)) else { return Ok(vec![]) };
+        if correlate::incident_anchor(v, &ids, i).is_err() {
+            return Ok(vec![]);
+        }
         let a = chains(v, &ids, i, st)?;
         Ok(a.apps.into_iter().take(top).map(|r| RankedApp { app: r.app, score: r.score }).collect())
     };
@@ -791,7 +843,7 @@ pub fn rank_shift(s: &Snapshot, t_ms: i64, incident: &str, st: &Settings, top: u
 /// Provenance of every fact about a node: which harvest graphs assert it, their source,
 /// extractor and time, model provenance for model-proposed facts, and quarantined proposals.
 pub fn why(s: &Snapshot, node: &str) -> anyhow::Result<Provenance> {
-    let n = lookup(s, node)?;
+    let n = lookup_in(s, node, true)?;
     let me = literal(s, n).unwrap_or_default();
     let mut cache = FxHashMap::default();
     let fact_p = s.iri(harv::FACT)?;
@@ -812,7 +864,8 @@ pub fn why(s: &Snapshot, node: &str) -> anyhow::Result<Provenance> {
         )
         .to_string();
         let model = match (fact_p, s.id(&oxrdf::Literal::new_simple_literal(&triple).into())?) {
-            (Some(fp), Some(v)) => s.subjects(fp, v)?.first().map(|&f| {
+            // A fact several incident records state has provenance with no model.
+            (Some(fp), Some(v)) => s.subjects(fp, v)?.into_iter().find(|&f| model_p.is_some_and(|m| s.object(f, m).ok().flatten().is_some())).map(|f| {
                 let g = |p: Option<Id>| p.and_then(|p| s.object(f, p).ok().flatten()).and_then(|v| literal(s, v)).unwrap_or_default();
                 (g(model_p), g(hash_p), g(conf_p))
             }),
@@ -867,6 +920,9 @@ pub struct Uses {
     /// The current verdict on each chain that would go or be relinked.
     pub verdicts: Vec<UsedVerdict>,
     pub quarantined: Vec<UsedQuarantine>,
+    /// What this answer cannot trace, such as incidents harvested before they named their records.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -934,8 +990,25 @@ pub fn split_record(t: &str) -> (&str, Option<&str>) {
 /// relative to the workspace root when it is below it, absolute otherwise.
 pub fn source_key(root: &Path, cwd: &Path, arg: &str) -> String {
     let (path, record) = split_record(arg);
-    let key = rel(&cwd.join(root), &cwd.join(path));
+    let key = rel(&lexical(&cwd.join(root)), &lexical(&cwd.join(path)));
     format!("{}{}", key.trim_end_matches('/'), record.unwrap_or_default())
+}
+
+/// `p` without `.` and with each `..` taking the component before it, as the name reads and
+/// not through symbolic links, so `sub/../alerts.json` is the `alerts.json` a harvest keys.
+fn lexical(p: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir if matches!(out.components().next_back(), Some(Component::Normal(_))) => {
+                out.pop();
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 const NAMING: [&str; 3] = ["catalog", "ownership", "docs"];
@@ -950,13 +1023,15 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
     let (key, record) = split_record(target);
     let enc = crate::model::path_iri(key);
     let below = |path: &str, top: &str| path == top || path.strip_prefix(top).is_some_and(|r| r.starts_with('/'));
+    // The workspace root, which `uses .` names there, holds every source.
+    let within = |path: &str, top: &str| top.is_empty() || below(path, top);
     let names = |r: &str| match record {
         Some(suffix) => r.strip_prefix(key) == Some(suffix),
-        None => below(split_record(r).0, key),
+        None => within(split_record(r).0, key),
     };
     let (harvest, quarantine) = (format!("{}harvest/", vocab::GRAPH), format!("{}/", vocab::QUARANTINE));
     let (file_p, rec_p) = (s.iri(harv::FILE)?, s.iri(evt::SOURCE_RECORD)?);
-    let mut out = Uses { source: target.to_owned(), graphs: vec![], naming: None, facts: vec![], events: vec![], shared: vec![], chains: vec![], verdicts: vec![], quarantined: vec![] };
+    let mut out = Uses { source: if target.is_empty() { ".".to_owned() } else { target.to_owned() }, graphs: vec![], naming: None, facts: vec![], events: vec![], shared: vec![], chains: vec![], verdicts: vec![], quarantined: vec![], warnings: vec![] };
     // Graphs keyed by the file, graphs of several files that read it, and every input graph.
     let (mut own, mut spanning, mut input) = (Vec::new(), Vec::new(), FxHashSet::default());
     let mut quarantines: Vec<(Id, bool)> = Vec::new();
@@ -971,13 +1046,13 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
         input.insert(g);
         let read = |p: Id| -> anyhow::Result<bool> {
             for q in s.quads([Some(g), Some(p), None], GraphSel::Named(g)) {
-                if literal(s, q?[2]).is_some_and(|f| below(&f, key)) {
+                if literal(s, q?[2]).is_some_and(|f| within(&f, key)) {
                     return Ok(true);
                 }
             }
             Ok(false)
         };
-        if below(path, &enc) {
+        if within(path, &enc) {
             own.push(g);
         } else if file_p.map(read).transpose()?.unwrap_or(false) {
             spanning.push(g);
@@ -996,9 +1071,10 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
     }
     for &(g, _) in &graphs {
         let Some(rest) = literal(s, g).and_then(|iri| iri.strip_prefix(&quarantine).map(str::to_owned)) else { continue };
-        let own = rest.split_once('/').is_some_and(|(_, p)| below(p, &enc));
+        let own = rest.split_once('/').is_some_and(|(_, p)| within(p, &enc));
         if own || spanning_keys.contains(&rest) {
-            // A record's entries, and a shared graph's, are those whose reason names it first.
+            // A record's entries, and a shared graph's, are those it proposed or whose reason
+            // names it, such as a value that disagrees with one it states.
             quarantines.push((g, own && record.is_none()));
         }
     }
@@ -1016,6 +1092,18 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
     }
     let mut shared = FxHashSet::default();
     let by_record: Vec<Id> = if record.is_some() { own.iter().chain(&spanning).copied().collect() } else { spanning.clone() };
+    let (fact_p, thread_c) = (s.iri(harv::FACT)?, s.iri(disc::THREAD)?);
+    let ty = s.iri(vocab::RDF_TYPE)?;
+    let records_of = |f: Id, g: Id| -> anyhow::Result<Vec<String>> {
+        let Some(rp) = rec_p else { return Ok(vec![]) };
+        s.quads([Some(f), Some(rp), None], GraphSel::Named(g)).map(|q| Ok(literal(s, q?[2]).unwrap_or_default())).collect()
+    };
+    for &g in &spanning {
+        if rec_p.is_none_or(|rp| s.quads([None, Some(rp), None], GraphSel::Named(g)).next().is_none()) {
+            let name = vocab::compact(&literal(s, g).unwrap_or_default());
+            out.warnings.push(format!("{name} names no evt:sourceRecord, so its incidents cannot be traced to their files; harvest once to record them"));
+        }
+    }
     if let Some(rp) = rec_p {
         for &g in &by_record {
             let mut subjects = FxHashSet::default();
@@ -1025,14 +1113,43 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
                     subjects.insert(q[0]);
                 }
             }
+            let mut subjects: Vec<Id> = subjects.into_iter().collect();
+            subjects.sort_unstable();
             for x in subjects {
                 let quads: Vec<[Id; 4]> = s.quads([Some(x), None, None], GraphSel::Named(g)).collect::<Result<_, _>>()?;
                 let only_here = quads.iter().filter(|q| q[1] == rp).all(|q| literal(s, q[2]).is_some_and(|r| names(&r)));
+                let described = fact_p.and_then(|fp| quads.iter().find(|q| q[1] == fp)).and_then(|q| literal(s, q[2]));
+                let this_record = quads.iter().filter(|q| q[1] == rp && literal(s, q[2]).is_some_and(|r| names(&r))).copied().collect::<Vec<_>>();
                 if only_here {
+                    // The provenance of one fact: the fact goes with the records behind it.
+                    if let Some(fact) = &described {
+                        derived.extend(fact_quad(s, fact, x, g)?);
+                    }
                     derived.extend(quads);
-                } else {
-                    shared.insert(x);
-                    derived.extend(quads.into_iter().filter(|q| q[1] == rp && literal(s, q[2]).is_some_and(|r| names(&r))));
+                    continue;
+                }
+                derived.extend(this_record);
+                if described.is_some() {
+                    continue;
+                }
+                // A node other records state too stays, but loses each fact only these records state.
+                shared.insert(x);
+                let mut traced = false;
+                for q in &quads {
+                    let Some(f) = s.iri(crate::gateway::fact_node(&triple_of(s, q)?).as_str())? else { continue };
+                    let rs = records_of(f, g)?;
+                    traced |= !rs.is_empty();
+                    if !rs.is_empty() && rs.iter().all(|r| names(r)) {
+                        derived.insert(*q);
+                    }
+                }
+                let me = vocab::compact(&literal(s, x).unwrap_or_default());
+                if let (Some(t), Some(c)) = (ty, thread_c)
+                    && s.contains([x, t, c])?
+                {
+                    out.warnings.push(format!("{me} keeps its other messages; without this one its text, and so the model's answers on it, change in ways this answer does not predict"));
+                } else if !traced && spanning.contains(&g) {
+                    out.warnings.push(format!("{me} is also stated by other files, and this store does not trace its fields to their records; harvest once to record them"));
                 }
             }
         }
@@ -1043,9 +1160,6 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
         subjects.sort_unstable();
         let mut gone = FxHashSet::default();
         'node: for &x in &subjects {
-            if shared.contains(&x) {
-                continue;
-            }
             for q in s.quads([Some(x), None, None], GraphSel::AnyNamed) {
                 let q = q?;
                 if input.contains(&q[3]) && !derived.contains(&q) {
@@ -1118,7 +1232,7 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
         });
     }
     out.events.sort_by(|a, b| (&a.at, &a.node).cmp(&(&b.at, &b.node)));
-    out.shared = shared.iter().filter_map(|&x| literal(s, x)).map(|x| vocab::compact(&x)).collect();
+    out.shared = shared.iter().filter(|x| !gone.contains(x)).filter_map(|&x| literal(s, x)).map(|x| vocab::compact(&x)).collect();
     out.shared.sort();
 
     let gone_iris: FxHashSet<String> = gone.iter().filter_map(|&x| literal(s, x)).collect();
@@ -1137,7 +1251,7 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
             for q in s.quads([None, Some(fp), None], GraphSel::Named(g)) {
                 let q = q?;
                 let reason = s.object(q[0], rp)?.and_then(|r| literal(s, r)).unwrap_or_default();
-                if whole || reason.split_whitespace().next().is_some_and(names) {
+                if whole || records_of(q[0], g)?.iter().any(|r| names(r)) || reason.split_whitespace().any(names) {
                     out.quarantined.push(UsedQuarantine { node: vocab::compact(&literal(s, q[0]).unwrap_or_default()), fact: literal(s, q[2]).unwrap_or_default(), reason });
                 }
             }
@@ -1145,6 +1259,25 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
         out.quarantined.sort_by(|a, b| (&a.fact, &a.reason).cmp(&(&b.fact, &b.reason)));
     }
     Ok(out)
+}
+
+/// A stored quad as a triple.
+fn triple_of(s: &Snapshot, q: &[Id; 4]) -> anyhow::Result<oxrdf::Triple> {
+    let (Term::NamedNode(x), Term::NamedNode(p)) = (s.term(q[0])?, s.term(q[1])?) else { anyhow::bail!("a stored subject or predicate is not an IRI") };
+    Ok(oxrdf::Triple::new(x, p, s.term(q[2])?))
+}
+
+/// The quad in `g` that the provenance node `node` describes as `fact`.
+fn fact_quad(s: &Snapshot, fact: &str, node: Id, g: Id) -> anyhow::Result<Option<[Id; 4]>> {
+    let Some(subject) = fact.split_whitespace().next().and_then(|x| x.strip_prefix('<')?.strip_suffix('>')) else { return Ok(None) };
+    let (Some(x), Some(me)) = (s.iri(subject)?, literal(s, node)) else { return Ok(None) };
+    for q in s.quads([Some(x), None, None], GraphSel::Named(g)) {
+        let q = q?;
+        if crate::gateway::fact_node(&triple_of(s, &q)?).as_str() == me {
+            return Ok(Some(q));
+        }
+    }
+    Ok(None)
 }
 
 /// Every incident ranked as a harvest stores it, over the store and over `view`, the store

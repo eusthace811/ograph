@@ -125,6 +125,10 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>, actions: bool, known_apps:
         if let Some(c) = &channel {
             b.add(node.clone(), disc::CHANNEL, lit(c.as_str()), &ev, &rule);
         }
+        for m in &msgs {
+            let ev = b.record(format!("{key}#{}", m.2));
+            b.add(node.clone(), evt::SOURCE_RECORD, lit(ev.0.as_str()), &ev, &rule);
+        }
         let mut incidents: Vec<&str> = incident_refs().find_iter(&text).map(|r| r.as_str()).collect();
         for r in &incidents {
             b.add(node.clone(), disc::ABOUT, obj(crate::model::entity("inc", r)), &ev, &rule);

@@ -541,6 +541,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         }
         Cmd::Uses { source } => {
             let u = query::uses(&ws.store, &ws.ontology, &ws.config.correlation, &query::source_key(&ws.root, &cwd, &source))?;
+            for w in &u.warnings {
+                eprintln!("warning: {w}");
+            }
             print(json, &u, |u| {
                 let only = u.facts.iter().filter(|f| f.also_in.is_empty()).count();
                 println!("{}: {} facts ({only} stated nowhere else), {} events and incidents, {} chains change, {} verdicts, {} quarantined", u.source, u.facts.len(), u.events.len(), u.chains.len(), u.verdicts.len(), u.quarantined.len());

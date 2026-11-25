@@ -232,6 +232,18 @@ fn every_view_of_the_ranking_follows_a_dependency_only_from_its_date() {
 }
 
 #[test]
+fn withheld_lists_only_the_dependencies_the_depth_would_follow() {
+    let root = workspace("dated-depth", CATALOG, &[]);
+    std::fs::write(root.join("incidents.json"), r#"[{"id":"INC-1","service":"checkout","opened":1050000000}]"#).unwrap();
+    harvest(&root);
+    let ws = Workspace::open(&root).unwrap();
+    let snap = ws.store.snapshot().unwrap();
+    let withheld = |depth| ograph_core::query::before(&snap, "INC-1", 600, depth).unwrap().withheld.iter().map(|w| format!("{} -> {}", w.caller, w.callee)).collect::<Vec<_>>();
+    assert_eq!(withheld(0), Vec::<String>::new());
+    assert_eq!(withheld(1), ["checkout -> mailer"]);
+}
+
+#[test]
 fn a_call_ogrep_infers_is_a_dependency_unless_the_catalog_says_declared_only() {
     let depends = |root: &Path| values(root, "SELECT ?to WHERE { id:app\\/checkout ops:dependsOn ?to }");
     let root = workspace("inferred", CATALOG, &[]);

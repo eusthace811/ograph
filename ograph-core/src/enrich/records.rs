@@ -174,15 +174,23 @@ pub fn incidents(files: &[(PathBuf, String, bool)], mut degraded: Vec<String>, c
         let ev = b.record(record.as_str());
         let s = known("inc", id);
         b.add(s.clone(), RDF_TYPE, class(inc::INCIDENT), &ev, &m);
+        // The kept value's evidence is every record that states it, so the gateway can trace
+        // each fact of an incident several records state to the records behind it.
+        let also = |b: &mut Batch, p: &str, same_value: &dyn Fn(usize) -> bool| -> Vec<EvidenceRef> {
+            let others = stated[&(keys[n].as_str(), p)].iter().filter(|&&o| o != n && same_value(o));
+            std::iter::once(ev.clone()).chain(others.map(|&o| b.record(records[o].0.as_str()))).collect()
+        };
         if kept[&(keys[n].as_str(), "id")] == n {
-            b.add(s.clone(), inc::ID, lit(id.as_str()), &ev, &m);
+            let evidence = also(&mut b, "id", &|o| records[o].2.0 == *id);
+            b.add_stated(s.clone(), inc::ID, lit(id.as_str()), evidence, &m);
         }
         for v in values {
             if kept[&(keys[n].as_str(), v.predicate)] == n || invalid.contains(&(n, v.predicate)) {
                 if let (true, inc::TITLE, Object::Literal(l)) = (classify, v.predicate, &v.object) {
                     titles.push((s.clone(), ev.clone(), l.value().to_owned()));
                 }
-                b.add(s.clone(), v.predicate, v.object.clone(), &ev, &m);
+                let evidence = also(&mut b, v.predicate, &|o| !invalid.contains(&(o, v.predicate)) && value(o, v.predicate).is_some_and(|w| same(&w.object, &v.object)));
+                b.add_stated(s.clone(), v.predicate, v.object.clone(), evidence, &m);
             }
         }
         b.add(s.clone(), evt::SOURCE_RECORD, lit(record.as_str()), &ev, &m);

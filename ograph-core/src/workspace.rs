@@ -1011,13 +1011,15 @@ pub(crate) mod tests {
         let u = crate::query::uses(&ws.store, &ws.ontology, st, "more.json").unwrap();
         assert_eq!(u.shared, ["id:inc/inc-1"]);
         assert_eq!(u.events.iter().map(|e| e.node.as_str()).collect::<Vec<_>>(), ["id:inc/inc-2"]);
-        assert!(u.facts.iter().any(|f| f.subject == "id:inc/inc-1" && f.predicate == "evt:sourceRecord" && f.object == "more.json#1"));
-        assert!(!u.facts.iter().any(|f| f.subject == "id:inc/inc-1" && f.predicate != "evt:sourceRecord"));
+        let inc1: Vec<_> = u.facts.iter().filter(|f| f.subject == "id:inc/inc-1").map(|f| (f.predicate.as_str(), f.object.as_str(), f.also_in.is_empty())).collect();
+        assert_eq!(inc1, [("evt:sourceRecord", "more.json#1", true), ("inc:title", "Checkout down", true)]);
         assert!(u.chains.iter().all(|c| c.incident == "INC-2"));
 
         let u = crate::query::uses(&ws.store, &ws.ontology, st, "incidents.json#1").unwrap();
-        assert_eq!(u.shared, ["id:inc/inc-1"]);
-        assert!(u.events.is_empty() && u.chains.is_empty());
+        // Without its service and time, INC-1 is quarantined, so it goes with its chains.
+        assert!(u.shared.is_empty());
+        assert_eq!(u.events.iter().map(|e| e.node.as_str()).collect::<Vec<_>>(), ["id:inc/inc-1"]);
+        assert_eq!(u.chains.iter().map(|c| (c.change, c.incident.as_str())).collect::<Vec<_>>(), [("gone", "INC-1"), ("gone", "INC-1")]);
         assert!(crate::query::uses(&ws.store, &ws.ontology, st, "nothing.json").unwrap().facts.is_empty());
     }
 
@@ -1047,6 +1049,122 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn uses_takes_a_field_that_only_its_file_states_on_an_incident_another_file_states() {
+        let root = fixture("uses-fields", &[
+            ("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T + 3000))),
+            ("incidents", "inc-a.json", r#"[{"id":"INC-9","title":"Checkout errors"}]"#),
+            ("incidents", "inc-b.json", &format!(r#"[{{"id":"INC-9","service":"checkout","opened":{}}}]"#, T + 3600)),
+        ]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let u = crate::query::uses(&ws.store, &ws.ontology, &ws.config.correlation, "inc-b.json").unwrap();
+        drop(ws);
+        let only: Vec<_> = u.facts.iter().filter(|f| f.subject == "id:inc/inc-9" && f.also_in.is_empty() && f.because.is_none()).map(|f| (f.predicate.as_str(), f.object.as_str())).collect();
+        assert_eq!(only, [("evt:at", "2026-11-22T23:26:40Z"), ("evt:on", "id:app/checkout"), ("evt:sourceRecord", "inc-b.json#1")]);
+        let rechecked: Vec<_> = u.facts.iter().filter(|f| f.subject == "id:inc/inc-9" && f.because.is_some()).map(|f| f.predicate.as_str()).collect();
+        assert_eq!(rechecked, ["evt:signal", "evt:sourceRecord", "inc:id", "inc:title", "rdf:type"]);
+        assert_eq!(u.chains.iter().map(|c| (c.incident.as_str(), c.change)).collect::<Vec<_>>(), [("INC-9", "gone")]);
+        assert_eq!((u.shared.len(), u.events.iter().map(|e| e.node.as_str()).collect::<Vec<_>>()), (0, vec!["id:inc/inc-9"]));
+        assert!(u.warnings.is_empty(), "{:?}", u.warnings);
+
+        std::fs::remove_file(root.join("inc-b.json")).unwrap();
+        let cfg = root.join(".ograph/config.toml");
+        std::fs::write(&cfg, std::fs::read_to_string(&cfg).unwrap().replace("[[source]]\nkind = \"incidents\"\npath = \"inc-b.json\"\n", "")).unwrap();
+        harvest(&root, None);
+        assert!(sparql(&root, "SELECT ?p WHERE { id:inc\\/inc-9 ?p ?o }").is_empty());
+        assert!(sparql(&root, "SELECT ?c WHERE { ?c corr:leadsTo id:inc\\/inc-9 }").is_empty());
+    }
+
+    #[test]
+    fn uses_of_a_chat_record_traces_its_thread_and_the_quarantine_it_caused() {
+        let thread = format!(
+            r#"[{{"ts":"{a}.000100","channel":"ops","text":"checkout is slow"}},{{"ts":"{b}.000100","channel":"ops","text":"billing queue backs up"}},{{"ts":"{c}.000100","thread_ts":"{b}.000100","channel":"ops","text":"still backing up"}}]"#,
+            a = T - 300,
+            b = T - 200,
+            c = T - 100
+        );
+        let root = fixture("uses-chat", &[("discussions", "ops.json", &thread)]);
+        std::fs::write(root.join("answer.json"), r#"{"category":"UNKNOWN","sentiment":"urgent","apps":["billingx"],"calls":[],"confidence":0.9}"#).unwrap();
+        let cfg = root.join(".ograph/config.toml");
+        let model = format!("[llm.extract]\ncommand = [\"sh\", \"-c\", \"cat >/dev/null; cat '{}'\"]\nmodel = \"fixture\"\n", root.join("answer.json").display());
+        std::fs::write(&cfg, std::fs::read_to_string(&cfg).unwrap() + &model).unwrap();
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let st = &ws.config.correlation;
+        let thread_a = format!("id:thread/ops-{}-000100", T - 300);
+        let thread_b = format!("id:thread/ops-{}-000100", T - 200);
+
+        let u = crate::query::uses(&ws.store, &ws.ontology, st, "ops.json#1").unwrap();
+        let types: Vec<_> = u.facts.iter().filter(|f| f.predicate == "rdf:type").map(|f| (f.subject.as_str(), f.object.as_str())).collect();
+        assert!(types.contains(&(thread_a.as_str(), "disc:Thread")), "{types:?}");
+        assert!(u.shared.is_empty());
+        let quarantined: Vec<_> = u.quarantined.iter().map(|q| q.fact.as_str()).collect();
+        assert_eq!(quarantined, [format!("{thread_a} disc:about ops:Application?\"billingx\"")]);
+
+        let u = crate::query::uses(&ws.store, &ws.ontology, st, "ops.json#3").unwrap();
+        assert_eq!(u.shared, [thread_b.as_str()]);
+        assert!(u.quarantined.is_empty());
+        assert_eq!(u.warnings, [format!("{thread_b} keeps its other messages; without this one its text, and so the model's answers on it, change in ways this answer does not predict")]);
+    }
+
+    #[test]
+    fn uses_warns_when_the_incidents_were_harvested_before_they_named_their_records() {
+        let root = fixture("uses-old", &[("incidents", "more.json", &format!(r#"[{{"id":"INC-2","service":"checkout","opened":{}}}]"#, T + 86_400))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let rp = snap.iri(crate::vocab::evt::SOURCE_RECORD).unwrap().unwrap();
+        let old: Vec<[crate::term::Id; 4]> = snap.quads([None, Some(rp), None], crate::store::GraphSel::AnyNamed).map(Result::unwrap).filter(|q| crate::correlate::literal(&snap, q[3]).is_some_and(|g| g.contains("/incidents/"))).collect();
+        drop(snap);
+        ws.store.transact(|tx| tx.remove(old)).unwrap();
+        let u = crate::query::uses(&ws.store, &ws.ontology, &ws.config.correlation, "more.json").unwrap();
+        assert!(u.facts.is_empty());
+        assert_eq!(u.warnings, ["g:harvest/incidents/all names no evt:sourceRecord, so its incidents cannot be traced to their files; harvest once to record them"]);
+    }
+
+    #[test]
+    fn chains_since_a_time_an_incident_had_no_application_ranks_nothing_then() {
+        let root = fixture("since-custom", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T + 86_400 - 600))), ("incidents", "more.json", r#"[{"id":"INC-2","title":"Checkout slow"}]"#)]);
+        let shapes = root.join(".ograph/shapes.ttl");
+        std::fs::write(&shapes, std::fs::read_to_string(&shapes).unwrap().replace("evt:OperatorAction, inc:Incident ;", "evt:OperatorAction ;")).unwrap();
+        harvest(&root, None);
+        let t1 = pause();
+        std::fs::write(root.join("more.json"), format!(r#"[{{"id":"INC-2","title":"Checkout slow","service":"checkout","opened":{}}}]"#, T + 86_400)).unwrap();
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let shift = crate::query::rank_shift(&ws.store.snapshot().unwrap(), t1, "INC-2", &ws.config.correlation, 5).unwrap();
+        let apps = |r: &[crate::query::RankedApp]| r.iter().map(|a| a.app.clone()).collect::<Vec<_>>();
+        assert_eq!((apps(&shift.then), apps(&shift.now)), (vec![], vec!["ledger-db".to_owned()]));
+    }
+
+    #[test]
+    fn an_incident_that_left_the_graph_is_not_found_and_one_in_quarantine_says_so() {
+        let root = fixture("gone-incident", &[("incidents", "more.json", &format!(r#"[{{"id":"INC-2","service":"checkout","opened":{}}},{{"id":"INC-3","title":"no time"}}]"#, T + 86_400))]);
+        harvest(&root, None);
+        std::fs::write(root.join("more.json"), r#"[{"id":"INC-3","title":"no time"}]"#).unwrap();
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        assert_eq!(crate::query::lookup(&snap, "INC-2").unwrap_err().to_string(), "nothing in the graph is called INC-2");
+        // Which missing field SHACL reports first varies; both are a missing time or application.
+        let err = crate::query::lookup(&snap, "INC-3").unwrap_err().to_string();
+        assert!(err.starts_with("INC-3 is in quarantine: SHACL MinCountConstraintComponent: an event needs "), "{err}");
+    }
+
+    #[test]
+    fn blast_at_a_time_lists_only_the_incidents_open_then() {
+        let root = fixture("blast-at", &[("incidents", "more.json", &format!(r#"[{{"id":"INC-2","service":"checkout","opened":{},"resolved":{},"status":"resolved"}}]"#, T - 1000, T - 500))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let open = |at: Option<i64>| crate::query::blast(&snap, "ledger-db", 8, at).unwrap().open_incidents;
+        assert_eq!(open(None), ["id:inc/inc-1"]);
+        assert_eq!(open(Some((T - 700) * 1000)), ["id:inc/inc-2"]);
+        assert_eq!(open(Some((T - 100) * 1000)), Vec::<String>::new());
+        assert_eq!(open(Some(T * 1000)), ["id:inc/inc-1"]);
+    }
+
+    #[test]
     fn a_source_path_is_keyed_as_the_harvest_keys_it() {
         use crate::query::{source_key, split_record};
         assert_eq!(split_record("runbooks/db.md:12"), ("runbooks/db.md", Some(":12")));
@@ -1056,6 +1174,21 @@ pub(crate) mod tests {
         assert_eq!(source_key(root, cwd, "a.jsonl#3"), "logs/a.jsonl#3");
         assert_eq!(source_key(root, cwd, "/data/case/metrics.csv"), "/data/case/metrics.csv");
         assert_eq!(source_key(Path::new("."), Path::new("/w"), "/w/runbooks/"), "runbooks");
+        assert_eq!(source_key(root, cwd, "../shop"), "shop");
+        assert_eq!(source_key(root, cwd, "sub/../alerts.json#2"), "logs/alerts.json#2");
+        assert_eq!(source_key(root, cwd, "./a.jsonl"), "logs/a.jsonl");
+        assert_eq!(source_key(Path::new("."), Path::new("/w"), "."), "");
+        assert_eq!(source_key(Path::new("../w"), Path::new("/x"), "../w/logs/../alerts.json"), "alerts.json");
+    }
+
+    #[test]
+    fn uses_of_the_workspace_root_lists_every_source() {
+        let root = fixture("uses-root", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let key = crate::query::source_key(&root, &root.join("sub"), "..");
+        let u = crate::query::uses(&ws.store, &ws.ontology, &ws.config.correlation, &key).unwrap();
+        assert_eq!(u.graphs, ["g:harvest/catalog/", "g:harvest/alerts/alerts.json", "g:harvest/incidents/all"]);
     }
 
     #[test]

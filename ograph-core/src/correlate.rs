@@ -220,7 +220,8 @@ pub struct Withheld {
     pub valid_from: String,
 }
 
-/// The dated dependencies of applications in `app`'s scope at `t` (Unix ms) that began after `t`.
+/// The dated dependencies that began after `t` (Unix ms) of applications in `app`'s scope at `t`
+/// near enough that `depth` would follow them.
 pub fn withheld(s: &Snapshot, ids: &Ids, app: Id, depth: usize, t: i64) -> anyhow::Result<Vec<Withheld>> {
     if ids.valid_from.is_empty() {
         return Ok(vec![]);
@@ -229,7 +230,7 @@ pub fn withheld(s: &Snapshot, ids: &Ids, app: Id, depth: usize, t: i64) -> anyho
     let mut out: Vec<Withheld> = ids
         .valid_from
         .iter()
-        .filter(|&(&(x, _), &from)| from > t && scope.contains_key(&x))
+        .filter(|&(&(x, _), &from)| from > t && scope.get(&x).is_some_and(|&d| d < depth))
         .map(|(&(x, y), &from)| Withheld { caller: app_name(s, ids, x), callee: app_name(s, ids, y), valid_from: term::format_millis(from) })
         .collect();
     out.sort_by(|a, b| (&a.caller, &a.callee).cmp(&(&b.caller, &b.callee)));

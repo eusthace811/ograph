@@ -371,6 +371,15 @@ pub struct Outcome {
 pub struct Rejection {
     pub fact: String,
     pub reason: String,
+    /// The records that proposed it, kept on its quarantine entry as `evt:sourceRecord`.
+    #[serde(skip)]
+    pub records: Vec<String>,
+}
+
+impl Rejection {
+    fn of(f: &ProposedFact, reason: String) -> Self {
+        Self { fact: f.describe(), reason, records: f.evidence.iter().map(|e| e.0.clone()).collect() }
+    }
 }
 
 struct Resolved {
@@ -408,7 +417,7 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                 catalog.to_mut().add(class, s, &names.iter().map(String::as_str).collect::<Vec<_>>());
             }
     }
-    let mut rejected: Vec<Rejection> = batch.withheld.iter().map(|(f, reason)| Rejection { fact: f.describe(), reason: reason.clone() }).collect();
+    let mut rejected: Vec<Rejection> = batch.withheld.iter().map(|(f, reason)| Rejection::of(f, reason.clone())).collect();
     let mut fuzzy = 0;
     let mut accepted: Vec<Resolved> = Vec::new();
     let mut minted: FxHashSet<(NamedNode, &'static str)> = FxHashSet::default();
@@ -450,7 +459,7 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
         }
     };
     for (i, f) in batch.facts.iter().enumerate() {
-        let reject = |reason: String| Rejection { fact: f.describe(), reason };
+        let reject = |reason: String| Rejection::of(f, reason);
         let catalog_method = matches!(f.method, Extraction::Catalog { .. });
         let p = f.predicate.as_str();
         if p != RDF_TYPE && p != RDFS_LABEL && ont.property(p).is_none() {
@@ -532,7 +541,7 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
     accepted.retain(|a| match alias_of(a).and_then(|k| claims.get(&k)).filter(|c| c.len() > 1) {
         Some(c) => {
             let names: Vec<&str> = c.iter().map(String::as_str).collect();
-            rejected.push(Rejection { fact: batch.facts[a.fact].describe(), reason: format!("alias is claimed by {} in one batch", names.join(" and ")) });
+            rejected.push(Rejection::of(&batch.facts[a.fact], format!("alias is claimed by {} in one batch", names.join(" and "))));
             false
         }
         None => true,
@@ -542,8 +551,10 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
     }
     let (kept, dropped) = shacl_pass(snap, ont, replaced, accepted, |r| &r.triple);
     for (a, reason) in dropped {
-        let fact = batch.facts.get(a.fact).map_or_else(|| format!("{} (minted type)", a.triple), ProposedFact::describe);
-        rejected.push(Rejection { fact, reason });
+        rejected.push(match batch.facts.get(a.fact) {
+            Some(f) => Rejection::of(f, reason),
+            None => Rejection { fact: format!("{} (minted type)", a.triple), reason, records: vec![] },
+        });
     }
     let accepted = kept;
     (accepted.into_iter().map(|r| (r.triple, r.fact)).collect(), rejected, fuzzy)
@@ -680,6 +691,7 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, _d
             triples.push(f(vocab::evt::SOURCE_RECORD, s(&e.0)));
         }
     }
+    triples.extend(record_provenance(batch, &accepted));
     let mut quarantine = Vec::new();
     for r in &rejected {
         let node = NamedNode::new_unchecked(format!("{}quarantine/{}", vocab::DATA, &hex::encode(sha2_hash(&format!("{}|{}", r.fact, r.reason)))[..20]));
@@ -688,6 +700,9 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, _d
         quarantine.push(f(harv::FACT, s(&r.fact)));
         quarantine.push(f(harv::REASON, s(&r.reason)));
         quarantine.push(f(harv::SOURCE, s(&batch.source)));
+        for e in &r.records {
+            quarantine.push(f(vocab::evt::SOURCE_RECORD, s(e)));
+        }
     }
     let outcome = |removed, added| Outcome {
         graph: graph.as_str().to_owned(),
@@ -731,6 +746,39 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, _d
 }
 
 /// The node that holds a model-proposed fact's provenance.
+/// In a graph of several files, the records behind each fact about a node that more than one
+/// record states: `harv:fact`, `harv:method "rule"` and an `evt:sourceRecord` per record, on the
+/// fact's node. Without them a file that sets one field of an incident another file also states
+/// could not be told from one that sets none. Model facts carry their own provenance.
+fn record_provenance(batch: &Batch, accepted: &[(Triple, usize)]) -> Vec<Triple> {
+    if batch.files.is_empty() {
+        return vec![];
+    }
+    let mut by_triple: std::collections::BTreeMap<String, (&Triple, std::collections::BTreeSet<&str>, bool)> = Default::default();
+    for (t, i) in accepted {
+        let Some(f) = batch.facts.get(*i) else { continue };
+        let e = by_triple.entry(t.to_string()).or_insert_with(|| (t, Default::default(), false));
+        e.1.extend(f.evidence.iter().map(|r| r.0.as_str()));
+        e.2 |= matches!(f.method, Extraction::Llm { .. });
+    }
+    let mut records: FxHashMap<&oxrdf::NamedOrBlankNode, std::collections::BTreeSet<&str>> = FxHashMap::default();
+    for (t, rs, _) in by_triple.values() {
+        records.entry(&t.subject).or_default().extend(rs);
+    }
+    let mut out = Vec::new();
+    for (text, (t, rs, llm)) in &by_triple {
+        if *llm || records[&t.subject].len() < 2 {
+            continue;
+        }
+        let node = fact_node(t);
+        let f = |p: &str, o: Term| Triple::new(node.clone(), NamedNode::new_unchecked(p), o);
+        out.push(f(harv::FACT, s(text)));
+        out.push(f(harv::METHOD, s("rule")));
+        out.extend(rs.iter().map(|r| f(vocab::evt::SOURCE_RECORD, s(r))));
+    }
+    out
+}
+
 pub fn fact_node(t: &Triple) -> NamedNode {
     NamedNode::new_unchecked(format!("{}fact/{}", vocab::DATA, &hex::encode(sha2_hash(&t.to_string()))[..20]))
 }
@@ -833,7 +881,7 @@ fn stored(snap: &Snapshot, gid: Id) -> anyhow::Result<Vec<Triple>> {
     }
     let bookkeeping: FxHashSet<oxrdf::NamedOrBlankNode> = triples
         .iter()
-        .filter(|t| t.predicate.as_str() == RDF_TYPE && matches!(&t.object, Term::NamedNode(c) if c.as_str() == harv::HARVEST || c.as_str() == harv::LLM_FACT))
+        .filter(|t| t.predicate.as_str() == harv::FACT || t.predicate.as_str() == RDF_TYPE && matches!(&t.object, Term::NamedNode(c) if c.as_str() == harv::HARVEST || c.as_str() == harv::LLM_FACT))
         .map(|t| t.subject.clone())
         .collect();
     triples.retain(|t| !bookkeeping.contains(&t.subject));
