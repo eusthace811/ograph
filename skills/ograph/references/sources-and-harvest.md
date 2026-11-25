@@ -61,6 +61,12 @@ path = "exports/news.jsonl"
 - The catalog also takes the calls ogrep infers from configuration (an environment variable
   that holds another service's address) as dependencies. Kubernetes manifests declare none, so
   there these are the whole graph. `inferred = false` on the source keeps declared ones only.
+- The catalog dates a dependency added to a service the repository already declared, from its
+  git history (`ops:validFrom`). `before`, `chains` and `blast --at INC` follow it only for an
+  incident that opened after that date, and list the ones they left out as `withheld` ("not
+  followed" in text). So a dependency added last week does not change last month's ranking.
+  Needs an ogrep release after 0.3.0; with an older one the harvest says "dependencies carry no
+  date" and every dependency counts at every time.
 - A `code` source turns each service's commits into `COMMIT` events with their changed files.
   It also lets ogrep locate log bursts and stack traces, so `LOG_ERROR` and `EXCEPTION` events
   get a `path:line`. A deployment whose version and the one before it are tags or commit ids of

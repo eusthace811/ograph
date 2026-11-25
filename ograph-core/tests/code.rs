@@ -12,7 +12,9 @@ const FIRST: &str = "0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f60718293";
 /// checkout -> payments -> ledger-db as files declare them, and checkout -> mailer as ogrep
 /// infers it. It appends its arguments to `.calls` in the repository, fails every call in a
 /// repository that holds a file named `.fail`, and in one that holds `.old` refuses what ogrep
-/// 0.2.0 refuses: a list of services and `--until` for `--timeline` and `--suspects`.
+/// 0.2.0 refuses: a list of services and `--until` for `--timeline` and `--suspects`. With
+/// `--dated` every edge came with its service on 2001-09-09 except checkout -> mailer, added on
+/// 2004-11-09; in a repository that holds `.undated` it refuses `--dated`, as ogrep 0.3.0 does.
 fn ogrep() -> &'static Path {
     static OGREP: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     OGREP.get_or_init(|| {
@@ -21,15 +23,17 @@ fn ogrep() -> &'static Path {
             r#"#!/bin/sh
 echo "$*" >> .calls
 [ -f .fail ] && {{ echo "boom" >&2; exit 2; }}
+case "$*" in *--dated*) [ -f .undated ] && {{ echo "error: unexpected argument '--dated' found" >&2; exit 2; }} ;; esac
+undate() {{ case "$*" in *--dated*) cat ;; *) sed 's/,"since":{{[^}}]*}}//g' ;; esac; }}
 if [ -f .old ]; then case "$1 $*" in
   "--timeline "*" --until "*|"--suspects "*" --until "*) echo "ogrep: --until and --author need --history or --introduced" >&2; exit 2 ;;
   "--timeline --timeline "*,*) echo "ogrep: no service named \"$2\"" >&2; exit 2 ;;
 esac; fi
 case "$1" in
 --files) find . -path '*/.*' -prune -o -type f -print ;;
---entities) cat <<'X'
-{{"type":"entity","data":{{"edges":[{{"evidence":{{"file":"compose.yml","line":4}},"from":"checkout","provenance":"declared","relation":"depends_on","to":"payments"}},{{"evidence":{{"file":"compose.yml","line":3}},"from":"checkout","provenance":"inferred","relation":"calls","to":"payments"}},{{"evidence":{{"file":"compose.yml","line":3}},"from":"checkout","provenance":"inferred","relation":"calls","to":"mailer"}},{{"evidence":{{"file":"compose.yml","line":3}},"from":"checkout","provenance":"inferred","relation":"telemetry","to":"ledger-db"}}],"entity":{{"aliases":["checkout-external"],"id":"checkout","kind":"service","locations":[{{"file":"compose.yml","line":2}}]}}}}}}
-{{"type":"entity","data":{{"edges":[{{"evidence":{{"file":"compose.yml","line":7}},"from":"payments","provenance":"declared","relation":"depends_on","to":"ledger-db"}}],"entity":{{"id":"payments","kind":"service","locations":[{{"file":"compose.yml","line":5}}]}}}}}}
+--entities) undate "$@" <<'X'
+{{"type":"entity","data":{{"edges":[{{"evidence":{{"file":"compose.yml","line":4}},"from":"checkout","provenance":"declared","relation":"depends_on","to":"payments","since":{{"commit":"c1","time":1000000000}}}},{{"evidence":{{"file":"compose.yml","line":3}},"from":"checkout","provenance":"inferred","relation":"calls","to":"payments","since":{{"commit":"c1","time":1000000000}}}},{{"evidence":{{"file":"compose.yml","line":3}},"from":"checkout","provenance":"inferred","relation":"calls","to":"mailer","since":{{"commit":"c2","time":1100000000}}}},{{"evidence":{{"file":"compose.yml","line":3}},"from":"checkout","provenance":"inferred","relation":"telemetry","to":"ledger-db","since":{{"commit":"c1","time":1000000000}}}}],"entity":{{"aliases":["checkout-external"],"id":"checkout","kind":"service","locations":[{{"file":"compose.yml","line":2}}],"since":{{"commit":"c1","time":1000000000}}}}}}}}
+{{"type":"entity","data":{{"edges":[{{"evidence":{{"file":"compose.yml","line":7}},"from":"payments","provenance":"declared","relation":"depends_on","to":"ledger-db","since":{{"commit":"c1","time":1000000000}}}}],"entity":{{"id":"payments","kind":"service","locations":[{{"file":"compose.yml","line":5}}],"since":{{"commit":"c1","time":1000000000}}}}}}}}
 {{"type":"entity","data":{{"edges":[],"entity":{{"id":"ledger-db","kind":"service","locations":[{{"file":"compose.yml","line":10}}]}}}}}}
 {{"type":"entity","data":{{"edges":[],"entity":{{"id":"mailer","kind":"service","locations":[{{"file":"compose.yml","line":12}}]}}}}}}
 X
@@ -172,6 +176,23 @@ fn an_ogrep_that_takes_one_service_at_a_time_is_asked_for_each() {
 }
 
 #[test]
+fn a_dependency_added_to_a_declared_service_is_dated_and_one_that_came_with_it_is_not() {
+    let root = workspace("dated", CATALOG, &[]);
+    let out = harvest(&root);
+    assert!(out.iter().all(|o| o.degraded.is_empty()), "{out:?}");
+    let dated = "SELECT ?x WHERE { ?d a ops:Dependency ; ops:caller ?c ; ops:callee ?e ; ops:validFrom ?t ; ops:addedIn ?s . BIND(CONCAT(STR(?c), ' ', STR(?e), ' ', STR(?t), ' ', ?s) AS ?x) }";
+    assert_eq!(values(&root, dated), ["https://ograph.dev/id/app/checkout https://ograph.dev/id/app/mailer 2004-11-09T11:33:20Z c2"]);
+    assert_eq!(violations(&root), 0);
+
+    let old = workspace("undated", CATALOG, &[("shop/.undated", "")]);
+    let out = harvest(&old);
+    let catalog = out.iter().find(|o| o.graph.contains("/catalog/")).unwrap();
+    assert_eq!(catalog.degraded, ["shop: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"]);
+    assert!(values(&old, dated).is_empty());
+    assert_eq!(values(&old, "SELECT ?to WHERE { id:app\\/checkout ops:dependsOn ?to }"), ["https://ograph.dev/id/app/mailer", "https://ograph.dev/id/app/payments"]);
+}
+
+#[test]
 fn a_call_ogrep_infers_is_a_dependency_unless_the_catalog_says_declared_only() {
     let depends = |root: &Path| values(root, "SELECT ?to WHERE { id:app\\/checkout ops:dependsOn ?to }");
     let root = workspace("inferred", CATALOG, &[]);
@@ -258,7 +279,7 @@ fn deployments_keep_no_files_without_a_code_source_or_with_an_ogrep_that_reads_n
     let plain = workspace("deploy-plain", &format!("{CATALOG}{DEPLOYS}"), &[("deployments.jsonl", &deployments())]);
     let out = harvest(&plain);
     assert!(out.iter().all(|o| o.degraded.is_empty()), "{out:?}");
-    assert_eq!(calls(&plain), "--files .\n--entities . --json\n");
+    assert_eq!(calls(&plain), "--files .\n--entities . --json --dated\n");
     let old = workspace("deploy-old", &format!("{CATALOG}{CODE}{DEPLOYS}"), &[("deployments.jsonl", &deployments()), ("shop/.old", "")]);
     let out = harvest(&old);
     let o = out.iter().find(|o| o.graph.ends_with("/deployments/deployments.jsonl")).unwrap();
@@ -301,7 +322,7 @@ fn without_a_code_source_nothing_is_looked_up_in_code() {
     let ws = Workspace::open(&root).unwrap();
     let answer = ws.code(&ws.store.snapshot().unwrap(), "INC-1", 5).unwrap();
     assert_eq!(serde_json::to_value(&answer).unwrap(), serde_json::json!({"incident": "id:inc/inc-1", "app": "checkout", "at": ograph_core::term::format_millis(T * 1000), "locations": [], "commits": [], "files": [], "files_confidence": null, "writeups": [], "degraded": []}));
-    assert_eq!(calls(&root), "--files .\n--entities . --json\n");
+    assert_eq!(calls(&root), "--files .\n--entities . --json --dated\n");
 }
 
 const EVERYTHING: &str = "[[source]]\nkind = \"logs\"\npath = \"logs.jsonl\"\n[[source]]\nkind = \"errors\"\npath = \"errors.jsonl\"\n";
@@ -428,7 +449,7 @@ fn chains_falls_back_to_suspects_only_when_nothing_ranks_and_code_is_configured(
     harvest(&no_code);
     let (ranked, answer) = fallback(&no_code);
     assert_eq!((ranked, answer.get("suspects")), (0, None));
-    assert_eq!(calls(&no_code), "--files .\n--entities . --json\n");
+    assert_eq!(calls(&no_code), "--files .\n--entities . --json --dated\n");
 
     let loud = workspace("fallback-ranked", &format!("{CATALOG}{CODE}{EVERYTHING}"), &[("logs.jsonl", &logs()), ("errors.jsonl", &errors())]);
     harvest(&loud);

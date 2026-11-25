@@ -1,0 +1,3 @@
+ogrep edge-dates 9ce4230: cargo fmt --all -- --check, cargo clippy --workspace --all-targets --locked -- -D warnings, cargo test --workspace --locked
+test binaries: 33, passed 1141, failed 0
+exit=0
