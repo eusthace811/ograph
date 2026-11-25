@@ -1,0 +1,52 @@
+Hand labels for scripts/eval/misled_by.py, written and committed before the script ran on these runs.
+
+Sample: 20 of the 99 wrong runs (an agent arm, status fail, a non-empty ROOT) of the seen sample
+(suite rcaeval: --sample 30 --seed 12) in docs/evidence/agent-rca-haiku, drawn with
+random.Random(20261125).sample(sorted((arm, case, run, root)), 20). No held-out (rcaeval-miss) or
+demo transcript was read.
+
+How each run was read: the transcripts keep 3000 characters of each tool output, and the wrong
+application is often past the cut (an ograph_chains answer is 4-9 KB). scripts/eval/replay_calls.py
+re-executed each run's calls against the same case with a binary of the same ograph-core and
+ograph-cli (74b3696; no change to either since ee48efb, the run's binary) and checked every replayed
+output against the kept text: 156 of 161 calls matched (144 exact, 12 close), 3 did not (two
+`find` listings in another file order, one `ls`), and 2 large outputs were previews in the run,
+so the preview stands. The labels below come from
+reading those outputs call by call, not from any attribution code.
+
+Rubric. The first call whose output presents the wrong application as a candidate cause: the
+output attaches a fault signal to it. Counts: an event on it (before, suspects), a chain or a
+rank for it (chains), an anomaly, error count, deviation or onset that the agent's own script
+printed for it, an error log line from it. Does not count: the catalog, ownership, dependency
+lists or `blast` (no signal), CSV headers, a scope list, normal log lines or plain line counts,
+the skill's text, and cite_check echoing the agent's own draft. Several ograph commands in one
+Bash call: the tool is the command whose part of the output carries the signal.
+
+tool: before, chains, suspects, similar, why, blast, sparql (ograph's, as MCP tools or CLI
+commands in Bash), own (the agent's own grep, awk or Python over the raw files), read.
+signal: the strongest signal on the wrong application in that output.
+
+arm   case                                 run  call  tool    signal
+mcp   rcaeval/c-17329102bc/INC-173291      2    1     before  METRIC_ANOMALY severity 1.0 (redis diskio)
+mcp   rcaeval/c-177092bf56/INC-177092      2    1     before  METRIC_ANOMALY severity 0.05 (productcatalogservice mem)
+mcp   rcaeval/c-3a0809d8d0/INC-3A0809      1    1     before  METRIC_ANOMALY severity 1.0 (redis diskio)
+skill rcaeval/c-4d387bea1c/INC-4D387B      2    2     before  METRIC_ANOMALY severity 1.0 (redis diskio; same Bash call also ran chains)
+mcp   rcaeval/c-52eb6b0c94/INC-52EB6B      1    1     before  METRIC_ANOMALY severity 0.05 (redis diskio; default window)
+skill rcaeval/c-52eb6b0c94/INC-52EB6B      2    2     before  METRIC_ANOMALY severity 1.0 (redis diskio)
+raw   rcaeval/c-54eaff8bb0/INC-54EAFF      3    4     own     error-word log count per service, recommendationservice 20
+mcp   rcaeval/c-648fd48698/INC-648FD4      1    1     before  METRIC_ANOMALY severity 0.18 (redis diskio)
+mcp   rcaeval/c-92c08bd0d2/INC-92C08B      2    1     before  METRIC_ANOMALY severity 0.62 (currencyservice socket)
+skill rcaeval/c-963cb0c461/INC-963CB0      1    3     before  METRIC_ANOMALY severity 1.0 (redis diskio)
+skill rcaeval/c-b9ecf644af/INC-B9ECF6      1    2     before  METRIC_ANOMALY severity 1.0 (redis diskio)
+mcp   rcaeval/c-bba0bc25ab/INC-BBA0BC      1    1     before  METRIC_ANOMALY severity 1.0 (redis diskio)
+mcp   rcaeval/c-bba0bc25ab/INC-BBA0BC      2    1     before  METRIC_ANOMALY severity 0.1 (redis diskio; default window)
+mcp   rcaeval/c-bba0bc25ab/INC-BBA0BC      3    1     before  METRIC_ANOMALY severity 0.1 (redis diskio; default window)
+mcp   rcaeval/c-ce14e33b0b/INC-CE14E3      2    1     before  METRIC_ANOMALY severity 1.0 (redis diskio)
+raw   rcaeval/c-ce14e33b0b/INC-CE14E3      3    6     own     metric deviation ranking, paymentservice_latency-50 first (341.8)
+skill rcaeval/c-e26fc30ca6/INC-E26FC3      2    2     before  METRIC_ANOMALY severity 0.13 (redis diskio)
+skill rcaeval/c-e375de9cb8/INC-E375DE      3    2     chains  chain rank 3, root METRIC_ANOMALY severity 1.0 (before in the same call shows redis only in its scope)
+mcp   rcaeval/c-e9781b0ed5/INC-E9781B      3    1     before  METRIC_ANOMALY severity 0.1 (redis diskio; default window)
+mcp   rcaeval/c-ec9e76a45d/INC-EC9E76      1    1     before  METRIC_ANOMALY severity 1.0 (redis diskio)
+
+Observation while labeling: in 6 of the 12 mcp runs the first output that shows the wrong
+application gives it only weak events (severity 0.05 to 0.18).

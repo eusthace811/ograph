@@ -1,0 +1,100 @@
+Misled-by attribution (scripts/eval/misled_by.py) over agent-rca-haiku: for each wrong run, the
+first tool call whose output presented the wrong answer's application as a candidate cause.
+
+Commands (lane-u-bench, binary target/release/ograph built at 74b3696; ograph-core and
+ograph-cli are unchanged since ee48efb, the binary agent-rca-haiku ran):
+  replay_calls.py --runs docs/evidence/agent-rca-haiku --bin target/release/ograph
+    --cases <data>/rcaeval-cases --demo <main checkout>/examples/demo --wrong-only
+    --work /private/tmp/claude-501/lane-u-work/replay --out replay-wrong.jsonl
+  misled_by.py --replayed replay-wrong.jsonl --labels docs/evidence/misled-by-labels.txt --suite rcaeval
+  misled_by.py --replayed replay-wrong.jsonl --suite rcaeval-miss   (and --suite demo)
+
+Why a replay: the transcripts keep 3000 characters of each output, and the wrong application is
+usually past the cut (ograph_before and ograph_chains answers run 4-9 KB). replay_calls.py
+re-executes every call of the 123 wrong runs against the same staged case and checks each output
+against the kept text: 996 of 1073 calls match (932 exact, 64 close), 62 do not (44 are `ls`, `find`
+and `which`, whose paths and dates differ in the replay; 9 the agent's own Python), and 15
+were previews the agent saw in place of a large output. Where a replay does not match, the kept
+text stands in.
+
+VALIDATION (labels committed first, e010bd8, docs/evidence/misled-by-labels.txt)
+20 wrong runs drawn by seed 20261125 from the seen sample only (suite rcaeval, --sample 30
+--seed 12): 12 mcp, 6 skill, 2 raw. Labeled by reading the replayed outputs call by call, then the
+script ran on them.
+agreement with docs/evidence/misled-by-labels.txt: tool 20/20 (1.00), tool and call 20/20
+  ok  mcp rcaeval/c-17329102bc/INC-173291 2: label call 1 before; script call 1 before: METRIC_ANOMALY severity 1.0
+  ok  mcp rcaeval/c-177092bf56/INC-177092 2: label call 1 before; script call 1 before: METRIC_ANOMALY severity 0.05
+  ok  mcp rcaeval/c-3a0809d8d0/INC-3A0809 1: label call 1 before; script call 1 before: METRIC_ANOMALY severity 1.0
+  ok  skill rcaeval/c-4d387bea1c/INC-4D387B 2: label call 2 before; script call 2 before: METRIC_ANOMALY severity 1.00
+  ok  mcp rcaeval/c-52eb6b0c94/INC-52EB6B 1: label call 1 before; script call 1 before: METRIC_ANOMALY severity 0.05
+  ok  skill rcaeval/c-52eb6b0c94/INC-52EB6B 2: label call 2 before; script call 2 before: METRIC_ANOMALY severity 1.00
+  ok  raw rcaeval/c-54eaff8bb0/INC-54EAFF 3: label call 4 own; script call 4 own: count after an error filter: [('frontend', 186), ('productcatalogservice', 32), ('recommendationservice', 20)
+  ok  mcp rcaeval/c-648fd48698/INC-648FD4 1: label call 1 before; script call 1 before: METRIC_ANOMALY severity 0.18
+  ok  mcp rcaeval/c-92c08bd0d2/INC-92C08B 2: label call 1 before; script call 1 before: METRIC_ANOMALY severity 0.62
+  ok  skill rcaeval/c-963cb0c461/INC-963CB0 1: label call 3 before; script call 3 before: METRIC_ANOMALY severity 1.00
+  ok  skill rcaeval/c-b9ecf644af/INC-B9ECF6 1: label call 2 before; script call 2 before: METRIC_ANOMALY severity 1.00
+  ok  mcp rcaeval/c-bba0bc25ab/INC-BBA0BC 1: label call 1 before; script call 1 before: METRIC_ANOMALY severity 1.0
+  ok  mcp rcaeval/c-bba0bc25ab/INC-BBA0BC 2: label call 1 before; script call 1 before: METRIC_ANOMALY severity 0.1
+  ok  mcp rcaeval/c-bba0bc25ab/INC-BBA0BC 3: label call 1 before; script call 1 before: METRIC_ANOMALY severity 0.1
+  ok  mcp rcaeval/c-ce14e33b0b/INC-CE14E3 2: label call 1 before; script call 1 before: METRIC_ANOMALY severity 1.0
+  ok  raw rcaeval/c-ce14e33b0b/INC-CE14E3 3: label call 6 own; script call 6 own: metric figures for paymentservice_latency-50: (341.8235214365636, 'paymentservice_latency-50', 0.0032, 0.0419)
+  ok  skill rcaeval/c-e26fc30ca6/INC-E26FC3 2: label call 2 before; script call 2 before: METRIC_ANOMALY severity 0.13
+  ok  skill rcaeval/c-e375de9cb8/INC-E375DE 3: label call 2 chains; script call 2 chains: chain rank 3 score 0.72, root METRIC_ANOMALY severity 1.0
+  ok  mcp rcaeval/c-e9781b0ed5/INC-E9781B 3: label call 1 before; script call 1 before: METRIC_ANOMALY severity 0.1
+  ok  mcp rcaeval/c-ec9e76a45d/INC-EC9E76 1: label call 1 before; script call 1 before: METRIC_ANOMALY severity 1.0
+Caveat: the rules were written after the labels, by the same reader, so this agreement is
+in-sample; and 16 of the 20 runs are mcp or skill runs whose first ograph answer (before) already
+shows the wrong application, which is easy to agree on. The 4 harder ones (2 raw runs whose own
+Python printed the lure, a skill run where chains and not before carried it, a Bash call that ran
+three ograph commands) also agree.
+GATE tool agreement >= 0.8: 20/20 = 1.00, PASS. KEEP the script.
+
+AGGREGATE over every wrong run of agent-rca-haiku (computed by the script; held-out transcripts
+were not read). A wrong run is an agent arm's run with status fail and a ROOT line.
+
+seen sample (rcaeval, 30 cases)
+mcp: 64 wrong runs; first saw the wrong application in before 64
+   39  before    METRIC_ANOMALY severity 1.0
+   20  before    METRIC_ANOMALY severity <0.5
+    5  before    METRIC_ANOMALY severity 0.5-0.99
+  wrong applications: redis x54, currencyservice x4, paymentservice x2, cartservice x2, productcatalogservice x1, recommendationservice x1
+skill: 26 wrong runs; first saw the wrong application in before 23, chains 3
+   13  before    METRIC_ANOMALY severity 1.0
+   10  before    METRIC_ANOMALY severity <0.5
+    2  chains    chain rank 2
+    1  chains    chain rank 3, root METRIC_ANOMALY severity 1.0
+  wrong applications: redis x25, recommendationservice x1
+raw: 9 wrong runs; first saw the wrong application in own 9
+    4  own       metric figures
+    3  own       fault words
+    2  own       count after an error filter
+  wrong applications: recommendationservice x3, productcatalogservice x2, checkoutservice x2, paymentservice x2
+
+misses (rcaeval-miss, 5 cases)
+mcp: 12 wrong runs; first saw the wrong application in before 12
+   10  before    METRIC_ANOMALY severity 1.0
+    2  before    METRIC_ANOMALY severity <0.5
+  wrong applications: redis x9, paymentservice x3
+skill: 9 wrong runs; first saw the wrong application in before 6, chains 2, own 1
+    5  before    METRIC_ANOMALY severity 1.0
+    1  chains    chain rank 1
+    1  own       fault words
+    1  chains    chain rank 5
+    1  before    METRIC_ANOMALY severity <0.5
+  wrong applications: redis x5, emailservice x2, paymentservice x2
+
+demo (4 incidents)
+mcp: 3 wrong runs; first saw the wrong application in before 3
+    3  before    ALERT severity 0.5-0.99
+  wrong applications: search-api x3
+
+Reading: mcp: 64 of 64 wrong runs on the seen sample first saw the wrong application in `before`,
+39 of them as a METRIC_ANOMALY of severity 1.0, and 54 of the 64 answered redis (the redis diskio
+series: zero for minutes, then one write burst, which saturates the robust z). 20 of the 64 first
+saw it as a weak event (severity under 0.5) in before's default window; the strong one came later
+in the run. skill: the same lure through the CLI (23 of 26 in before, 3 in chains). raw never saw
+ograph and was misled by its own metric and log arithmetic, on four different applications. On the
+demo, the 3 mcp misses first saw search-api, the incident's own application, as an ALERT in
+before.
+`before` is every mcp run's first call, so "first saw it in before" is partly the order the agent
+instructions set; the signal column is what carries information.

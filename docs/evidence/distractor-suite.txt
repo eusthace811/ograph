@@ -1,0 +1,73 @@
+Distractor suite (examples/distractors): design, checks, and the gate, written and committed
+BEFORE the baseline run.
+
+WHAT IT IS
+35 generated incidents (seed 2026, 7 per distractor type) in the case layout agent_rca_eval.py
+and rcaeval_score.py read: one directory per case (.ograph/config.toml, catalog/ as a one-commit
+git repository, ownership, deployments, config changes, alerts, incidents, logs, metrics) and
+labels.json beside them. 7 domains (logistics, media, banking, health, gaming, travel, iot) and 5
+topologies (chain, fan, diamond, shared store, deep), every type covering all 5 topologies and 7
+domains; service names like route-planner, accounts-pg, mqtt-core, none of RCAEval's.
+Each case has one root: at the onset its fault metric steps or ramps (cpu, mem, errors,
+latency for a service; pool, disk, latency for a store), it logs fault errors, and every caller,
+by distance, slows and logs failed calls to its callee 15-40 s per hop later. The incident opens
+on the entry 4-7 minutes after the onset, with an alert on the entry a minute before. Benign
+history in every case: deployments hours earlier, a config change days earlier, a resolved
+incident on another application. One distractor per case, of its type:
+  a chronic    a noisy gc-pause series on an upstream dependency (a callee of the root when it
+               has one) spiking every 3.5-6.5 min for the whole hour, once 1-2.5 min before onset
+  b deploy     a deployment of a healthy application 1.5-4 min before onset, with start-up logs;
+               flat metrics
+  c alert      a critical alert on a downstream caller of the root that fires before any other
+               alert; the root has none
+  d sparse     a snapshot-io series, zero all hour except one 3-4 sample burst 1-3.5 min before
+               onset, on an application outside the fault's path
+  e precedent  two resolved past incidents on the entry, titled like this one, whose
+               mitigations name another application as the cause, with alerts at the time
+Labels are by construction (the generator picks root, onset and distractor, then writes the
+telemetry). The generator: examples/distractors/generate.py (its docstring documents it).
+Lane T (chronic signals) was not looked at; the suite was designed from the RCAEval lure
+(redis diskio) and the five types this lane was given.
+
+REPRODUCE
+  python3 examples/distractors/generate.py            # writes examples/distractors/cases (git-ignored)
+  cd examples/distractors/cases && shasum -a 256 -c ../SHA256SUMS
+  python3 scripts/eval/test_distractor_suite.py       # same seed twice: byte-identical; manifest; labels
+The cases are generated, not committed: the catalog must be a git repository for ogrep, and a
+nested repository cannot be committed. SHA256SUMS pins all 316 files outside catalog/.git.
+
+CHECKS BEFORE THE RUN (scripts/eval/distractor_eval.py check, binary target/release/ograph at
+74b3696; stage, harvest, leak scan of an mcp and a raw workspace, chains --top 10, before)
+| type | cases | chains rank 1 right | distractor in chains top 5 | distractor ranked above the root | distractor in before | quarantined facts | leak hits |
+|---|---|---|---|---|---|---|---|
+| a chronic | 7 | 6 | 7 | 0 | 7 | 0 | 0 |
+| b deploy | 7 | 4 | 6 | 0 | 7 | 0 | 0 |
+| c alert | 7 | 5 | 7 | 2 | 7 | 0 | 0 |
+| d sparse | 7 | 4 | 6 | 0 | 7 | 0 | 0 |
+| e precedent | 7 | 5 | 0 | 0 | 0 | 0 | 0 |
+degraded on 35 cases: catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0
+Reading: harvest quarantines nothing; the one degradation is the installed ogrep's (catalog edges
+carry no date), on every case, by design of the catalog source and not of the suite. The leak
+scan of the staged workspaces finds nothing. chains rank 1 is right on 24 of 35; where it is
+wrong, rank 1 is always a caller of the root (a symptom), once the type c distractor itself; the
+distractor ranks above the root in 2 cases (both type c). Type e's distractor shows only through `similar`, by design.
+
+GATE (pre-registered; the baseline decides it). KEEP the suite as a benchmark if all hold:
+  G1 reproducible: test_distractor_suite.py passes (same seed, byte-identical; the manifest
+     matches). Already PASS at commit time.
+  G2 the harness runs it with no leak void caused by the suite's own paths: no voided run whose
+     reason names a path or word of the suite (examples/distractors, labels.json, the cases
+     directory). Voids for an agent's own scratch files outside its workspace or `..` are the
+     harness's known behavior (agent-rca-haiku: 25) and do not count against the suite.
+  G3 `ograph chains` and the harvest accept it with no quarantine except by design: 0
+     quarantined facts (PASS above), chains answers every case (35 of 35).
+  G4 not saturated: at least one agent arm scores AC@1 below 0.9 over the suite, or at least one
+     distractor type fools at least 20% of the agent arms' scored runs (fooled = the answer is
+     the planted distractor's application).
+Otherwise DROP it: it measures nothing.
+
+BASELINE (to run after this commit)
+  distractor_eval.py run --bin target/release/ograph (74b3696) --suite examples/distractors/cases
+    --arms mcp,skill,raw,chains --runs 3 --runner claude --model claude-haiku-5-5 --parallel 4
+    --work /private/tmp/claude-501/lane-u-work/base --out docs/evidence/distractor-haiku
+  then misled_by.py on its wrong runs. Results: docs/evidence/distractor-haiku.txt.

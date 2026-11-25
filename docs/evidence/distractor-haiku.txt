@@ -1,0 +1,94 @@
+Distractor suite baseline (gate: distractor-suite.txt, committed first at 77218f0).
+Binary target/release/ograph at 74b3696; claude-haiku-5-5 in headless Claude Code 2.1.332
+(--runner claude); 35 cases x 3 runs x arms mcp, skill, raw, chains = 420 rows, 1728 s at
+--parallel 4. Cost by claude's total_cost_usd: $1.88.
+
+Command:
+  python3 examples/distractors/generate.py
+  scripts/eval/distractor_eval.py run --bin target/release/ograph --suite examples/distractors/cases
+    --arms mcp,skill,raw,chains --runs 3 --runner claude --model claude-haiku-5-5 --parallel 4
+    --work /private/tmp/claude-501/lane-u-work/base --out docs/evidence/distractor-haiku
+Rows: distractor-haiku/runs.jsonl; transcripts: distractor-haiku/transcripts.tar.gz.
+
+AC@1 over scored runs (fooled: runs that answered the planted distractor's application)
+
+| arm | all | a chronic | b deploy | c alert | d sparse | e precedent | voided |
+|---|---|---|---|---|---|---|---|
+| chains | 72/105 (0.69), fooled 3 | 18/21 (0.86), fooled 0 | 12/21 (0.57), fooled 0 | 15/21 (0.71), fooled 3 | 12/21 (0.57), fooled 0 | 15/21 (0.71), fooled 0 | 0 |
+| mcp | 63/105 (0.60), fooled 42 | 4/21 (0.19), fooled 17 | 17/21 (0.81), fooled 4 | 21/21 (1.00), fooled 0 | 0/21 (0.00), fooled 21 | 21/21 (1.00), fooled 0 | 0 |
+| raw | 97/103 (0.94), fooled 6 | 18/20 (0.90), fooled 2 | 21/21 (1.00), fooled 0 | 20/20 (1.00), fooled 0 | 17/21 (0.81), fooled 4 | 21/21 (1.00), fooled 0 | 2 |
+| skill | 94/102 (0.92), fooled 8 | 14/20 (0.70), fooled 6 | 21/21 (1.00), fooled 0 | 20/20 (1.00), fooled 0 | 19/21 (0.90), fooled 2 | 20/20 (1.00), fooled 0 | 3 |
+
+| type | fooled, agent arms | fooled share | max share of one arm |
+|---|---|---|---|
+| a chronic | 25/61 | 0.41 | 0.81 |
+| b deploy | 4/63 | 0.06 | 0.19 |
+| c alert | 0/61 | 0.00 | 0.00 |
+| d sparse | 27/63 | 0.43 | 1.00 |
+| e precedent | 0/62 | 0.00 | 0.00 |
+
+cost by the runner's report: $1.88 over 420 rows
+
+Harness table (agent_rca_eval.py; suite named rcaeval by its loader):
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 63/105 (0.60) | 19 | 4 | 12 | 0 | 88/105 | 7 | 12.6 | 47594 | 0.35 |
+| skill | 94/102 (0.92) | 27 | 5 | 0 | 3 | 52/102 | 8 | 25.4 | 126452 | 0.81 |
+| raw | 97/103 (0.94) | 28 | 5 | 0 | 2 | 12/103 | 6 | 24.0 | 98234 | 0.72 |
+| chains | 72/105 (0.69) | 24 | 0 | 11 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as the runner reports it (pi's list price, or claude's total_cost_usd)
+mcp wrong answers: scan-stream x4, shipments-pg x3, media-meta-db x3, origin-store x3, rate-kv x3, event-stream x3, gds-bridge x3, mqtt-core x3, hl7-bus x3, series-db x3, cheat-guard x3, voucher-api x3, fraud-score x2, audit-journal x2, shadow-kv x1
+mcp departs from chains rank 1 on 61 of 105 runs: right on 19 of them, and rank 1 was right on 28
+skill wrong answers: scan-stream x2, rate-kv x2, cheat-guard x2, origin-store x1, series-db x1
+skill departs from chains rank 1 on 36 of 102 runs: right on 28 of them, and rank 1 was right on 4
+raw wrong answers: rate-kv x1, event-stream x1, gds-bridge x1, hl7-bus x1, series-db x1, cheat-guard x1
+raw departs from chains rank 1 on 33 of 103 runs: right on 27 of them, and rank 1 was right on 2
+chains wrong answers: dispatch-portal x6, booking-web x6, license-check x3, teller-gateway x3, seat-map x3, parcel-tracker x3, cheat-guard x3, alarm-api x3, lobby-edge x3
+mcp against skill: better on 0 cases, worse on 16, equal on 19 (sign test p = 0.000)
+mcp against raw: better on 0 cases, worse on 16, equal on 19 (sign test p = 0.000)
+mcp against chains: better on 7 cases, worse on 10, equal on 18 (sign test p = 0.629)
+skill against raw: better on 3 cases, worse on 4, equal on 28 (sign test p = 1.000)
+skill against chains: better on 11 cases, worse on 3, equal on 21 (sign test p = 0.057)
+raw against chains: better on 11 cases, worse on 2, equal on 22 (sign test p = 0.022)
+leak check: 5 of 420 runs voided; 0 errors
+  leak skill rcaeval/x-25bf48d25b/INC-7667 run 1: bash: reaches /private/tmp/claude-501/lane-u-work/base/runs/f11c13a047
+  leak raw rcaeval/x-54589c712f/INC-7212 run 3: bash: climbs out with ..
+  leak raw rcaeval/x-7023622d73/INC-7641 run 3: bash: climbs out with ..
+  leak skill rcaeval/x-7225901111/INC-7014 run 2: bash: climbs out with ..
+  leak skill rcaeval/x-dd5daaccde/INC-8225 run 1: bash: climbs out with ..
+
+MISLED BY (replay_calls.py --wrong-only, then misled_by.py; 445 calls replayed, 417 exact or
+close, 18 mismatch, 10 previews)
+mcp: 42 wrong runs; first saw the wrong application in before 42
+   35  before    METRIC_ANOMALY severity 1.0
+    4  before    DEPLOYMENT severity <0.5
+    3  before    METRIC_ANOMALY severity 0.5-0.99
+  wrong applications: scan-stream x4, media-meta-db x3, cheat-guard x3, series-db x3, event-stream x3, rate-kv x3, gds-bridge x3, mqtt-core x3, shipments-pg x3, hl7-bus x3, origin-store x3, voucher-api x3, fraud-score x2, audit-journal x2, shadow-kv x1
+skill: 8 wrong runs; first saw the wrong application in before 8
+    6  before    METRIC_ANOMALY severity 1.0
+    2  before    METRIC_ANOMALY severity 0.5-0.99
+  wrong applications: cheat-guard x2, scan-stream x2, rate-kv x2, series-db x1, origin-store x1
+raw: 6 wrong runs; first saw the wrong application in own 6
+    3  own       metric figures
+    3  own       log line
+  wrong applications: cheat-guard x1, series-db x1, event-stream x1, rate-kv x1, gds-bridge x1, hl7-bus x1
+
+GATE
+  G1 reproducible: test_distractor_suite.py passes (byte-identical per seed, SHA256SUMS). PASS
+  G2 no leak void from the suite's own paths: 5 of 420 voided, every one for the agent's own
+     `..` (4) or its run directory (1); none names the suite. PASS
+  G3 harvest and chains accept it: 0 quarantined facts; chains answered all 105 runs. PASS
+  G4 not saturated: mcp scores 0.60 (< 0.9); chronic fools 0.41 and sparse 0.43 of agent runs
+     (>= 0.20). PASS
+VERDICT: KEEP the suite as a benchmark.
+
+Reading: mcp is the arm the distractors catch: 0/21 on sparse (all 21 answered the planted
+application) and 4/21 on chronic (17 fooled), while chains, the floor it reads, scores 0.57 and
+0.86 there and is never fooled by those two types. misled_by.py puts every mcp miss on `before`,
+35 of 42 as a METRIC_ANOMALY of severity 1.0: the agent takes the strongest early event in
+before, the RCAEval redis pattern, now on fresh names and topologies. The deploy lure catches mcp
+4 times (DEPLOYMENT in before); downstream alerts and precedents fool no arm. skill and raw
+score 0.92 and 0.94; skill's 8 fooled runs are mostly chronic (6), raw's 6 mostly sparse (4). The types that fool nobody
+(c, e) still count as controls: a guidance change that makes agents chase alerts or precedents
+would show there. chains' own misses (33) go to callers of the root, not to distractors (3).

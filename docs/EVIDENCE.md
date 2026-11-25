@@ -1137,3 +1137,20 @@ Phase 12 lane C1 left `actions` off on `discussions` sources until its accuracy 
 With actions on, the 16 demo category threads gained 9 operator actions, the same in all three runs. Each one is a done action on reading, but no labels exist for them. `chains`, `before`, `blast`, `news` and `why` are byte-identical between the arms. `similar INC-5377` lists one more mitigation for INC-4120: the thread that names it is dated 20 days after the incident in the generated data, and `evt:during` does not look at the time.
 
 The demo's committed cache holds pi's answers to the old prompt, and the default now misses them for `discussions/ops.json`. A harvest with no working model therefore keeps only the rule facts of those 16 threads, so `news` counts 0 related threads instead of 2. A harvest with pi asks the 16 questions once. After that, `llm_gate.py` on `examples/demo` can pass from the cache again. That refresh was not done here: pi is out of quota.
+
+## Phase 13, lane U: misled-by attribution and the distractor suite (`misled-by.txt`, `distractor-suite.txt`, `distractor-haiku.txt`)
+
+RCAEval has five root services, so a change tuned on it can overfit. Lane U adds two measuring tools.
+
+**Misled-by attribution.** `scripts/eval/misled_by.py` finds, for each wrong run, the first tool call whose output presented the wrong application as a candidate cause, and that output's strongest signal on it. The transcripts cut each output at 3000 characters, and the lure usually sits past the cut, so `scripts/eval/replay_calls.py` re-executes each run's calls against the same staged case (MCP calls on `ograph serve --mcp`, Bash in a fresh workspace) and checks every replay against the kept text (93% exact or close on agent-rca-haiku). Validation: 20 wrong runs from the seen sample only, hand-labeled and committed before the script ran (`misled-by-labels.txt`, e010bd8); tool agreement 20/20, KEEP. The rules were written after the labels were read, so this agreement is in-sample. On agent-rca-haiku, all 64 mcp misses on the seen sample first saw the wrong application in `before`: 39 as a METRIC_ANOMALY of severity 1.0 (54 answered redis), and 20 as a weak event in the default window.
+
+**Distractor suite.** `examples/distractors/generate.py` writes 35 incidents (7 per type) over 7 domains and 5 topologies, with names unlike RCAEval's. Each incident has one planted root and one planted distractor: (a) a chronic noisy series upstream, (b) a deploy on a healthy service, (c) a downstream alert that fires first, (d) a sparse series that saturates severity, (e) precedents with another root. Labels are by construction. The cases are generated and git-ignored (a catalog must be a git repository), and they are pinned by `SHA256SUMS`. The gate was committed before the baseline. Baseline at 74b3696 on Haiku, 3 runs, $1.88:
+
+| arm | all | chronic | deploy | alert | sparse | precedent |
+|---|---|---|---|---|---|---|
+| mcp | 0.60 | 0.19 | 0.81 | 1.00 | 0.00 | 1.00 |
+| skill | 0.92 | 0.70 | 1.00 | 1.00 | 0.90 | 1.00 |
+| raw | 0.94 | 0.90 | 1.00 | 1.00 | 0.81 | 1.00 |
+| chains | 0.69 | 0.86 | 0.57 | 0.71 | 0.57 | 0.71 |
+
+The chronic distractor fools 41% of agent runs and the sparse one 43%. mcp is fooled on every sparse run, and misled_by.py puts all 42 of its misses on `before`. Gates G1 to G4 pass, so the suite is kept. To run it against another binary: `python3 examples/distractors/generate.py && scripts/eval/distractor_eval.py run --bin <BIN> --suite examples/distractors/cases --runner claude --model claude-haiku-5-5 --runs 3 --work <dir outside the repo> --out <OUT>`.
