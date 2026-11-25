@@ -10,7 +10,7 @@ new after the removal, rank moves and quarantine entries that go. Files of namin
 another file's records also state are left out of both sets and counted.
 
 Usage: uses_gate.py --bin target/release/ograph --demo examples/demo --cases data/rcaeval-cases
-       --work target/uses-gate [--model] [--merged target/rcaeval-merged] [--seed 13] [--n-cases 12] [--n-files 16]
+       --work target/uses-gate [--model [--llm JSON --llm-label NAME]] [--merged target/rcaeval-merged] [--seed 13] [--n-cases 12] [--n-files 16]
 """
 import argparse, json, pathlib, random, shutil, subprocess, sys, time
 
@@ -133,7 +133,7 @@ def pr(m, p):
     return (tp / len(p) if p else 1.0), (tp / len(m) if m else 1.0)
 
 
-def demo_base(binp, demo, work, model):
+def demo_base(binp, demo, work, model, llm=None, llm_label=None):
     """The demo, harvested. A thread whose model answer is not JSON is not cached and is asked
     again at every harvest, so trials run with a stub model that answers no JSON: no spend, and
     before and after see the same answers. With `model` the base harvest asks the configured
@@ -144,6 +144,9 @@ def demo_base(binp, demo, work, model):
     subprocess.run([sys.executable, "generate.py"], cwd=base, check=True, capture_output=True)
     cfg, cache, kept = base / ".ograph" / "config.toml", base / ".ograph" / "cache" / "llm.jsonl", work / "llm.jsonl"
     stub = lambda: cfg.write_text("\n".join('command = ["/bin/echo", "no model in this gate"]' if l.startswith("command = ") else l for l in cfg.read_text().split("\n")))
+    if model and llm:
+        cfg.write_text("\n".join(f"command = {json.dumps(llm)}" if l.startswith("command = ") else f"model = {json.dumps(llm_label)}" if l.startswith("model = ") else l
+                                 for l in cfg.read_text().split("\n")))
     if not model:
         stub()
         if kept.exists():
@@ -199,13 +202,15 @@ def main():
     for a in ("--bin", "--demo", "--cases", "--work"):
         ap.add_argument(a, required=True)
     ap.add_argument("--model", action="store_true", help="harvest the demo base once with its configured model (costs money)")
+    ap.add_argument("--llm", type=json.loads, help="with --model: JSON list, the [llm.extract] command to use instead of the demo's")
+    ap.add_argument("--llm-label", default="llm", help="the [llm.extract] model name that goes with --llm")
     ap.add_argument("--merged", help="the merged store of similar_eval.py --out, to time uses on")
     ap.add_argument("--seed", type=int, default=13); ap.add_argument("--n-cases", type=int, default=12); ap.add_argument("--n-files", type=int, default=16)
     a = ap.parse_args()
     binp, work = str(pathlib.Path(a.bin).resolve()), pathlib.Path(a.work).resolve()
     work.mkdir(parents=True, exist_ok=True)
     rng = random.Random(a.seed)
-    demo, demo_files = demo_base(binp, pathlib.Path(a.demo).resolve(), work, a.model)
+    demo, demo_files = demo_base(binp, pathlib.Path(a.demo).resolve(), work, a.model, a.llm, a.llm_label)
     rca, picked, rca_files = rca_base(binp, pathlib.Path(a.cases).resolve(), work, rng, a.n_cases, a.n_files)
     print(f"seed {a.seed}; RCAEval cases: {' '.join(picked)}")
     for base in (demo, rca):

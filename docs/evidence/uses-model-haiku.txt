@@ -1,0 +1,29 @@
+Phase 13 lane R: the operator-action cascade of `ograph uses`, with live model answers, on Haiku.
+
+GATE AMENDMENT, written and committed before the run (2026-11-25)
+-----------------------------------------------------------------
+Why. docs/EVIDENCE.md (lane R, "Not measured"): the passing run used the demo's cached answers,
+which hold no operator actions, and the run with the model (`uses_gate.py --model`) stopped at
+pi's usage limit. pi has no Anthropic login, so the base harvest asks Haiku in headless Claude
+Code instead.
+
+What changes: the model and the runner, nothing else. With --model, the demo base harvest's
+[llm.extract] command is
+  ["python3", "<worktree>/scripts/eval/claude_model.py", "--model", "claude-haiku-5-5", "--cost-log", ...]
+with model name "claude:claude-haiku-5-5" (uses_gate.py --llm, --llm-label), in place of the
+demo's pi command (openai/gpt-6-luna). The new model name misses the demo's cache, so every
+thread is asked once; the answers are kept in WORK/llm.jsonl and every trial reads them with the
+stub model, as written. claude_model.py runs `claude -p` (v2.1.332) with no tools, settings,
+memory, MCP servers, skills or saved session, thinking off, in a neutral directory.
+
+Unchanged: the binary (target/release/ograph at 6ad2ba5), the data (demo after generate.py;
+12 RCAEval cases and 16 files by seed 13, cases read-only by absolute path), the categories, the
+out-of-scope rules and the pass condition: precision and recall 1.000 on facts, chains and
+verdicts over the in-scope files. Run once. A limit refusal is retried once after a few minutes;
+a second refusal is NOT MEASURED. The result is Haiku's answers, not gpt-6-luna's.
+
+Command (from the lane-r-uses worktree):
+  python3 scripts/eval/uses_gate.py --bin target/release/ograph --demo examples/demo \
+    --cases "/Volumes/External Disk/Github/graph-rag/data/rcaeval-cases" --work target/uses-gate-haiku \
+    --model --llm-label claude:claude-haiku-5-5 \
+    --llm '["python3", "<worktree>/scripts/eval/claude_model.py", "--model", "claude-haiku-5-5", "--cost-log", "<worktree>/target/uses-gate-haiku-cost.jsonl"]'
