@@ -87,8 +87,15 @@ enum Cmd {
         #[arg(long)]
         since: Option<String>,
     },
-    /// Provenance of every fact about a node
+    /// Provenance of every fact about a node; for a chain, also every verdict on it
     Why { node: String },
+    /// Correlate every judged incident again and list the verdicts the result would contradict;
+    /// exits 1 when any would flip, so it can gate a config.toml change
+    Replay {
+        /// Override a correlation setting, e.g. --set window_s=600 --set rank=propagation
+        #[arg(long = "set")]
+        set: Vec<String>,
+    },
     /// Accept or reject a chain, with evidence
     Verdict {
         chain: String,
@@ -162,6 +169,22 @@ fn print_suspects(suspects: &[query::Suspect]) {
             println!("     {:.12}  {}  {}  ({})", c.revision, c.at, c.summary, c.files.join(", "));
         }
     }
+}
+
+/// `st` with each `--set key=value` applied; a value that is not JSON is a string.
+fn with_sets(st: correlate::Settings, set: &[String]) -> anyhow::Result<correlate::Settings> {
+    if set.is_empty() {
+        return Ok(st);
+    }
+    let mut v = serde_json::to_value(&st)?;
+    for kv in set {
+        let (k, val) = kv.split_once('=').ok_or_else(|| anyhow::anyhow!("--set wants key=value"))?;
+        anyhow::ensure!(v.get(k).is_some(), "--set: no setting {k}");
+        v[k] = serde_json::from_str(val).unwrap_or_else(|_| serde_json::Value::String(val.to_owned()));
+    }
+    let st: correlate::Settings = serde_json::from_value(v)?;
+    st.check()?;
+    Ok(st)
 }
 
 fn main() -> ExitCode {
@@ -255,16 +278,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             if let Some(w) = window {
                 st.window_s = query::duration_s(&w)?;
             }
-            if !set.is_empty() {
-                let mut v = serde_json::to_value(&st)?;
-                for kv in &set {
-                    let (k, val) = kv.split_once('=').ok_or_else(|| anyhow::anyhow!("--set wants key=value"))?;
-                    anyhow::ensure!(v.get(k).is_some(), "--set: no setting {k}");
-                    v[k] = serde_json::from_str(val).unwrap_or_else(|_| serde_json::Value::String(val.to_owned()));
-                }
-                st = serde_json::from_value(v)?;
-                st.check()?;
-            }
+            let st = with_sets(st, &set)?;
             let i = query::lookup(&snap, &incident)?;
             let mut a = correlate::analyze(&snap, &ids, i, &st)?;
             let (suspects, degraded) = ws.fallback_suspects(&snap, &a, &incident, &st);
@@ -384,8 +398,39 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 for (fact, reason) in &p.quarantined {
                     println!("  QUARANTINED {fact}: {reason}");
                 }
+                if !p.verdicts.is_empty() {
+                    println!("  verdicts, oldest first:");
+                }
+                for v in &p.verdicts {
+                    let rank = v.rank.as_deref().map(|r| format!(" at rank {r}")).unwrap_or_default();
+                    let now = if v.superseded_by.is_some() { "superseded" } else { "current" };
+                    println!("    {} {:<8} by {} at {}{rank} ({now}): {}", v.verdict, v.state, v.by, v.at, v.evidence.join("; "));
+                }
             });
             Ok(!p.facts.is_empty())
+        }
+        Cmd::Replay { set } => {
+            let snap = ws.store.snapshot()?;
+            let st = with_sets(ws.config.correlation.clone(), &set)?;
+            let r = query::replay(&snap, &st, &ws.config.correlation)?;
+            print(json, &r, |r| {
+                let incidents: std::collections::BTreeSet<&str> = r.verdicts.iter().map(|v| v.incident.as_str()).collect();
+                println!("replayed {} verdicts on {} incidents, settings {} (config.toml) against {}: {} would flip, {} would be fixed; {} contradicted by the replayed settings", r.verdicts.len(), incidents.len(), r.config_settings, r.settings, r.flips, r.fixed, r.contradicted);
+                if r.stale_chains > 0 {
+                    println!("note: {} stored chains were ranked under other settings than config.toml's; `ograph harvest` re-ranks them", r.stale_chains);
+                }
+                let rank = |k: Option<usize>| k.map_or("-".to_owned(), |k| k.to_string());
+                for v in &r.verdicts {
+                    let mark = match (v.flip, v.after.contradicts) {
+                        (Some(f), _) => format!("FLIP {f}"),
+                        (None, Some(c)) => format!("still {}", c.name()),
+                        (None, None) if v.before.contradicts.is_some() => "fixed".to_owned(),
+                        _ => continue,
+                    };
+                    println!("  {mark:<20} {:<8} {:<10} {:<22} app rank {} -> {}, chain rank {} -> {}  {}", v.state, v.incident, v.app, rank(v.before.app_rank), rank(v.after.app_rank), rank(v.before.chain_rank), rank(v.after.chain_rank), v.chain);
+                }
+            });
+            Ok(r.flips == 0)
         }
         Cmd::Verdict { chain, decision, evidence, by } => {
             let o = ws.verdict(&chain, decision == "accept", &by, &evidence)?;

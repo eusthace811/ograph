@@ -93,6 +93,7 @@ corr:link a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range evt:Event ;
 corr:candidateApp a owl:ObjectProperty ; rdfs:domain corr:Chain ; rdfs:range ops:Application ; rdfs:comment "An application the chain implicates." .
 corr:confidence a owl:DatatypeProperty ; rdfs:domain og:Thing ; rdfs:range xsd:decimal ; rdfs:comment "A score from 0 to 1: of a chain, or of a fact a model proposed." .
 corr:rank a owl:DatatypeProperty ; rdfs:domain corr:Chain ; rdfs:range xsd:integer ; rdfs:comment "The chain's position among candidate chains for an incident, 1 being the strongest." .
+corr:settings a owl:DatatypeProperty ; rdfs:domain corr:Chain ; rdfs:range xsd:string ; rdfs:comment "A hash of the correlation settings the chain was ranked under." .
 
 # ---------- RCA: verdicts ----------
 rca:Verdict a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "A person's decision to accept or reject a candidate root-cause chain." .
@@ -105,6 +106,9 @@ rca:rootClass a owl:ObjectProperty ; rdfs:domain rca:Verdict ; rdfs:range og:Thi
 rca:rootOn a owl:ObjectProperty ; rdfs:domain rca:Verdict ; rdfs:range ops:Application ; rdfs:comment "The application of the root event the verdict judged." .
 rca:rootAt a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:dateTime ; rdfs:comment "When the root event the verdict judged happened." .
 rca:rootSignal a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:string ; rdfs:comment "The signal of the root event the verdict judged." .
+rca:supersededBy a owl:ObjectProperty ; rdfs:domain rca:Verdict ; rdfs:range rca:Verdict ; rdfs:comment "The later verdict on the same chain that replaced this one. The verdict on a chain that no other supersedes is its current one." .
+rca:rank a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:integer ; rdfs:comment "The rank the chain had when the verdict was given." .
+rca:settings a owl:DatatypeProperty ; rdfs:domain rca:Verdict ; rdfs:range xsd:string ; rdfs:comment "The correlation settings hash the chain was ranked under when the verdict was given." .
 
 # ---------- HARVEST ----------
 harv:Harvest a owl:Class ; rdfs:subClassOf og:Thing ; rdfs:comment "One run of reading a source into the graph." .

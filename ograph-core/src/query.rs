@@ -5,7 +5,7 @@ use crate::correlate::{self, Ids, Settings, app_name, literal};
 use crate::enrich::{ogrep, rel};
 use crate::store::{GraphSel, Snapshot};
 use crate::term::{self, Id};
-use crate::vocab::{self, disc, evt, harv, inc, ops};
+use crate::vocab::{self, corr, disc, evt, harv, inc, ops, rca};
 use oxrdf::Term;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
@@ -175,12 +175,12 @@ fn cause_app(s: &Snapshot, ids: &Ids, e: Id) -> anyhow::Result<Option<Id>> {
     if let Some(a) = s.object(e, ids.on)? {
         return Ok(Some(a));
     }
-    let (Some(root), Some(on_chain), Some(root_on)) = (s.iri(vocab::corr::ROOT_CAUSE)?, s.iri(vocab::rca::ON_CHAIN)?, s.iri(vocab::rca::ROOT_ON)?) else { return Ok(None) };
+    let (Some(root), Some(root_on)) = (s.iri(corr::ROOT_CAUSE)?, s.iri(rca::ROOT_ON)?) else { return Ok(None) };
     for c in s.subjects(root, e)? {
-        for v in s.subjects(on_chain, c)? {
-            if let Some(a) = s.object(v, root_on)? {
-                return Ok(Some(a));
-            }
+        if let Some(&v) = verdicts(s, c)?.last()
+            && let Some(a) = s.object(v, root_on)?
+        {
+            return Ok(Some(a));
         }
     }
     Ok(None)
@@ -229,6 +229,203 @@ pub struct Provenance {
     pub node: String,
     pub facts: Vec<FactProvenance>,
     pub quarantined: Vec<(String, String)>,
+    /// For a chain, every verdict on it, oldest first; the last is the current one.
+    pub verdicts: Vec<VerdictEvent>,
+}
+
+#[derive(Serialize)]
+pub struct VerdictEvent {
+    pub verdict: String,
+    pub state: String,
+    pub by: String,
+    pub at: String,
+    pub evidence: Vec<String>,
+    /// The rank the chain had when it was judged, if correlation ranked it then.
+    pub rank: Option<String>,
+    pub superseded_by: Option<String>,
+}
+
+/// The verdicts on a chain, oldest first: each one but the last is `rca:supersededBy` the next.
+pub fn verdicts(s: &Snapshot, chain: Id) -> anyhow::Result<Vec<Id>> {
+    let Some(on) = s.iri(rca::ON_CHAIN)? else { return Ok(vec![]) };
+    let mut events = s.subjects(on, chain)?;
+    events.sort_unstable();
+    let next: FxHashMap<Id, Id> = match s.iri(rca::SUPERSEDED_BY)? {
+        Some(p) => events.iter().filter_map(|&v| s.object(v, p).ok().flatten().map(|n| (v, n))).collect(),
+        None => FxHashMap::default(),
+    };
+    let later: FxHashSet<Id> = next.values().copied().collect();
+    let mut order: Vec<Id> = Vec::with_capacity(events.len());
+    let mut cur = events.iter().copied().find(|v| !later.contains(v));
+    while let Some(v) = cur.filter(|v| !order.contains(v)) {
+        order.push(v);
+        cur = next.get(&v).copied();
+    }
+    // A history the links do not order (an edited store) keeps every verdict, by id.
+    order.extend(events.into_iter().filter(|v| !order.contains(v)).collect::<Vec<_>>());
+    Ok(order)
+}
+
+fn verdict_event(s: &Snapshot, v: Id) -> anyhow::Result<VerdictEvent> {
+    let one = |p: &str| -> anyhow::Result<Option<String>> { Ok(s.iri(p)?.and_then(|p| s.object(v, p).ok().flatten()).and_then(|o| literal(s, o))) };
+    let mut evidence: Vec<String> = match s.iri(rca::EVIDENCE)? {
+        Some(p) => s.objects(v, p)?.into_iter().filter_map(|o| literal(s, o)).collect(),
+        None => vec![],
+    };
+    evidence.sort();
+    Ok(VerdictEvent {
+        verdict: vocab::compact(&literal(s, v).unwrap_or_default()),
+        state: one(rca::STATE)?.unwrap_or_default(),
+        by: one(rca::BY)?.unwrap_or_default(),
+        at: one(rca::AT)?.unwrap_or_default(),
+        evidence,
+        rank: one(rca::RANK)?,
+        superseded_by: one(rca::SUPERSEDED_BY)?.map(|x| vocab::compact(&x)),
+    })
+}
+
+#[derive(Serialize)]
+pub struct Replay {
+    /// The hash of `config.toml`'s settings and of the settings replayed, as chains store them.
+    pub config_settings: String,
+    pub settings: String,
+    /// Stored chains ranked under other settings than `config.toml`'s: a harvest would move them.
+    pub stale_chains: usize,
+    pub verdicts: Vec<Replayed>,
+    /// Verdicts the configured settings agree with and the replayed settings contradict.
+    pub flips: usize,
+    /// The reverse: verdicts only the replayed settings agree with.
+    pub fixed: usize,
+    /// Verdicts the replayed settings contradict, flipped or not.
+    pub contradicted: usize,
+}
+
+#[derive(Serialize)]
+pub struct Replayed {
+    pub incident: String,
+    pub chain: String,
+    pub state: String,
+    pub app: String,
+    /// The chain's rank when it was judged.
+    pub judged_rank: Option<String>,
+    /// Under the configured settings, then under the replayed ones.
+    pub before: Judged,
+    pub after: Judged,
+    /// "lost rank 1" or "dropped out" for an accepted chain, "rose to rank 1" for a rejected one,
+    /// when the configured settings agree with the verdict and the replayed ones do not.
+    pub flip: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+pub struct Judged {
+    /// The rank of the judged root's application, and of the judged chain.
+    pub app_rank: Option<usize>,
+    pub chain_rank: Option<usize>,
+    pub contradicts: Option<Contradiction>,
+}
+
+/// How a ranking contradicts a verdict.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum Contradiction {
+    /// An accepted root's application ranks, but not first.
+    BelowRank1,
+    /// An accepted root's application is not among the `max_chains` a harvest stores.
+    DroppedOut,
+    /// A rejected chain ranks first.
+    AtRank1,
+}
+
+impl Contradiction {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::BelowRank1 => "below rank 1",
+            Self::DroppedOut => "dropped out",
+            Self::AtRank1 => "at rank 1",
+        }
+    }
+
+    /// What a change of settings that brings it about does to the verdict.
+    pub fn flip(self) -> &'static str {
+        match self {
+            Self::BelowRank1 => "lost rank 1",
+            Self::DroppedOut => "dropped out",
+            Self::AtRank1 => "rose to rank 1",
+        }
+    }
+}
+
+/// An accepted verdict holds while its root's application ranks first, as `chains` would print
+/// it; it has dropped out when that application is not among the `max_chains` a harvest stores.
+/// A rejected verdict condemns its chain, not the application, so only that chain at rank 1
+/// contradicts it.
+fn judge(state: &str, a: Option<&correlate::Analysis>, app: &str, chain: &str, max_chains: usize) -> Judged {
+    let ranked = a.map(|a| a.apps.as_slice()).unwrap_or_default();
+    let app_rank = ranked.iter().position(|r| r.app == app).map(|k| k + 1);
+    let chain_rank = ranked.iter().position(|r| r.chain.as_ref().is_some_and(|c| c.id == chain)).map(|k| k + 1);
+    let contradicts = match (state, app_rank) {
+        ("accepted", Some(1)) => None,
+        ("accepted", Some(k)) if k <= max_chains => Some(Contradiction::BelowRank1),
+        ("accepted", _) => Some(Contradiction::DroppedOut),
+        _ if chain_rank == Some(1) => Some(Contradiction::AtRank1),
+        _ => None,
+    };
+    Judged { app_rank, chain_rank, contradicts }
+}
+
+/// `ograph replay`: correlation again for every incident with a current verdict, under the
+/// configured settings and under `st`, paired, so a flip is a verdict that `st` alone breaks.
+pub fn replay(s: &Snapshot, st: &Settings, config: &Settings) -> anyhow::Result<Replay> {
+    let ids = Ids::new(s)?;
+    let (config_settings, settings) = (config.hash(), st.hash());
+    let paired = config_settings != settings;
+    let mut out = Replay { config_settings, settings, stale_chains: 0, verdicts: vec![], flips: 0, fixed: 0, contradicted: 0 };
+    if let (Some(rank), Some(sp)) = (s.iri(corr::RANK)?, s.iri(corr::SETTINGS)?) {
+        let current = s.id(&oxrdf::Literal::new_simple_literal(&out.config_settings).into())?;
+        for q in s.quads([None, Some(rank), None], GraphSel::Union) {
+            let c = q?[0];
+            out.stale_chains += usize::from(current.is_none() || s.object(c, sp)? != current);
+        }
+    }
+    let (Some(ty), Some(verdict), Some(on_chain)) = (s.iri(vocab::RDF_TYPE)?, s.iri(rca::VERDICT)?, s.iri(rca::ON_CHAIN)?) else { return Ok(out) };
+    let sup = s.iri(rca::SUPERSEDED_BY)?;
+    let get = |x: Id, p: &str| -> anyhow::Result<Option<Id>> { Ok(match s.iri(p)? { Some(p) => s.object(x, p)?, None => None }) };
+    let mut analyses: FxHashMap<Id, [Option<correlate::Analysis>; 2]> = FxHashMap::default();
+    for v in s.subjects(ty, verdict)? {
+        if let Some(p) = sup
+            && s.object(v, p)?.is_some()
+        {
+            continue;
+        }
+        let Some(chain) = s.object(v, on_chain)? else { continue };
+        let Some(incident) = get(chain, corr::LEADS_TO)? else { continue };
+        let [parent, candidate] = analyses.entry(incident).or_insert_with(|| {
+            let parent = correlate::analyze(s, &ids, incident, config).ok();
+            let candidate = if paired { correlate::analyze(s, &ids, incident, st).ok() } else { parent.clone() };
+            [parent, candidate]
+        });
+        let chain_iri = literal(s, chain).unwrap_or_default();
+        let app = get(v, rca::ROOT_ON)?.map(|a| app_name(s, &ids, a)).unwrap_or_default();
+        let state = get(v, rca::STATE)?.and_then(|x| literal(s, x)).unwrap_or_default();
+        let before = judge(&state, parent.as_ref(), &app, &chain_iri, config.max_chains);
+        let after = judge(&state, candidate.as_ref(), &app, &chain_iri, st.max_chains);
+        let flip = if before.contradicts.is_none() { after.contradicts.map(Contradiction::flip) } else { None };
+        out.flips += usize::from(flip.is_some());
+        out.fixed += usize::from(before.contradicts.is_some() && after.contradicts.is_none());
+        out.contradicted += usize::from(after.contradicts.is_some());
+        out.verdicts.push(Replayed {
+            incident: get(incident, inc::ID)?.and_then(|x| literal(s, x)).unwrap_or_else(|| vocab::compact(&literal(s, incident).unwrap_or_default())),
+            chain: vocab::compact(&chain_iri),
+            state,
+            app,
+            judged_rank: get(v, rca::RANK)?.and_then(|x| literal(s, x)),
+            before,
+            after,
+            flip,
+        });
+    }
+    out.verdicts.sort_by(|a, b| (&a.incident, &a.chain).cmp(&(&b.incident, &b.chain)));
+    Ok(out)
 }
 
 #[derive(Serialize)]
@@ -304,7 +501,8 @@ pub fn why(s: &Snapshot, node: &str) -> anyhow::Result<Provenance> {
                     }
         }
     }
-    Ok(Provenance { node: vocab::compact(&me), facts, quarantined })
+    let verdicts = verdicts(s, n)?.into_iter().map(|v| verdict_event(s, v)).collect::<anyhow::Result<_>>()?;
+    Ok(Provenance { node: vocab::compact(&me), facts, quarantined, verdicts })
 }
 
 /// `text` names `node` as a whole term, so `id:app/cart` is not found in `id:app/cartservice`.

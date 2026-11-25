@@ -54,6 +54,13 @@ impl Settings {
         anyhow::ensure!(self.after_s >= 0, "correlation setting after_s = {} must not be negative", self.after_s);
         Ok(())
     }
+
+    /// 64 bits of the digest of every setting, stored on chains as `corr:settings`, so a chain
+    /// says which settings ranked it.
+    pub fn hash(&self) -> String {
+        let json = serde_json::to_string(self).expect("settings serialize");
+        hex::encode(crate::gateway::sha2_hash(&json))[..16].to_owned()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]

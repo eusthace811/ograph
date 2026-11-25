@@ -22,7 +22,42 @@ pub struct Config {
     pub sources: Vec<Source>,
     pub detect: Detect,
     pub correlation: Settings,
+    pub verdict: VerdictPolicy,
     pub llm: Option<LlmSection>,
+}
+
+/// What evidence a verdict must cite. The defaults take any verdict, and one without evidence
+/// is recorded with the evidence "(none given)".
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct VerdictPolicy {
+    pub require_evidence: bool,
+    /// Regular expressions; at least one piece of evidence must match one of them.
+    pub evidence_patterns: Vec<String>,
+    /// At least one piece of evidence must name something in the graph: an incident, an
+    /// event, a document or any other node `ograph why` finds.
+    pub evidence_in_store: bool,
+}
+
+impl VerdictPolicy {
+    fn patterns(&self) -> anyhow::Result<Vec<regex::Regex>> {
+        self.evidence_patterns.iter().map(|p| regex::Regex::new(p).map_err(|e| anyhow::anyhow!("[verdict] evidence_patterns: {p:?} is not a regular expression: {e}"))).collect()
+    }
+
+    /// The evidence a verdict records, or why the policy refuses it.
+    pub fn admit(&self, snap: &crate::store::Snapshot, evidence: &[String]) -> anyhow::Result<Vec<String>> {
+        let given: Vec<String> = evidence.iter().map(|e| e.trim()).filter(|e| !e.is_empty()).map(str::to_owned).collect();
+        let shown = || if given.is_empty() { "no --evidence was given".to_owned() } else { format!("the evidence given was {}", given.iter().map(|e| format!("{e:?}")).collect::<Vec<_>>().join(", ")) };
+        anyhow::ensure!(!self.require_evidence || !given.is_empty(), "verdict not recorded: [verdict] require_evidence is set and no --evidence was given");
+        let patterns = self.patterns()?;
+        if !patterns.is_empty() && !given.iter().any(|e| patterns.iter().any(|p| p.is_match(e))) {
+            anyhow::bail!("verdict not recorded: no evidence matches [verdict] evidence_patterns ({}); {}", self.evidence_patterns.join(", "), shown());
+        }
+        if self.evidence_in_store && !given.iter().any(|e| crate::query::lookup(snap, e).is_ok()) {
+            anyhow::bail!("verdict not recorded: [verdict] evidence_in_store is set and no evidence names anything in the graph; {}. Cite an incident, event or document as `ograph why` names it", shown());
+        }
+        Ok(if given.is_empty() { vec!["(none given)".to_owned()] } else { given })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,6 +139,7 @@ impl Workspace {
         anyhow::ensure!(dir.is_dir(), "no .ograph/ in {}; run `ograph init`", root.display());
         let config: Config = toml::from_str(&std::fs::read_to_string(dir.join("config.toml"))?)?;
         config.correlation.check()?;
+        config.verdict.patterns()?;
         let read = |n: &str, d: &str| std::fs::read_to_string(dir.join(n)).unwrap_or_else(|_| d.to_owned());
         let ontology = Ontology::load(&read("ontology.ttl", crate::ontology::DEFAULT_TTL), &read("shapes.ttl", crate::ontology::DEFAULT_SHAPES))?;
         let store = Store::open(&dir.join("store.redb"))?;
@@ -307,7 +343,7 @@ impl Workspace {
         let mut batches = Vec::new();
         for i in incidents {
             let Ok(a) = correlate::analyze(&snap, &ids, i, &self.config.correlation) else { continue };
-            batches.push(chain_batch(&a, self.config.correlation.max_chains));
+            batches.push(chain_batch(&a, &self.config.correlation));
         }
         drop(snap);
         let mut catalog = None;
@@ -315,16 +351,20 @@ impl Workspace {
     }
 
     /// Records a human verdict on a chain. The verdict keeps what it judged (the chain's
-    /// incident and root event, and on the verdict node the root's class, application, time
-    /// and signal), so it means the same after the telemetry behind the root is retired or the
-    /// chain's rank changes. The root event itself gets nothing: its type, time and application
-    /// stay with its telemetry, so a retired root is no candidate for correlation.
-    /// An accepted chain also writes `inc:cause`.
+    /// incident and root event, and on the verdict node the root's class, application, time,
+    /// signal and the rank the chain had), so it means the same after the telemetry behind the
+    /// root is retired or the chain's rank changes. The root event itself gets nothing: its
+    /// type, time and application stay with its telemetry, so a retired root is no candidate for
+    /// correlation.
+    ///
+    /// Judging a chain again adds a verdict and marks the one before `rca:supersededBy` it; the
+    /// chain's graph holds every verdict, and only the current one writes `inc:cause`.
     pub fn verdict(&self, chain: &str, accept: bool, by: &str, evidence: &[String]) -> anyhow::Result<Outcome> {
         anyhow::ensure!(!by.trim().is_empty(), "a verdict needs --by: who judged it");
         let _write = self.store.write_lock()?;
         let snap = self.store.snapshot()?;
         let cid = find_chain(&snap, chain)?;
+        let evidence = self.config.verdict.admit(&snap, evidence)?;
         let object = |s: u64, p: &str| -> anyhow::Result<Option<oxrdf::Term>> {
             let Some(p) = snap.iri(p)? else { return Ok(None) };
             Ok(snap.object(s, p)?.map(|o| snap.term(o)).transpose()?)
@@ -338,8 +378,21 @@ impl Workspace {
         let root = named(object(cid, corr::ROOT_CAUSE)?)?;
         let root_id = snap.iri(root.as_str())?.expect("a chain's root is in the store");
         let local = chain_iri.as_str().rsplit('/').next().unwrap_or("chain").to_owned();
-        // From the root's telemetry while it lasts, else from the verdict that judged it before.
-        let earlier = snap.iri(crate::model::entity("verdict", &local).as_str())?;
+        let mut b = Batch::new("verdicts", &local, "human");
+        let history = crate::query::verdicts(&snap, cid)?;
+        let mut earlier = Vec::new();
+        if let Some(g) = snap.iri(b.graph().as_str())? {
+            for &v in &history {
+                for q in snap.quads([Some(v), None, None], crate::store::GraphSel::Named(g)) {
+                    let [s, p, o, _] = q?;
+                    if let (oxrdf::Term::NamedNode(s), oxrdf::Term::NamedNode(p)) = (snap.term(s)?, snap.term(p)?) {
+                        earlier.push((s, p, snap.term(o)?));
+                    }
+                }
+            }
+        }
+        // From the root's telemetry while it lasts, else from the current verdict.
+        let latest = history.last().copied();
         let live = object(root_id, evt::AT)?.is_some();
         let class_of = |e: u64| -> anyhow::Result<Option<oxrdf::Term>> {
             let Some(ty) = snap.iri(RDF_TYPE)? else { return Ok(None) };
@@ -348,7 +401,7 @@ impl Workspace {
         };
         let mut kept = Vec::new();
         for (p, q) in [(RDF_TYPE, rca::ROOT_CLASS), (evt::ON, rca::ROOT_ON), (evt::AT, rca::ROOT_AT), (evt::SIGNAL, rca::ROOT_SIGNAL)] {
-            let o = match (live, earlier) {
+            let o = match (live, latest) {
                 (true, _) if p == RDF_TYPE => class_of(root_id)?,
                 (true, _) => object(root_id, p)?,
                 (false, Some(v)) => object(v, q)?,
@@ -358,23 +411,41 @@ impl Workspace {
                 kept.push((q, o));
             }
         }
+        for (p, q) in [(corr::RANK, rca::RANK), (corr::SETTINGS, rca::SETTINGS)] {
+            if let Some(o) = object(cid, p)? {
+                kept.push((q, o));
+            }
+        }
+        let previous = latest.map(|v| snap.term(v)).transpose()?;
         drop(snap);
         // The verdict describes its root so the root can leave the sources; without a
         // description there is nothing to keep.
         if !kept.iter().any(|(q, _)| *q == rca::ROOT_CLASS) {
             anyhow::bail!("the root of {chain} has no telemetry left and no earlier verdict; run `ograph harvest` and judge a current chain");
         }
-        let mut b = Batch::new("verdicts", &local, "human");
         let m = Extraction::Human { who: by.to_owned() };
         let ev = b.record(format!("verdict:{local}"));
-        let v = known("verdict", &local);
+        let term_obj = |o: oxrdf::Term| match o {
+            oxrdf::Term::NamedNode(n) => Some(obj(n)),
+            oxrdf::Term::Literal(l) => Some(lit(l)),
+            _ => None,
+        };
+        for (s, p, o) in earlier {
+            if let Some(o) = term_obj(o) {
+                b.add(EntityRef::Known(s), p.as_str(), o, &ev, &m);
+            }
+        }
+        let n = history.len() + 1;
+        let v = known("verdict", &if n == 1 { local.clone() } else { format!("{local}-v{n}") });
+        if let (Some(oxrdf::Term::NamedNode(p)), EntityRef::Known(next)) = (previous, &v) {
+            b.add(EntityRef::Known(p), rca::SUPERSEDED_BY, obj(next.clone()), &ev, &m);
+        }
         b.add(v.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(rca::VERDICT)), &ev, &m);
         b.add(v.clone(), rca::ON_CHAIN, obj(chain_iri.clone()), &ev, &m);
         b.add(v.clone(), rca::STATE, lit(if accept { "accepted" } else { "rejected" }), &ev, &m);
         b.add(v.clone(), rca::BY, lit(by), &ev, &m);
         b.add(v.clone(), rca::AT, crate::enrich::dt(now_ms()), &ev, &m);
-        let evidence: Vec<String> = evidence.iter().filter(|e| !e.trim().is_empty()).cloned().collect();
-        for e in if evidence.is_empty() { vec!["(none given)".to_owned()] } else { evidence } {
+        for e in evidence {
             b.add(v.clone(), rca::EVIDENCE, lit(e.as_str()), &ev, &m);
         }
         let c = EntityRef::Known(chain_iri);
@@ -382,12 +453,9 @@ impl Workspace {
         b.add(c.clone(), corr::LEADS_TO, obj(incident.clone()), &ev, &m);
         b.add(c, corr::ROOT_CAUSE, obj(root.clone()), &ev, &m);
         for (p, o) in kept {
-            let o = match o {
-                oxrdf::Term::NamedNode(n) => obj(n),
-                oxrdf::Term::Literal(l) => lit(l),
-                _ => continue,
-            };
-            b.add(v.clone(), p, o, &ev, &m);
+            if let Some(o) = term_obj(o) {
+                b.add(v.clone(), p, o, &ev, &m);
+            }
         }
         if accept {
             b.add(EntityRef::Known(incident), inc::CAUSE, obj(root), &ev, &m);
@@ -467,12 +535,13 @@ pub fn resolve_iri(s: &str) -> String {
 }
 
 /// The best chain of each of the first `max` ranked applications as a correlation batch.
-pub fn chain_batch(a: &correlate::Analysis, max: usize) -> Batch {
+pub fn chain_batch(a: &correlate::Analysis, st: &Settings) -> Batch {
     let local = a.incident.rsplit('/').next().unwrap_or("inc").to_owned();
     let mut b = Batch::new("correlation", &local, "correlator-v1");
     let m = Extraction::Rule { extractor: "correlator-v1".into() };
     let ev = b.record(format!("query:chains {local}"));
-    for (rank, c) in a.apps.iter().take(max).enumerate().filter_map(|(k, r)| Some((k, r.chain.as_ref()?))) {
+    let settings = st.hash();
+    for (rank, c) in a.apps.iter().take(st.max_chains).enumerate().filter_map(|(k, r)| Some((k, r.chain.as_ref()?))) {
         let node = EntityRef::Known(NamedNode::new_unchecked(&c.id));
         b.add(node.clone(), RDF_TYPE, obj(NamedNode::new_unchecked(corr::CHAIN)), &ev, &m);
         b.add(node.clone(), corr::LEADS_TO, obj(NamedNode::new_unchecked(&a.incident)), &ev, &m);
@@ -482,7 +551,8 @@ pub fn chain_batch(a: &correlate::Analysis, max: usize) -> Batch {
             b.add(node.clone(), corr::LINK, obj(NamedNode::new_unchecked(&l.iri)), &ev, &m);
         }
         b.add(node.clone(), corr::CONFIDENCE, lit(term::decimal(c.confidence)), &ev, &m);
-        b.add(node, corr::RANK, lit(oxrdf::Literal::from(rank as i64 + 1)), &ev, &m);
+        b.add(node.clone(), corr::RANK, lit(oxrdf::Literal::from(rank as i64 + 1)), &ev, &m);
+        b.add(node, corr::SETTINGS, lit(settings.as_str()), &ev, &m);
     }
     b
 }
@@ -534,7 +604,8 @@ mod tests {
     fn sparql(root: &Path, q: &str) -> Vec<Vec<String>> {
         let ws = Workspace::open(root).unwrap();
         let rows = crate::sparql::run(&ws.store.snapshot().unwrap(), &crate::sparql::parse(q).unwrap(), None).unwrap();
-        serde_json::from_value(serde_json::to_value(&rows).unwrap()["rows"].clone()).unwrap()
+        let rows: Vec<Vec<Option<String>>> = serde_json::from_value(serde_json::to_value(&rows).unwrap()["rows"].clone()).unwrap();
+        rows.into_iter().map(|r| r.into_iter().map(Option::unwrap_or_default).collect()).collect()
     }
 
     fn harvest(root: &Path, only: Option<&str>) -> Vec<crate::gateway::Outcome> {
@@ -601,6 +672,113 @@ mod tests {
         let printed: Vec<Vec<String>> = a.apps.iter().enumerate().map(|(k, r)| vec![crate::vocab::compact(&r.chain.as_ref().unwrap().id), (k + 1).to_string()]).collect();
         assert_eq!(printed.len(), 2);
         assert_eq!(sparql(&root, "SELECT ?c ?r WHERE { ?c corr:rank ?r } ORDER BY ?r"), printed);
+    }
+
+    const HISTORY: &str = "SELECT ?v ?state ?next WHERE { ?v rca:state ?state . OPTIONAL { ?v rca:supersededBy ?next } } ORDER BY ?v";
+
+    #[test]
+    fn judging_a_chain_again_keeps_every_verdict_and_the_latest_decides() {
+        let root = fixture("history", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        let chain = sparql(&root, "SELECT ?c WHERE { ?c corr:rank 1 }")[0][0].clone();
+        let v = chain.replace("id:chain/", "id:verdict/");
+        let cause = "SELECT ?e WHERE { ?i inc:id \"INC-1\" ; inc:cause ?e }";
+        Workspace::open(&root).unwrap().verdict(&chain, true, "oncall", &["PM-1".into()]).unwrap();
+        assert_eq!(sparql(&root, cause).len(), 1);
+        Workspace::open(&root).unwrap().verdict(&chain, false, "lead", &["rollback changed nothing".into()]).unwrap();
+        harvest(&root, None);
+        assert_eq!(sparql(&root, HISTORY), [[v.clone(), "accepted".into(), format!("{v}-v2")], [format!("{v}-v2"), "rejected".into(), String::new()]]);
+        assert!(sparql(&root, cause).is_empty());
+        assert_eq!(violations(&root), 0);
+        let ws = Workspace::open(&root).unwrap();
+        let why = crate::query::why(&ws.store.snapshot().unwrap(), &chain).unwrap();
+        let seen: Vec<(&str, &str, &str, Vec<String>, Option<&str>, Option<&str>)> = why.verdicts.iter().map(|e| (e.verdict.as_str(), e.state.as_str(), e.by.as_str(), e.evidence.clone(), e.rank.as_deref(), e.superseded_by.as_deref())).collect();
+        let v2 = format!("{v}-v2");
+        assert_eq!(seen, [(v.as_str(), "accepted", "oncall", vec!["PM-1".to_owned()], Some("1"), Some(v2.as_str())), (v2.as_str(), "rejected", "lead", vec!["rollback changed nothing".to_owned()], Some("1"), None)]);
+        ws.verdict(&chain, true, "lead", &["PM-1 rev 2".into()]).unwrap();
+        assert_eq!(sparql(&root, cause).len(), 1);
+        assert_eq!(sparql(&root, HISTORY).iter().map(|r| r[2].clone()).collect::<Vec<_>>(), [format!("{v}-v2"), format!("{v}-v3"), String::new()]);
+    }
+
+    #[test]
+    fn similar_reports_only_the_current_verdict() {
+        let root = fixture("similar-latest", &[("alerts", "alerts.json", &format!("[{},{}]", alert("ledger-db", "PoolSaturated", T - 600), alert("ledger-db", "PoolSaturated", T + 86_400 - 600)))]);
+        std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T}}},{{"id":"INC-2","service":"checkout","opened":{}}}]"#, T + 86_400)).unwrap();
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let similar = |ws: &Workspace| crate::query::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5).unwrap().into_iter().map(|s| s.cause_apps).collect::<Vec<_>>();
+        ws.verdict("id:chain/inc-1-1", true, "oncall", &[]).unwrap();
+        assert_eq!(similar(&ws), [vec!["ledger-db".to_owned()]]);
+        ws.verdict("id:chain/inc-1-1", false, "oncall", &[]).unwrap();
+        assert_eq!(similar(&ws), [Vec::<String>::new()]);
+    }
+
+    #[test]
+    fn replay_lists_the_verdicts_other_settings_would_contradict() {
+        let alerts = [alert("ledger-db", "PoolSaturated", T - 600), alert("payments-api", "ErrorRate", T - 300)];
+        let root = fixture("replay", &[("alerts", "alerts.json", &format!("[{}]", alerts.join(",")))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        ws.verdict("id:chain/inc-1-1", true, "oncall", &[]).unwrap();
+        ws.verdict("id:chain/inc-1-2", false, "oncall", &[]).unwrap();
+        let replay = |st: &crate::correlate::Settings| {
+            let r = crate::query::replay(&ws.store.snapshot().unwrap(), st, &ws.config.correlation).unwrap();
+            let rows: Vec<_> = r.verdicts.iter().map(|v| (v.state.clone(), v.app.clone(), v.judged_rank.clone(), v.before.app_rank, v.after.app_rank, v.flip)).collect();
+            (r.flips, r.fixed, r.contradicted, r.stale_chains, rows)
+        };
+        let mut st = ws.config.correlation.clone();
+        let (one, two) = (Some("1".to_owned()), Some("2".to_owned()));
+        let (flips, fixed, contradicted, stale, mut rows) = replay(&st);
+        rows.sort();
+        assert_eq!((flips, fixed, contradicted, stale), (0, 0, 0, 0));
+        assert_eq!(rows, [("accepted".into(), "ledger-db".into(), one.clone(), Some(1), Some(1), None), ("rejected".into(), "payments-api".into(), two.clone(), Some(2), Some(2), None)]);
+        st.window_s = 400;
+        let (flips, fixed, contradicted, stale, mut rows) = replay(&st);
+        rows.sort();
+        assert_eq!((flips, fixed, contradicted, stale), (2, 0, 2, 0));
+        assert_eq!(rows, [("accepted".into(), "ledger-db".into(), one, Some(1), None, Some("dropped out")), ("rejected".into(), "payments-api".into(), two, Some(2), Some(1), Some("rose to rank 1"))]);
+        let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
+        std::fs::write(root.join(".ograph/config.toml"), format!("{config}[correlation]\nwindow_s = 400\n")).unwrap();
+        let ws = Workspace::open(&root).unwrap();
+        let r = crate::query::replay(&ws.store.snapshot().unwrap(), &crate::correlate::Settings::default(), &ws.config.correlation).unwrap();
+        assert_eq!((r.stale_chains, r.flips, r.fixed, r.contradicted), (2, 0, 2, 0));
+    }
+
+    fn with_policy(root: &Path, policy: &str) {
+        let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
+        let base = config.split("[verdict]").next().unwrap();
+        std::fs::write(root.join(".ograph/config.toml"), format!("{base}[verdict]\n{policy}")).unwrap();
+    }
+
+    fn refusal(root: &Path, evidence: &[&str]) -> String {
+        let ev: Vec<String> = evidence.iter().map(|e| e.to_string()).collect();
+        format!("{:#}", Workspace::open(root).unwrap().verdict("id:chain/inc-1-1", true, "oncall", &ev).unwrap_err())
+    }
+
+    #[test]
+    fn without_a_policy_a_verdict_needs_no_evidence() {
+        let root = fixture("policy-none", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        Workspace::open(&root).unwrap().verdict("id:chain/inc-1-1", true, "oncall", &[" ".into()]).unwrap();
+        assert_eq!(sparql(&root, "SELECT ?e WHERE { ?v rca:evidence ?e }"), [["(none given)"]]);
+    }
+
+    #[test]
+    fn the_evidence_policy_refuses_a_verdict_and_says_why() {
+        let root = fixture("policy", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        with_policy(&root, "require_evidence = true\n");
+        assert_eq!(refusal(&root, &[]), "verdict not recorded: [verdict] require_evidence is set and no --evidence was given");
+        with_policy(&root, "evidence_patterns = ['^PM-\\d+$', '^https://tickets/']\n");
+        assert_eq!(refusal(&root, &["looked bad", "PM-x"]), r#"verdict not recorded: no evidence matches [verdict] evidence_patterns (^PM-\d+$, ^https://tickets/); the evidence given was "looked bad", "PM-x""#);
+        assert_eq!(refusal(&root, &[]), r"verdict not recorded: no evidence matches [verdict] evidence_patterns (^PM-\d+$, ^https://tickets/); no --evidence was given");
+        with_policy(&root, "evidence_in_store = true\n");
+        assert_eq!(refusal(&root, &["PM-9"]), r#"verdict not recorded: [verdict] evidence_in_store is set and no evidence names anything in the graph; the evidence given was "PM-9". Cite an incident, event or document as `ograph why` names it"#);
+        assert!(sparql(&root, "SELECT ?v WHERE { ?v a rca:Verdict }").is_empty());
+        Workspace::open(&root).unwrap().verdict("id:chain/inc-1-1", true, "oncall", &["PM-9".into(), "INC-1".into()]).unwrap();
+        assert_eq!(sparql(&root, "SELECT ?e WHERE { ?v rca:evidence ?e } ORDER BY ?e"), [["INC-1"], ["PM-9"]]);
+        with_policy(&root, "evidence_patterns = ['(']\n");
+        assert!(Workspace::open(&root).is_err());
     }
 
     #[test]

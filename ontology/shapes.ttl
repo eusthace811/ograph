@@ -46,4 +46,5 @@ shape:Verdict a sh:NodeShape ;
   sh:targetClass rca:Verdict ;
   sh:property [ sh:path rca:onChain ; sh:minCount 1 ; sh:maxCount 1 ] ;
   sh:property [ sh:path rca:state ; sh:minCount 1 ; sh:maxCount 1 ] ;
-  sh:property [ sh:path rca:evidence ; sh:minCount 1 ] .
+  sh:property [ sh:path rca:evidence ; sh:minCount 1 ] ;
+  sh:property [ sh:path rca:supersededBy ; sh:maxCount 1 ] .
