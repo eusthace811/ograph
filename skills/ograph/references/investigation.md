@@ -37,14 +37,26 @@ ograph chains INC-5377
 ```
   1. ledger-db              score 0.944
      id:chain/inc-5377-a7370ff7d4358525 0.94: ledger-db:ALERT -> payments-api:LOG_ERROR -> payments-api:ALERT -> checkout:ALERT -> incident
+       0.99  ledger-db:ALERT -> payments-api:LOG_ERROR  (time 0.99, severity 1.00, catalog dependency)
+       0.93  payments-api:LOG_ERROR -> payments-api:ALERT  (time 0.88, severity 1.00, same application)
+       0.96  payments-api:ALERT -> checkout:ALERT  (time 0.93, severity 1.00, catalog dependency)
+       0.90  checkout:ALERT -> incident  (known pair, same application)
+       weakest link: checkout:ALERT -> incident at 0.90
   2. payments-api           score 0.930
      id:chain/inc-5377-f1ece3ced5be33c7 0.93: payments-api:ALERT -> checkout:ALERT -> incident
+       0.96  payments-api:ALERT -> checkout:ALERT  (time 0.93, severity 1.00, catalog dependency)
+       0.90  checkout:ALERT -> incident  (known pair, same application)
+       weakest link: checkout:ALERT -> incident at 0.90
 ```
 
 - One line per candidate application, best first, with its best chain: events linked along
   dependency edges, in time order, ending at the incident.
 - Scores follow Netflix's published rule: known causal pairs carry 0.9, others
   `time_proximity * 0.6 + severity * 0.4`; chains under 0.6 are dropped.
+- Under each chain, one line per link: its score and why. A chain's confidence is the
+  geometric mean of its links. Check the weakest link first: a low time part means a long gap,
+  and `dependency seen only in traces` or `no direct dependency` means the catalog does not
+  state the edge the link crosses.
 - `--rank propagation` ranks by how an anomaly spread to callers. When both rankings agree,
   say so; when they differ, report both.
 - The chain id is stable across re-harvests. Use it for verdicts.

@@ -1,0 +1,34 @@
+$ ab_compare.sh OLD NEW   (OLD is the commit before the change)
+identical  before_INC-5377.json
+identical  blast_ledger-db.json
+DIFFERENT  chains_INC-5377.json
+DIFFERENT  chains_INC-5377_--rank_propagation.json
+identical  news.json
+identical  rcaeval.json
+identical  similar_INC-5377.json
+identical  validate.json
+identical  why_INC-5377.json
+identical  harvest.txt
+identical  rcaeval.txt
+identical  similar.txt
+10 of 12 outputs identical
+| chain | 0.93 | 0.99 | 0.98 |
+top-1 similar past incident shares the root cause: 82/89 = 0.92; any of top 3: 0.94; chance about 0.20
+latency, median of 150 runs each, the binaries taking turns:
+  before INC-5377    old 73.92 ms   new 75.46 ms
+  chains INC-5377    old 92.32 ms   new 93.44 ms
+  similar INC-5377   old 111.18 ms   new 122.42 ms
+  blast ledger-db    old 150.82 ms   new 136.97 ms
+
+$ same_but_for.py old new scores weakest
+identical but for scores, weakest: chains_INC-5377.json
+identical but for scores, weakest: chains_INC-5377_--rank_propagation.json
+
+$ chain_scores_gate.py --bin NEW --cases rcaeval-cases --reuse --also demo
+90 cases and 4 incidents of target/lane/ab/new/demo, 2 rank modes, 2 weight settings: 2454 chains, 3533 links (24 known pairs)
+dependency edge behind each link: {'catalog': 2194, 'indirect': 503, 'same_app': 836}
+largest |recomputed - reported| link score: 0.000e+00
+largest |geometric mean of link scores - reported chain confidence|: 1.110e-16
+stored corr:confidence checked on 585 chains; largest |round(confidence, 4) - stored|: 0.000e+00
+structural failures (labels, severity, weakest, stored ids): 0
+PASS

@@ -381,3 +381,25 @@ These are the reasons, each measured above:
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.
+
+## Phase 12, lane A1: chain scores and past verdicts
+
+### Why a chain scored what it did (`chain-scores.txt`, `scripts/eval/chain_scores_gate.py`)
+
+Each chain now carries `scores`, how every link scored, and `weakest`, the link to check first. The idea comes from semantica's causal-distance report. The gate, set before the code: the parts must recompute every link score and every chain confidence within 1e-9 on all 90 RCAEval cases, and the rankings must stay byte-identical.
+
+`chain_scores_gate.py` asks `ograph chains --json --top 1000` for each case in both rank modes, with the default weights and with `w_time = 0.5`, `w_severity = 0.3`, `known_pair_prior = 0.8`, then recomputes from the parts. RCAEval has no known pair on a best chain, so the gate also takes the demo, which has 24.
+
+| Check | Result |
+|---|---|
+| Chains and links recomputed | 2,454 chains, 3,533 links |
+| Largest difference between a link score and `w_time * time + w_severity * severity`, or the prior for a known pair | 0 |
+| Largest difference between a chain's confidence and the geometric mean of its link scores | 1.1e-16 |
+| Stored `corr:confidence` against the confidence rounded to the four decimals the graph keeps | 585 chains, difference 0 |
+| Links whose `from`, `to`, `severity` or the chain's `weakest` disagree with the chain | 0 |
+
+`scripts/eval/ab_compare.sh` with the binary from before the change: 10 of 12 outputs are byte-identical, among them the 90 RCAEval rankings (chain AC@1 0.93) and the similar-incident scores (0.92). The two that differ are the demo's `chains` answers, and `scripts/eval/same_but_for.py` shows they are equal once `scores` and `weakest` are removed. The latencies in the file were taken while other builds shared the machine, so they show only that the two binaries are within noise of each other (92.3 ms and 93.4 ms for `chains`).
+
+The dependency behind a link is `catalog` for 2,194 links, `same_app` for 836 and `indirect` for 503. No link is `trace`: on RCAEval every dependency the spans show is also in the catalog. A unit test covers that value (`a_link_names_where_its_dependency_comes_from`).
+
+Not done: `corr:linkScore` in the graph. A score belongs to a link, and the graph keeps a chain's links as plain `corr:link` events, so storing it needs a node per link. The store cannot tell a declared catalog dependency from one ogrep inferred from configuration, since both are in the catalog graph, so `edge` reports both as `catalog`.

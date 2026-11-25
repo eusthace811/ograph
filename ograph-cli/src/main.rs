@@ -155,6 +155,22 @@ fn warn(degraded: &[String]) {
     }
 }
 
+/// Why a link scored what it did, for `ograph chains`.
+fn link_basis(l: &correlate::LinkScore) -> String {
+    let edge = match l.edge {
+        correlate::Edge::SameApp => "same application",
+        correlate::Edge::Catalog => "catalog dependency",
+        correlate::Edge::Trace => "dependency seen only in traces",
+        correlate::Edge::Other => "dependency from another source",
+        correlate::Edge::Indirect => "no direct dependency",
+    };
+    if l.known_pair {
+        format!("known pair, {edge}")
+    } else {
+        format!("time {:.2}, severity {:.2}, {edge}", l.time, l.severity)
+    }
+}
+
 fn print_suspects(suspects: &[query::Suspect]) {
     for s in suspects {
         println!("  {}. {:<22} score {:.2}  distance {}  explains {}", s.rank, s.app, s.score, s.distance, s.explains.join(", "));
@@ -277,6 +293,12 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                     if let Some(c) = &r.chain {
                         let path: Vec<String> = std::iter::once(&c.root).chain(&c.links).map(|s| format!("{}:{}", s.app_name, s.kind)).collect();
                         println!("     {} {:.2}: {} -> incident", ograph_core::vocab::compact(&c.id), c.confidence, path.join(" -> "));
+                        for l in &c.scores {
+                            println!("       {:.2}  {} -> {}  ({})", l.score, l.from, l.to, link_basis(l));
+                        }
+                        if c.scores.len() > 1 {
+                            println!("       weakest link: {} -> {} at {:.2}", c.weakest.from, c.weakest.to, c.weakest.score);
+                        }
                     }
                 }
             };

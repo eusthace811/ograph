@@ -17,7 +17,7 @@ pub fn tools() -> Value {
     json!([
         {"name": "before", "description": "Events in the window before an incident on its application and the applications it depends on, newest first, with their signal type and strength. Start every investigation here.",
          "inputSchema": s(json!({"incident": {"type": "string", "description": "incident id like INC-5377 or an IRI"}, "window": {"type": "string", "description": "like 10m (the default) or 2h"}}), &["incident"])},
-        {"name": "chains", "description": "Correlation chains and ranked root-cause applications for an incident. Each chain is a hypothesis with its evidence, not a conclusion.",
+        {"name": "chains", "description": "Correlation chains and ranked root-cause applications for an incident. Each chain is a hypothesis with its evidence, not a conclusion. `scores` says how each link scored (time proximity, severity, known pair, where the dependency comes from) and `weakest` names the link to check first.",
          "inputSchema": s(json!({"incident": {"type": "string"}, "rank": {"type": "string", "enum": ["chain", "propagation"]}}), &["incident"])},
         {"name": "blast", "description": "Applications that depend on an application, by distance, and the business processes they support.",
          "inputSchema": s(json!({"app": {"type": "string"}}), &["app"])},

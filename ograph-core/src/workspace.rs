@@ -489,15 +489,15 @@ pub fn chain_batch(a: &correlate::Analysis, max: usize) -> Batch {
 
 // These tests use shell scripts as stand-ins for ogrep and the model command.
 #[cfg(all(test, unix))]
-mod tests {
+pub(crate) mod tests {
     use super::Workspace;
     use std::path::{Path, PathBuf};
 
-    const T: i64 = 1_795_386_400;
+    pub(crate) const T: i64 = 1_795_386_400;
 
     /// A workspace whose catalog is checkout -> payments-api -> ledger-db, with an incident on
     /// checkout at `T` and `sources` (kind, file, body) beside it.
-    fn fixture(name: &str, sources: &[(&str, &str, &str)]) -> PathBuf {
+    pub(crate) fn fixture(name: &str, sources: &[(&str, &str, &str)]) -> PathBuf {
         static OGREP: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let ogrep = OGREP.get_or_init(|| {
             let p = std::env::temp_dir().join(format!("ograph-test-ogrep-{}", std::process::id()));
@@ -527,7 +527,7 @@ mod tests {
         root
     }
 
-    fn alert(app: &str, name: &str, at: i64) -> String {
+    pub(crate) fn alert(app: &str, name: &str, at: i64) -> String {
         format!(r#"{{"labels":{{"alertname":"{name}","service":"{app}","severity":"critical"}},"startsAt":{at}}}"#)
     }
 
@@ -537,7 +537,7 @@ mod tests {
         serde_json::from_value(serde_json::to_value(&rows).unwrap()["rows"].clone()).unwrap()
     }
 
-    fn harvest(root: &Path, only: Option<&str>) -> Vec<crate::gateway::Outcome> {
+    pub(crate) fn harvest(root: &Path, only: Option<&str>) -> Vec<crate::gateway::Outcome> {
         Workspace::open(root).unwrap().harvest(only, |_, _| {}).unwrap()
     }
 
