@@ -28,7 +28,8 @@ Usage:
   agent_rca_eval.py --mirror-cases data/rcaeval-cases target/rcaeval-ref
       (a writable copy of the cases by symlink, to run rcaeval_score.py for --reference)
 
-Rows already in OUT/runs.jsonl are kept and not rerun, unless they are errors or --fresh is set."""
+Rows already in OUT/runs.jsonl are kept and not rerun, unless they are errors or --fresh is set.
+A run the provider refuses for its usage limit stops the model arms; rerun later to finish."""
 import argparse, collections, concurrent.futures, dataclasses, itertools, json, math, os, pathlib, random, re, shutil, statistics, subprocess, sys, tempfile, threading, time, uuid
 
 HERE = pathlib.Path(__file__).resolve()
@@ -88,6 +89,8 @@ class Arm:
 
 class Ctx:
     """Paths one run of the harness shares. Everything an agent may open sits under `work`."""
+    halt = None  # why no further model call is worth making: the provider's usage limit
+
     def __init__(self, a):
         self.a = a
         self.work = pathlib.Path(a.work).resolve() if a.work else pathlib.Path(tempfile.mkdtemp(prefix="ops-"))
@@ -287,6 +290,7 @@ def pi_answer(flags, first_on_path):
     def answer(ctx, case, ws):
         cmd = ["pi", "-p", "--mode", "json", "--no-session", "--no-extensions", "--no-context-files", "--no-prompt-templates",
                "--no-skills", "--no-mcp", "--no-approve", *flags(ctx), "--model", ctx.a.model, PROMPT.format(incident=case.incident)]
+        if ctx.halt: return Answer("error", why=f"not run: {ctx.halt}")
         why = ""
         for attempt in range(3):
             t = time.time()
@@ -303,6 +307,8 @@ def pi_answer(flags, first_on_path):
             if not timed_out and p.returncode == 0 and text.strip(): return got
             # An empty reply, a failed exit or a hang before any tool call is the provider, not the agent.
             why = f"no reply within {ctx.a.timeout} s" if timed_out else f"exit {p.returncode}: {(p.stderr or p.stdout).strip()[-200:]}"
+            if not timed_out and re.search(r"usage limit", p.stderr + p.stdout, re.I):
+                ctx.halt = "the provider's usage limit is reached"; break
             if attempt < 2: time.sleep(30 * (attempt + 1))
         return Answer("error", why=f"pi failed 3 times, last: {why}")
     return answer
@@ -429,11 +435,23 @@ def report(cases, arms, skipped, rows, runs, reference, model):
             s = [r["status"] == "pass" for r in by[(arm, c.key)] if r["status"] in ("pass", "fail")]
             return sum(s) / len(s) if s else None
         names = [a.name for a in arms]
+        floor = {c.key: next((r["root"] for r in by[("chains", c.key)]), None) for c in cs}
+        for arm in arms:
+            scored = [r for c in cs for r in by[(arm.name, c.key)] if r["status"] in ("pass", "fail")]
+            wrong = collections.Counter(r["root"] or "(no answer)" for r in scored if r["status"] == "fail")
+            if wrong: print(f"{arm.name} wrong answers: " + ", ".join(f"{k} x{n}" for k, n in wrong.most_common()))
+            moved = [r for r in scored if floor[r["case"]] is not None and r["root"] != floor[r["case"]]]
+            if arm.name != "chains" and "chains" in names and scored:
+                print(f"{arm.name} departs from chains rank 1 on {len(moved)} of {len(scored)} runs: right on {sum(r['status'] == 'pass' for r in moved)} of them, "
+                      f"and rank 1 was right on {sum(floor[r['case']] == r['label'].lower() for r in moved)}")
+        shared = [c for c in cs if all(rate(n, c) is not None for n in names)]
+        if 0 < len(shared) < len(cs):
+            print(f"on the {len(shared)} cases every arm answered, mean AC@1: " + ", ".join(f"{n} {sum(rate(n, c) for c in shared) / len(shared):.2f}" for n in names))
         for a, b in itertools.combinations(names, 2):
             pairs = [(rate(a, c), rate(b, c)) for c in cs]
             pairs = [(x, y) for x, y in pairs if x is not None and y is not None]
             wins, losses = sum(x > y for x, y in pairs), sum(x < y for x, y in pairs)
-            print(f"{a} against {b}: better on {wins} cases, worse on {losses}, equal on {len(pairs) - wins - losses} (sign test p = {sign_test(wins, losses):.2f})")
+            if pairs: print(f"{a} against {b}: better on {wins} cases, worse on {losses}, equal on {len(pairs) - wins - losses} (sign test p = {sign_test(wins, losses):.3f})")
         print(f"\n| case | label | " + " | ".join(names) + " |\n|---|---|" + "---|" * len(names))
         for c in cs:
             cells = []
@@ -477,6 +495,7 @@ def main(argv=None):
     ap.add_argument("--model", default="openai/gpt-5.6-terra"); ap.add_argument("--parallel", type=int, default=4)
     ap.add_argument("--timeout", type=int, default=600); ap.add_argument("--work"); ap.add_argument("--reference")
     ap.add_argument("--misses", action="store_true", help="add the cases --reference ranks wrong, as suite rcaeval-miss")
+    ap.add_argument("--report-only", action="store_true", help="run nothing; report the rows OUT/runs.jsonl holds")
     ap.add_argument("--fresh", action="store_true"); ap.add_argument("--keep", action="store_true", help="keep each run's workspace")
     ap.add_argument("--strict", action="store_true", help="an arm that cannot run fails the harness instead of being skipped")
     a = ap.parse_args(argv)
@@ -504,7 +523,7 @@ def main(argv=None):
         for line in log.read_text().splitlines():
             r = json.loads(line)
             if r["status"] != "error": done[(r["case"], r["arm"], r["run"])] = r
-    todo = [(c, arm, n) for n in range(1, a.runs + 1) for c in cases for arm in arms if (c.key, arm.name, n) not in done]
+    todo = [(c, arm, n) for n in range(1, a.runs + 1) for c in cases for arm in arms if (c.key, arm.name, n) not in done and not a.report_only]
     print(f"{len(todo)} runs to do, {len(wanted & set(done))} kept from {log}", file=sys.stderr, flush=True)
     t = time.time()
     with concurrent.futures.ThreadPoolExecutor(a.parallel) as pool:

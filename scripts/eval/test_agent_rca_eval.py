@@ -144,12 +144,28 @@ class EndToEnd(unittest.TestCase):
             ("rcaeval/c-2/INC-2", "chains", 1, "fail", ""), ("rcaeval/c-2/INC-2", "chains", 2, "fail", "")])
         self.assertIn("skipped arm absent: its backend is not installed", text)
         self.assertIn("| cart | 2/4 (0.50) | 1 | 0 | 1 | 0 | 4/4 | 2 |", text)
-        self.assertIn("cart against chains: better on 1 cases, worse on 0, equal on 1 (sign test p = 1.00)", text)
+        self.assertIn("cart against chains: better on 1 cases, worse on 0, equal on 1 (sign test p = 1.000)", text)
         self.assertIn("leak check: 0 of 8 runs voided; 0 errors", text)
+        self.assertIn("cart wrong answers: cart x2", text)
+        self.assertIn("cart departs from chains rank 1 on 4 of 4 runs: right on 2 of them, and rank 1 was right on 0", text)
         self.assertEqual(len(self.calls), 4)
         self.harness()
         self.assertEqual(len(self.calls), 4, "finished runs are not repeated")
         self.assertFalse(list((self.root / "work" / "runs").iterdir()), "each run's workspace is removed")
+
+    def test_a_usage_limit_stops_the_model_arms_after_one_call(self):
+        fake = self.root / "fakebin"; fake.mkdir()
+        (fake / "pi").write_text(f"#!/bin/sh\necho call >> {self.root}/pi-calls\necho 'The user has reached their usage limit.'\n")
+        (fake / "pi").chmod(0o755)
+        path = os.environ["PATH"]
+        os.environ["PATH"] = f"{fake}{os.pathsep}{path}"
+        try: code, text, rows = self.harness("--arms", "raw,chains", "--parallel", "1")
+        finally: os.environ["PATH"] = path
+        self.assertEqual((self.root / "pi-calls").read_text(), "call\n")
+        self.assertEqual(sorted((r["arm"], r["status"]) for r in rows), [("chains", "fail")] * 4 + [("raw", "error")] * 4)
+        self.assertIn("not run: the provider's usage limit is reached", text)
+        code, text, rows = self.harness("--arms", "raw,chains", "--report-only")
+        self.assertIn("| raw | 0/0 (0.00) | 0 | 0 | 0 | 2 |", text)
 
     def test_strict_fails_on_a_missing_arm(self):
         with self.assertRaisesRegex(SystemExit, "arm absent cannot run: its backend is not installed"): self.harness("--strict")

@@ -11,3 +11,5 @@ docs/*.pdf
 examples/demo/catalog/
 spikes/*/target/
 spikes/server-graphs/data/export/
+docs/evidence/agent-rca/transcripts/
+__pycache__/

@@ -381,3 +381,66 @@ These are the reasons, each measured above:
 - **Netflix made the same choice.** AutoRCA "queried live" the raw systems and queried only the graph's harvested facts with SPARQL (post, page 12). ograph keeps a pointer to the first raw record of each episode (`evt:sourceRecord`, or the evidence in `ograph why`) for drill-down.
 
 The graph is still where the value is. Dependency edges add about 5 points of top-1 accuracy over ignoring them. Investigation memory over verdicts reaches 0.92 top-1. Provenance, quarantine and closed vocabularies let both people and agents trust what they read.
+
+## Phase 12, lane F: do agents with ograph name the right root cause (`agent-rca.txt`)
+
+`scripts/eval/agent_rca_eval.py` gives an agent one open incident and asks which application is the root cause. The reply ends with `ROOT: <application>`, and a run passes when that is the labeled root (AC@1). Four arms answer the same incidents:
+
+| Arm | What answers |
+|---|---|
+| `mcp` | Headless pi with only the ograph tools, through the extension `scripts/agent/install.py` writes |
+| `skill` | Headless pi with `skills/ograph`, bash and read, and `ograph` on `PATH` |
+| `raw` | Headless pi with bash and read over the raw source files. No store and no `ograph` |
+| `chains` | No agent. Rank 1 of `ograph chains`, the floor |
+
+**The result is partial.** The plan was 39 cases, 3 runs each. The pi login reached its usage limit 21 minutes into the main run, during run 1. The numbers below are one run per case on the cases that finished. Flakiness across runs was not measured. The 5 cases that `chains` ranks wrong outside the sample (`--misses`) got no agent run. Rerunning the main command finishes the run, because rows in `docs/evidence/agent-rca/runs.jsonl` are kept.
+
+**Cases.** 30 RCAEval cases, one per root service and fault type, with the repetition drawn by a fixed seed. The 4 demo incidents are a second suite. I labeled them from the story `examples/demo/generate.py` writes, so they are author labels.
+
+**Gates for the harness, both pass.**
+
+- **The floor is the published scorer.** The `chains` arm gives the same rank 1 as `rcaeval_score.py` on 35 of 35 cases, on each of 3 runs. AC@1 is 0.8286 for both on those 35 (the sample plus the 5 extra misses), and 29 of 30 on the sample.
+- **Planted leaks are caught.** `scripts/eval/test_agent_rca_eval.py` plants a labels file, a note that names the dataset and the cases directory, and a symlink in a workspace. It plants transcripts that read the labels file, climb out with `..`, list the home directory, list another run, or use `ograph` in the `raw` arm. Each is flagged, and a clean workspace and a clean transcript are not. End to end, a planted labels file voids every run of that case before any arm is called. 14 of 14 tests pass.
+- **The real workspaces are clean.** A separate `grep` over the pilot's 28 kept workspaces found no file that names the dataset, the labels file or the repository, and no label-shaped JSON. The harness voided 0 of 112 runs in the main run.
+
+**How the labels stay hidden.** Each run gets a fresh copy of the case under a neutral path. The catalog is copied in and the config rewritten, because the exported config pointed at the repository by absolute path. The binary and the skill are copies too. The environment drops every variable that names the repository. The `raw` arm gets a stub `ograph` that says "command not found", because a real one is installed on this machine.
+
+**RCAEval sample, one run per case (`agent-rca.txt`, section 5):**
+
+| Arm | AC@1 | On the 22 cases every arm answered | Says "hypothesis" | Tool calls | Wall | Tokens | Cost per run |
+|---|---|---|---|---|---|---|---|
+| `mcp` | 18 of 26 (0.69) | 0.68 | 25 of 26 | 7 | 25 s | 22,574 | $0.036 |
+| `skill` | 15 of 25 (0.60) | 0.59 | 1 of 25 | 12 | 40 s | 85,169 | $0.098 |
+| `raw` | 19 of 22 (0.86) | 0.86 | 0 of 22 | 14 | 89 s | 225,366 | $0.171 |
+| `chains` | 29 of 30 (0.97) | 0.95 | | 0 | 0.1 s | 0 | 0 |
+
+Tool calls, wall time and tokens are medians. Cost is the list price pi reports for the tokens.
+
+**An agent with ograph did not beat `chains` rank 1. It did worse.**
+
+- **Against rank 1.** `mcp` was worse on 7 cases and better on none (sign test p = 0.016). `skill` was worse on 9 and better on none (p = 0.004).
+- **Every departure from rank 1 was wrong.** `mcp` answered something other than rank 1 on 8 of 26 runs and was right on none, while rank 1 was right on 7 of them. `skill` departed on 10 of 25 and was right on none, while rank 1 was right on 9.
+- **The one sampled case where rank 1 is wrong was not recovered.** On `c-3a0809d8d0` both ograph arms answered `redis`. The `raw` arm answered `currencyservice`, which is right.
+
+**An agent with ograph did not beat the raw-files agent either.** `mcp` was better on 2 cases and worse on 6 (p = 0.289). `skill` was better on 2 and worse on 8 (p = 0.109). The direction is against ograph and the sample is too small to call the gap settled. The raw-files agent also did not beat rank 1. It was better on 1 case and worse on 3 (p = 0.625).
+
+**What ograph bought was cost, not accuracy.** The `mcp` arm used a tenth of the raw arm's tokens and under a third of its time. The `skill` arm used 38% of the tokens and 45% of the time.
+
+**Why the ograph agents miss: `redis` (`agent-rca.txt`, section 6).** 14 of their 18 wrong answers are `redis`, which is never the labeled root. 18 of the 30 sampled cases have a redis event at severity 1.0 before the incident. In the transcripts I read it is a disk I/O anomaly. The agents answered `redis` on 7 of 17 such runs in each arm, and on 0 of 17 runs where no redis event reaches 1.0. `chains` ranks redis between 2 and 6 in those cases, so the ranking discounts the event and the agent does not. The replies give the reason. The redis event is the earliest high-severity event, and redis sits upstream of `cartservice`, so the agent calls the rank-1 application a downstream symptom. `redis_diskio` is the sparse series Phase 5 describes, where one spike against a flat baseline saturates severity. The `raw` arm never answered `redis`.
+
+**The two agent surfaces differ on calling the cause a hypothesis.** The extension's instructions say "A chain is a hypothesis. Say so", and 25 of 26 `mcp` replies used the word or said the cause was unconfirmed. `skills/ograph` says the same in its step list, and 1 of 25 `skill` replies did. The check is a regular expression (`HYPOTHESIS` in the script), so it counts wording, not judgment.
+
+**Demo incidents, from the pilot, one run each (`agent-rca.txt`, section 3).** `skill` and `raw` named the root on 4 of 4. `mcp` and `chains` named it on 3 of 4. The miss is INC-4501, whose root is `elasticsearch`. It has no telemetry in the demo, so `chains` ranks `search-api`, and the `mcp` agent repeated that. The agents with file access read it in the chat thread. Four cases with author labels show the harness works on a second data shape and little more.
+
+**What this does not show.**
+
+- **One model.** Every run used `openai/gpt-5.6-terra`. Another model may weigh the redis event differently.
+- **One run per case.** The `stable_pass` and `stable_fail` columns in the output mean pass and fail here.
+- **A high floor.** `chains` is right on 29 of the 30 sampled cases, so the sample can show an agent doing worse far more easily than doing better. The `--misses` suite exists to test recovery, and it did not run.
+- **No fix was tried.** The redis finding points at two candidates: how the tools present a saturated severity on a sparse series, and whether the skill should tell an agent to keep rank 1 unless it can name evidence the ranking lacks. Neither was built, because any such change needs cases this run has not already shown.
+
+**A harness bug the pilot caught.** The first pilot's `mcp` arm ran with no tools, because the harness read the extension's tool list with a pattern that matched nothing. Every answer was "unknown". It was fixed before the main run, and an extension that registers no tools is now a skipped arm.
+
+**Arms are a registry.** `ARMS` in the script maps a name to how the arm answers, whether its workspace holds a store, and what tool calls it forbids. `--arms` picks by name. An arm that cannot run here is a skipped row in the output, and `--strict` turns that into a failure.
+
+**Cost and time.** The pilot was 28 agent runs for $1.37. The main run made 73 scored agent runs in 21 minutes at `--parallel 5` for $7.15. The full plan at these rates is about $36.

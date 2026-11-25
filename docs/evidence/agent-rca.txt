@@ -1,0 +1,328 @@
+Agent root-cause eval (scripts/eval/agent_rca_eval.py), model openai/gpt-5.6-terra through pi 1.6.0.
+
+STATUS: PARTIAL. The plan was 39 cases x 3 runs x 4 arms. The pi login reached its
+"Subscription Sharing usage limit" 21 minutes into the main run, during run 1. What follows is
+1 run per case on the cases that finished: 26 (mcp), 25 (skill) and 22 (raw) of the 30 sampled
+RCAEval cases. No agent arm ran on the 5 rcaeval-miss cases, and the demo incidents have agent
+answers only from the pilot. With one run per case the stable_pass and stable_fail columns just
+mean pass and fail; flakiness was not measured. To finish, rerun command 4: it keeps the rows in
+docs/evidence/agent-rca/runs.jsonl and runs only what is missing.
+
+Commands, from the repository root:
+1  python3 scripts/eval/test_agent_rca_eval.py -v
+2  python3 scripts/eval/agent_rca_eval.py --mirror-cases data/rcaeval-cases target/rcaeval-ref
+   python3 scripts/eval/rcaeval_score.py --bin target/release/ograph --cases target/rcaeval-ref --modes chain --out target/rcaeval-ref.json
+3  pilot: agent_rca_eval.py --bin target/release/ograph --cases data/rcaeval-cases --demo examples/demo
+     --reference target/rcaeval-ref.json --sample 3 --runs 1 --keep --work $WORK/pilot --out target/agent-rca-pilot
+4  main: agent_rca_eval.py --bin target/release/ograph --cases data/rcaeval-cases --demo examples/demo
+     --reference target/rcaeval-ref.json --misses --sample 30 --runs 3 --parallel 5 --work $WORK/work --out docs/evidence/agent-rca
+5  report of what finished: command 4 with --runs 1 --report-only
+
+Files: docs/evidence/agent-rca/runs.jsonl (one row per run), pilot-runs.jsonl, pilot-mcp-runs.jsonl,
+transcripts.tar.gz (every tool call, tool output cut at 3000 characters, and reply: main/, pilot/, pilot-mcp/).
+
+Cost and time, as pi prices the tokens (the login is a subscription, so this is list price, not a bill):
+pilot 28 runs in 158 s, $1.19; pilot mcp rerun 7 runs in 42 s, $0.18; main 73 scored agent runs in
+21 minutes at --parallel 5, $7.15 (mcp $0.93, skill $2.45, raw $3.77). Total $8.52.
+Per run: mcp $0.036, skill $0.098, raw $0.171. The full plan at these rates is about $36.
+
+================================================================================
+1. Harness tests, including the planted leaks
+================================================================================
+test_a_planted_label_file_voids_every_run_before_any_arm_sees_it (__main__.EndToEnd.test_a_planted_label_file_voids_every_run_before_any_arm_sees_it) ... ok
+test_a_run_that_reads_the_labels_is_voided (__main__.EndToEnd.test_a_run_that_reads_the_labels_is_voided) ... ok
+test_a_usage_limit_stops_the_model_arms_after_one_call (__main__.EndToEnd.test_a_usage_limit_stops_the_model_arms_after_one_call) ... ok
+test_scores_skips_and_resumes (__main__.EndToEnd.test_scores_skips_and_resumes) ... ok
+test_strict_fails_on_a_missing_arm (__main__.EndToEnd.test_strict_fails_on_a_missing_arm) ... ok
+test_clean_transcript (__main__.Leaks.test_clean_transcript) ... ok
+test_clean_workspace (__main__.Leaks.test_clean_workspace) ... ok
+test_planted_files (__main__.Leaks.test_planted_files) ... ok
+test_planted_transcripts (__main__.Leaks.test_planted_transcripts) ... ok
+test_hypothesis (__main__.Scoring.test_hypothesis) ... ok
+test_root_line (__main__.Scoring.test_root_line) ... ok
+test_sample_is_one_per_cell_and_a_prefix (__main__.Scoring.test_sample_is_one_per_cell_and_a_prefix) ... ok
+test_sign_test (__main__.Scoring.test_sign_test) ... ok
+test_verdict (__main__.Scoring.test_verdict) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 2.501s
+
+OK
+
+================================================================================
+2. Gate: the chains arm against rcaeval_score.py (3 runs, all 35 RCAEval cases in the run)
+================================================================================
+GATE chains arm reproduces rcaeval_score.py: PASS (35/35 cases with the same rank 1 on every run; AC@1 0.8286 against 0.8286)
+chains rows on RCAEval cases by (run, status): {(1, 'fail'): 6, (1, 'pass'): 29, (2, 'fail'): 6, (2, 'pass'): 29, (3, 'fail'): 6, (3, 'pass'): 29}
+
+================================================================================
+3. Pilot (3 sampled cases and the 4 demo incidents, 1 run)
+================================================================================
+The first pilot's mcp arm ran with no tools: the harness read the extension's tool list with a
+pattern that matched nothing, so every mcp answer was "unknown". That was a harness bug, fixed
+before the main run; the mcp arm was then piloted again (second table). Rows of the other arms
+are unaffected.
+
+model openai/gpt-5.6-terra; 7 cases x 1 runs; arms mcp, skill, raw, chains
+
+demo (4 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 0/4 (0.00) | 0 | 0 | 4 | 0 | 0/4 | 0 | 7.9 | 1148 | 0.02 |
+| skill | 4/4 (1.00) | 4 | 0 | 0 | 0 | 0/4 | 13 | 40.8 | 56758 | 0.26 |
+| raw | 4/4 (1.00) | 4 | 0 | 0 | 0 | 0/4 | 9.5 | 27.9 | 38477 | 0.23 |
+| chains | 3/4 (0.75) | 3 | 0 | 1 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as pi prices it
+mcp against skill: better on 0 cases, worse on 4, equal on 0 (sign test p = 0.12)
+mcp against raw: better on 0 cases, worse on 4, equal on 0 (sign test p = 0.12)
+mcp against chains: better on 0 cases, worse on 3, equal on 1 (sign test p = 0.25)
+skill against raw: better on 0 cases, worse on 0, equal on 4 (sign test p = 1.00)
+skill against chains: better on 1 cases, worse on 0, equal on 3 (sign test p = 1.00)
+raw against chains: better on 1 cases, worse on 0, equal on 3 (sign test p = 1.00)
+
+| case | label | mcp | skill | raw | chains |
+|---|---|---|---|---|---|
+| INC-4120 | ledger-db | stable_fail: unknown | stable_pass: ledger-db | stable_pass: ledger-db | stable_pass: ledger-db |
+| INC-4388 | checkout | stable_fail: unknown | stable_pass: checkout | stable_pass: checkout | stable_pass: checkout |
+| INC-4501 | elasticsearch | stable_fail: unknown | stable_pass: elasticsearch | stable_pass: elasticsearch | stable_fail: search-api |
+| INC-5377 | ledger-db | stable_fail: unknown | stable_pass: ledger-db | stable_pass: ledger-db | stable_pass: ledger-db |
+
+rcaeval (3 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 0/3 (0.00) | 0 | 0 | 3 | 0 | 1/3 | 0 | 10.7 | 1276 | 0.02 |
+| skill | 1/3 (0.33) | 1 | 0 | 2 | 0 | 0/3 | 7 | 33.4 | 57223 | 0.25 |
+| raw | 3/3 (1.00) | 3 | 0 | 0 | 0 | 0/3 | 13 | 73.1 | 214495 | 0.41 |
+| chains | 3/3 (1.00) | 3 | 0 | 0 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as pi prices it
+mcp against skill: better on 0 cases, worse on 1, equal on 2 (sign test p = 1.00)
+mcp against raw: better on 0 cases, worse on 3, equal on 0 (sign test p = 0.25)
+mcp against chains: better on 0 cases, worse on 3, equal on 0 (sign test p = 0.25)
+skill against raw: better on 0 cases, worse on 2, equal on 1 (sign test p = 0.50)
+skill against chains: better on 0 cases, worse on 2, equal on 1 (sign test p = 0.50)
+raw against chains: better on 0 cases, worse on 0, equal on 3 (sign test p = 1.00)
+
+| case | label | mcp | skill | raw | chains |
+|---|---|---|---|---|---|
+| c-c9e38942cb | checkoutservice | stable_fail: unknown | stable_fail: redis | stable_pass: checkoutservice | stable_pass: checkoutservice |
+| c-98649a36b0 | productcatalogservice | stable_fail: unknown | stable_fail: redis | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-498b272d09 | productcatalogservice | stable_fail: unavailable | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+
+leak check: 0 of 28 runs voided; 0 errors
+
+GATE chains arm reproduces rcaeval_score.py: PASS (3/3 cases with the same rank 1 on every run; AC@1 1.0000 against 1.0000)
+
+--- mcp arm again, after the fix ---
+
+model openai/gpt-5.6-terra; 7 cases x 1 runs; arms mcp
+
+demo (4 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 3/4 (0.75) | 3 | 0 | 1 | 0 | 4/4 | 7 | 20.8 | 12498 | 0.09 |
+
+medians per scored run; cost is the arm's total as pi prices it
+mcp wrong answers: search-api x1
+
+| case | label | mcp |
+|---|---|---|
+| INC-4120 | ledger-db | stable_pass: ledger-db |
+| INC-4388 | checkout | stable_pass: checkout |
+| INC-4501 | elasticsearch | stable_fail: search-api |
+| INC-5377 | ledger-db | stable_pass: ledger-db |
+
+rcaeval (3 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 2/3 (0.67) | 2 | 0 | 1 | 0 | 3/3 | 7 | 26.9 | 19226 | 0.09 |
+
+medians per scored run; cost is the arm's total as pi prices it
+mcp wrong answers: redis x1
+
+| case | label | mcp |
+|---|---|---|
+| c-c9e38942cb | checkoutservice | stable_fail: redis |
+| c-98649a36b0 | productcatalogservice | stable_pass: productcatalogservice |
+| c-498b272d09 | productcatalogservice | stable_pass: productcatalogservice |
+
+leak check: 0 of 7 runs voided; 0 errors
+
+================================================================================
+4. Leak check on the pilot's kept workspaces (grep, independent of the harness's own scan)
+================================================================================
+workspaces kept:       35
+files named like labels:        0
+grep -rilaE 'rcaeval' runs skills stage:        0 files
+grep -rilaE 'labels\.json' runs skills stage:        0 files
+grep -rilaE 'graph-rag' runs skills stage:        0 files
+grep -rilaE 'External Disk' runs skills stage:        0 files
+grep -rilaE '"inject"' runs skills stage:        0 files
+grep -rilaE '"fault"' runs skills stage:        0 files
+grep -rilaE '"root"' runs skills stage:        0 files
+grep -rilaE 'rep_[0-9]' runs skills stage:        0 files
+grep -rilaE '_(cpu|mem|disk|delay|loss|socket)_[123]' runs skills stage:        0 files
+binary mentions of the repository path: 0
+transcripts mentioning labels/rcaeval/repository:
+       9
+paths the agents named outside their workspace:
+   7 $WORK/pilot/skills/ograph/SKILL.md
+   1 $WORK/pilot/runs/ID/ops...
+(The 9 transcripts that match are the RCAEval ones: the harness writes the suite name "rcaeval"
+in each transcript's first line. The agents' own calls and outputs hold no match; the harness's
+scan of them voided 0 runs.)
+
+================================================================================
+5. Main run, what finished before the usage limit (1 run per case)
+================================================================================
+model openai/gpt-5.6-terra; 39 cases x 1 runs; arms mcp, skill, raw, chains
+
+demo (4 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 0/0 (0.00) | 0 | 0 | 0 | 4 | 0/0 | 0 | 0.0 | 0 | 0.00 |
+| skill | 0/0 (0.00) | 0 | 0 | 0 | 4 | 0/0 | 0 | 0.0 | 0 | 0.00 |
+| raw | 0/0 (0.00) | 0 | 0 | 0 | 4 | 0/0 | 0 | 0.0 | 0 | 0.00 |
+| chains | 3/4 (0.75) | 3 | 0 | 1 | 0 | - | 0 | 0.1 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as pi prices it
+chains wrong answers: search-api x1
+
+| case | label | mcp | skill | raw | chains |
+|---|---|---|---|---|---|
+| INC-4120 | ledger-db | missing:  | missing:  | missing:  | stable_pass: ledger-db |
+| INC-4388 | checkout | missing:  | missing:  | missing:  | stable_pass: checkout |
+| INC-4501 | elasticsearch | missing:  | missing:  | missing:  | stable_fail: search-api |
+| INC-5377 | ledger-db | missing:  | missing:  | missing:  | stable_pass: ledger-db |
+
+rcaeval (30 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 18/26 (0.69) | 18 | 0 | 8 | 4 | 25/26 | 7 | 25.4 | 22574 | 0.93 |
+| skill | 15/25 (0.60) | 15 | 0 | 10 | 5 | 1/25 | 12 | 40.2 | 85169 | 2.45 |
+| raw | 19/22 (0.86) | 19 | 0 | 3 | 8 | 0/22 | 14 | 88.9 | 225366 | 3.77 |
+| chains | 29/30 (0.97) | 29 | 0 | 1 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as pi prices it
+mcp wrong answers: redis x7, checkoutservice x1
+mcp departs from chains rank 1 on 8 of 26 runs: right on 0 of them, and rank 1 was right on 7
+skill wrong answers: redis x7, checkoutservice x2, cartservice x1
+skill departs from chains rank 1 on 10 of 25 runs: right on 0 of them, and rank 1 was right on 9
+raw wrong answers: checkoutservice x1, frontend x1, adservice x1
+raw departs from chains rank 1 on 4 of 22 runs: right on 1 of them, and rank 1 was right on 3
+chains wrong answers: cartservice x1
+on the 22 cases every arm answered, mean AC@1: mcp 0.68, skill 0.59, raw 0.86, chains 0.95
+mcp against skill: better on 4 cases, worse on 2, equal on 19 (sign test p = 0.688)
+mcp against raw: better on 2 cases, worse on 6, equal on 14 (sign test p = 0.289)
+mcp against chains: better on 0 cases, worse on 7, equal on 19 (sign test p = 0.016)
+skill against raw: better on 2 cases, worse on 8, equal on 12 (sign test p = 0.109)
+skill against chains: better on 0 cases, worse on 9, equal on 16 (sign test p = 0.004)
+raw against chains: better on 1 cases, worse on 3, equal on 18 (sign test p = 0.625)
+
+| case | label | mcp | skill | raw | chains |
+|---|---|---|---|---|---|
+| c-c9e38942cb | checkoutservice | stable_fail: redis | stable_fail: redis | stable_pass: checkoutservice | stable_pass: checkoutservice |
+| c-98649a36b0 | productcatalogservice | stable_pass: productcatalogservice | stable_fail: redis | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-498b272d09 | productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-b9ecf644af | emailservice | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice |
+| c-e375de9cb8 | checkoutservice | stable_fail: redis | stable_fail: redis | stable_pass: checkoutservice | stable_pass: checkoutservice |
+| c-177092bf56 | recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice |
+| c-3a0809d8d0 | currencyservice | stable_fail: redis | stable_fail: redis | stable_pass: currencyservice | stable_fail: cartservice |
+| c-8610a6ecab | currencyservice | stable_pass: currencyservice | stable_pass: currencyservice | stable_fail: checkoutservice | stable_pass: currencyservice |
+| c-bdf8aad8af | productcatalogservice | stable_fail: checkoutservice | stable_fail: checkoutservice | stable_fail: frontend | stable_pass: productcatalogservice |
+| c-5930118bc1 | checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice |
+| c-6e0dc58425 | currencyservice | stable_pass: currencyservice | stable_fail: cartservice | stable_pass: currencyservice | stable_pass: currencyservice |
+| c-ec9e76a45d | emailservice | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice |
+| c-4d387bea1c | currencyservice | stable_fail: redis | stable_fail: redis | stable_pass: currencyservice | stable_pass: currencyservice |
+| c-e9781b0ed5 | recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice |
+| c-963cb0c461 | productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-ec15cb00cd | emailservice | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice |
+| c-648fd48698 | emailservice | stable_pass: emailservice | stable_fail: checkoutservice | stable_pass: emailservice | stable_pass: emailservice |
+| c-2951888112 | productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-c91fd2df9f | currencyservice | stable_fail: redis | stable_pass: currencyservice | stable_pass: currencyservice | stable_pass: currencyservice |
+| c-cc8c3892e2 | recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice |
+| c-ce14e33b0b | checkoutservice | stable_fail: redis | stable_fail: redis | stable_pass: checkoutservice | stable_pass: checkoutservice |
+| c-3cc10cccb6 | checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice | stable_fail: adservice | stable_pass: checkoutservice |
+| c-52eb6b0c94 | recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | missing:  | stable_pass: recommendationservice |
+| c-a0cadd712c | emailservice | stable_pass: emailservice | stable_fail: redis | missing:  | stable_pass: emailservice |
+| c-17329102bc | recommendationservice | stable_fail: redis | stable_pass: recommendationservice | missing:  | stable_pass: recommendationservice |
+| c-e26fc30ca6 | currencyservice | stable_pass: currencyservice | missing:  | missing:  | stable_pass: currencyservice |
+| c-92c08bd0d2 | recommendationservice | missing:  | missing:  | missing:  | stable_pass: recommendationservice |
+| c-54eaff8bb0 | productcatalogservice | missing:  | missing:  | missing:  | stable_pass: productcatalogservice |
+| c-6e97052d57 | emailservice | missing:  | missing:  | missing:  | stable_pass: emailservice |
+| c-bba0bc25ab | checkoutservice | missing:  | missing:  | missing:  | stable_pass: checkoutservice |
+
+rcaeval-miss (5 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp | 0/0 (0.00) | 0 | 0 | 0 | 5 | 0/0 | 0 | 0.0 | 0 | 0.00 |
+| skill | 0/0 (0.00) | 0 | 0 | 0 | 5 | 0/0 | 0 | 0.0 | 0 | 0.00 |
+| raw | 0/0 (0.00) | 0 | 0 | 0 | 5 | 0/0 | 0 | 0.0 | 0 | 0.00 |
+| chains | 0/5 (0.00) | 0 | 0 | 5 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as pi prices it
+chains wrong answers: cartservice x2, emailservice x1, checkoutservice x1, paymentservice x1
+
+| case | label | mcp | skill | raw | chains |
+|---|---|---|---|---|---|
+| c-1d389615b3 | currencyservice | missing:  | missing:  | missing:  | stable_fail: cartservice |
+| c-b0f876b48e | checkoutservice | missing:  | missing:  | missing:  | stable_fail: emailservice |
+| c-d1059aa9c3 | currencyservice | missing:  | missing:  | missing:  | stable_fail: checkoutservice |
+| c-d7fc5dfaee | currencyservice | missing:  | missing:  | missing:  | stable_fail: cartservice |
+| c-e425dee775 | checkoutservice | missing:  | missing:  | missing:  | stable_fail: paymentservice |
+
+leak check: 0 of 112 runs voided; 0 errors
+
+GATE chains arm reproduces rcaeval_score.py: PASS (35/35 cases with the same rank 1 on every run; AC@1 0.8286 against 0.8286)
+
+================================================================================
+6. Where the "redis" answers come from
+================================================================================
+For each sampled case: where `ograph chains --top 12` ranks redis (0 = not listed), how many
+redis events `ograph before --window 30m` lists and their largest severity, and what the mcp and
+skill arms answered (None = that run did not finish). Ad hoc, from the staged stores.
+
+c-17329102bc redis chain rank 5 redis events before 4 max sev 1.0 mcp redis skill recommendationservice
+c-177092bf56 redis chain rank 4 redis events before 4 max sev 0.14 mcp recommendationservice skill recommendationservice
+c-2951888112 redis chain rank 9 redis events before 3 max sev 0.05 mcp productcatalogservice skill productcatalogservice
+c-3a0809d8d0 redis chain rank 6 redis events before 4 max sev 1.0 mcp redis skill redis
+c-3cc10cccb6 redis chain rank 3 redis events before 5 max sev 1.0 mcp checkoutservice skill checkoutservice
+c-498b272d09 redis chain rank 0 redis events before 3 max sev 0.11 mcp productcatalogservice skill productcatalogservice
+c-4d387bea1c redis chain rank 5 redis events before 3 max sev 1.0 mcp redis skill redis
+c-52eb6b0c94 redis chain rank 3 redis events before 4 max sev 1.0 mcp recommendationservice skill recommendationservice
+c-54eaff8bb0 redis chain rank 10 redis events before 5 max sev 0.12 mcp None skill None
+c-5930118bc1 redis chain rank 2 redis events before 2 max sev 1.0 mcp checkoutservice skill checkoutservice
+c-648fd48698 redis chain rank 7 redis events before 3 max sev 0.18 mcp emailservice skill checkoutservice
+c-6e0dc58425 redis chain rank 6 redis events before 4 max sev 0.12 mcp currencyservice skill cartservice
+c-6e97052d57 redis chain rank 0 redis events before 4 max sev 0.08 mcp None skill None
+c-8610a6ecab redis chain rank 3 redis events before 4 max sev 0.17 mcp currencyservice skill currencyservice
+c-92c08bd0d2 redis chain rank 5 redis events before 3 max sev 0.13 mcp None skill None
+c-963cb0c461 redis chain rank 5 redis events before 2 max sev 1.0 mcp productcatalogservice skill productcatalogservice
+c-98649a36b0 redis chain rank 6 redis events before 4 max sev 1.0 mcp productcatalogservice skill redis
+c-a0cadd712c redis chain rank 2 redis events before 5 max sev 1.0 mcp emailservice skill redis
+c-b9ecf644af redis chain rank 4 redis events before 3 max sev 1.0 mcp emailservice skill emailservice
+c-bba0bc25ab redis chain rank 3 redis events before 4 max sev 1.0 mcp None skill None
+c-bdf8aad8af redis chain rank 7 redis events before 3 max sev 0.1 mcp checkoutservice skill checkoutservice
+c-c91fd2df9f redis chain rank 6 redis events before 5 max sev 1.0 mcp redis skill currencyservice
+c-c9e38942cb redis chain rank 4 redis events before 3 max sev 1.0 mcp redis skill redis
+c-cc8c3892e2 redis chain rank 4 redis events before 5 max sev 1.0 mcp recommendationservice skill recommendationservice
+c-ce14e33b0b redis chain rank 5 redis events before 3 max sev 1.0 mcp redis skill redis
+c-e26fc30ca6 redis chain rank 8 redis events before 5 max sev 0.13 mcp currencyservice skill None
+c-e375de9cb8 redis chain rank 3 redis events before 1 max sev 1.0 mcp redis skill redis
+c-e9781b0ed5 redis chain rank 0 redis events before 5 max sev 0.1 mcp recommendationservice skill recommendationservice
+c-ec15cb00cd redis chain rank 2 redis events before 4 max sev 1.0 mcp emailservice skill emailservice
+c-ec9e76a45d redis chain rank 2 redis events before 3 max sev 1.0 mcp emailservice skill emailservice
+cases 30 with a redis chain 27
+mcp answers redis on 7 of 24 runs where chains lists redis; 0 of 2 where it does not
+skill answers redis on 7 of 23 runs where chains lists redis; 0 of 2 where it does not
+mcp answers redis on 7 of 17 runs where a redis event has severity 1.0, and on 0 of 9 where none does
+skill answers redis on 7 of 17 runs where a redis event has severity 1.0, and on 0 of 8 where none does
+18 of 30 sampled cases have a redis event at severity 1.0 before the incident
