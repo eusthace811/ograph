@@ -1,0 +1,153 @@
+guidance parent = 0be3918 (0be3918)
+guidance candidate = 34f7625 (34f7625)
+guidance candidate2 = ea05982 (ea05982)
+model claude-haiku-5-5 on claude; 39 cases x 1 runs; arms mcp@parent, mcp@candidate2, skill@parent, skill@candidate2, chains
+
+demo (4 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp@parent | 3/4 (0.75) | 3 | 0 | 1 | 0 | 4/4 | 7.5 | 12.4 | 37358 | 0.01 |
+| mcp@candidate2 | 3/4 (0.75) | 3 | 0 | 1 | 0 | 4/4 | 5.5 | 11.3 | 36816 | 0.01 |
+| skill@parent | 4/4 (1.00) | 4 | 0 | 0 | 0 | 3/4 | 7.5 | 54.6 | 127208 | 0.03 |
+| skill@candidate2 | 4/4 (1.00) | 4 | 0 | 0 | 0 | 3/4 | 7.5 | 50.5 | 121576 | 0.03 |
+| chains | 3/4 (0.75) | 3 | 0 | 1 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as the runner reports it (pi's list price, or claude's total_cost_usd)
+mcp@parent wrong answers: search-api x1
+mcp@parent departs from chains rank 1 on 0 of 4 runs: right on 0 of them, and rank 1 was right on 0
+mcp@candidate2 wrong answers: search-api x1
+mcp@candidate2 departs from chains rank 1 on 0 of 4 runs: right on 0 of them, and rank 1 was right on 0
+skill@parent departs from chains rank 1 on 1 of 4 runs: right on 1 of them, and rank 1 was right on 0
+skill@candidate2 departs from chains rank 1 on 1 of 4 runs: right on 1 of them, and rank 1 was right on 0
+chains wrong answers: search-api x1
+mcp@parent against mcp@candidate2: better on 0 cases, worse on 0, equal on 4 (sign test p = 1.000)
+mcp@parent against skill@parent: better on 0 cases, worse on 1, equal on 3 (sign test p = 1.000)
+mcp@parent against skill@candidate2: better on 0 cases, worse on 1, equal on 3 (sign test p = 1.000)
+mcp@parent against chains: better on 0 cases, worse on 0, equal on 4 (sign test p = 1.000)
+mcp@candidate2 against skill@parent: better on 0 cases, worse on 1, equal on 3 (sign test p = 1.000)
+mcp@candidate2 against skill@candidate2: better on 0 cases, worse on 1, equal on 3 (sign test p = 1.000)
+mcp@candidate2 against chains: better on 0 cases, worse on 0, equal on 4 (sign test p = 1.000)
+skill@parent against skill@candidate2: better on 0 cases, worse on 0, equal on 4 (sign test p = 1.000)
+skill@parent against chains: better on 1 cases, worse on 0, equal on 3 (sign test p = 1.000)
+skill@candidate2 against chains: better on 1 cases, worse on 0, equal on 3 (sign test p = 1.000)
+
+| case | label | mcp@parent | mcp@candidate2 | skill@parent | skill@candidate2 | chains |
+|---|---|---|---|---|---|---|
+| INC-4120 | ledger-db | stable_pass: ledger-db | stable_pass: ledger-db | stable_pass: ledger-db | stable_pass: ledger-db | stable_pass: ledger-db |
+| INC-4388 | checkout | stable_pass: checkout | stable_pass: checkout | stable_pass: checkout | stable_pass: checkout | stable_pass: checkout |
+| INC-4501 | elasticsearch | stable_fail: search-api | stable_fail: search-api | stable_pass: elasticsearch | stable_pass: elasticsearch | stable_fail: search-api |
+| INC-5377 | ledger-db | stable_pass: ledger-db | stable_pass: ledger-db | stable_pass: ledger-db | stable_pass: ledger-db | stable_pass: ledger-db |
+
+rcaeval-heldout-2 (30 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp@parent | 12/30 (0.40) | 12 | 0 | 18 | 0 | 29/30 | 8 | 15.2 | 59932 | 0.13 |
+| mcp@candidate2 | 25/30 (0.83) | 25 | 0 | 5 | 0 | 23/30 | 6.5 | 15.7 | 56373 | 0.12 |
+| skill@parent | 22/27 (0.81) | 22 | 0 | 5 | 3 | 12/27 | 10 | 48.2 | 209763 | 0.35 |
+| skill@candidate2 | 25/28 (0.89) | 25 | 0 | 3 | 2 | 22/28 | 10 | 49.4 | 224226 | 0.39 |
+| chains | 30/30 (1.00) | 30 | 0 | 0 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as the runner reports it (pi's list price, or claude's total_cost_usd)
+mcp@parent wrong answers: redis x17, paymentservice x1
+mcp@parent departs from chains rank 1 on 18 of 30 runs: right on 0 of them, and rank 1 was right on 18
+mcp@candidate2 wrong answers: redis x5
+mcp@candidate2 departs from chains rank 1 on 5 of 30 runs: right on 0 of them, and rank 1 was right on 5
+skill@parent wrong answers: redis x5
+skill@parent departs from chains rank 1 on 5 of 27 runs: right on 0 of them, and rank 1 was right on 5
+skill@candidate2 wrong answers: redis x3
+skill@candidate2 departs from chains rank 1 on 3 of 28 runs: right on 0 of them, and rank 1 was right on 3
+on the 25 cases every arm answered, mean AC@1: mcp@parent 0.36, mcp@candidate2 0.84, skill@parent 0.80, skill@candidate2 0.88, chains 1.00
+mcp@parent against mcp@candidate2: better on 0 cases, worse on 13, equal on 17 (sign test p = 0.000)
+mcp@parent against skill@parent: better on 2 cases, worse on 15, equal on 10 (sign test p = 0.002)
+mcp@parent against skill@candidate2: better on 0 cases, worse on 13, equal on 15 (sign test p = 0.000)
+mcp@parent against chains: better on 0 cases, worse on 18, equal on 12 (sign test p = 0.000)
+mcp@candidate2 against skill@parent: better on 4 cases, worse on 4, equal on 19 (sign test p = 1.000)
+mcp@candidate2 against skill@candidate2: better on 3 cases, worse on 4, equal on 21 (sign test p = 1.000)
+mcp@candidate2 against chains: better on 0 cases, worse on 5, equal on 25 (sign test p = 0.062)
+skill@parent against skill@candidate2: better on 2 cases, worse on 4, equal on 19 (sign test p = 0.688)
+skill@parent against chains: better on 0 cases, worse on 5, equal on 22 (sign test p = 0.062)
+skill@candidate2 against chains: better on 0 cases, worse on 3, equal on 25 (sign test p = 0.250)
+
+| case | label | mcp@parent | mcp@candidate2 | skill@parent | skill@candidate2 | chains |
+|---|---|---|---|---|---|---|
+| c-073e220e96 | recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice |
+| c-0776f54cd9 | checkoutservice | stable_fail: redis | stable_pass: checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice |
+| c-0db34b4c7e | currencyservice | stable_pass: currencyservice | stable_pass: currencyservice | error: currencyservice | stable_pass: currencyservice | stable_pass: currencyservice |
+| c-18804bdd7f | emailservice | stable_fail: redis | stable_fail: redis | stable_pass: emailservice | error: emailservice | stable_pass: emailservice |
+| c-22a7556181 | productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-2cd85ef30d | productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-34a5398b52 | checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice | error: checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice |
+| c-407a9f7eba | productcatalogservice | stable_fail: redis | stable_pass: productcatalogservice | stable_fail: redis | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-50e3775f48 | recommendationservice | stable_fail: redis | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice |
+| c-5ad5f3d0de | currencyservice | stable_pass: currencyservice | stable_pass: currencyservice | stable_pass: currencyservice | stable_pass: currencyservice | stable_pass: currencyservice |
+| c-6775d676c8 | productcatalogservice | stable_fail: redis | stable_fail: redis | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-6ab11c1b3d | recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_fail: redis | stable_pass: recommendationservice | stable_pass: recommendationservice |
+| c-6f03d011b8 | productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | error: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-7041399641 | productcatalogservice | stable_fail: redis | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-75d480fc3d | emailservice | stable_fail: redis | stable_fail: redis | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice |
+| c-7c907c38ac | emailservice | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice |
+| c-847b7ca578 | emailservice | stable_fail: redis | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice | stable_pass: emailservice |
+| c-870814bb24 | recommendationservice | stable_fail: redis | stable_pass: recommendationservice | stable_fail: redis | stable_fail: redis | stable_pass: recommendationservice |
+| c-8e8d35d164 | emailservice | stable_fail: redis | stable_fail: redis | stable_fail: redis | stable_pass: emailservice | stable_pass: emailservice |
+| c-90376d73d9 | checkoutservice | stable_fail: redis | stable_pass: checkoutservice | stable_pass: checkoutservice | stable_fail: redis | stable_pass: checkoutservice |
+| c-94e5ae21b2 | productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-99fc833ae8 | productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_fail: redis | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-9fa5601eb7 | recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice |
+| c-a254fd4742 | checkoutservice | stable_fail: redis | stable_pass: checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice |
+| c-a28d1285e7 | currencyservice | stable_fail: paymentservice | stable_pass: currencyservice | stable_pass: currencyservice | stable_pass: currencyservice | stable_pass: currencyservice |
+| c-aae861ca51 | checkoutservice | stable_fail: redis | stable_fail: redis | stable_pass: checkoutservice | stable_pass: checkoutservice | stable_pass: checkoutservice |
+| c-be290185f2 | productcatalogservice | stable_fail: redis | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_fail: redis | stable_pass: productcatalogservice |
+| c-c4a56b7233 | productcatalogservice | stable_fail: redis | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice | stable_pass: productcatalogservice |
+| c-e5abfe8ebd | currencyservice | stable_fail: redis | stable_pass: currencyservice | stable_pass: currencyservice | error: currencyservice | stable_pass: currencyservice |
+| c-fc745c5f4c | recommendationservice | stable_fail: redis | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice | stable_pass: recommendationservice |
+
+rcaeval-miss (5 cases)
+
+| arm | AC@1 over runs | stable_pass | flaky | stable_fail | error | says hypothesis | tool calls | wall s | tokens | cost $ |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mcp@parent | 1/5 (0.20) | 1 | 0 | 4 | 0 | 5/5 | 7 | 14.8 | 54110 | 0.02 |
+| mcp@candidate2 | 1/5 (0.20) | 1 | 0 | 4 | 0 | 3/5 | 8 | 20.6 | 85729 | 0.03 |
+| skill@parent | 2/4 (0.50) | 2 | 0 | 2 | 1 | 1/4 | 16 | 99.3 | 488255 | 0.09 |
+| skill@candidate2 | 5/5 (1.00) | 5 | 0 | 0 | 0 | 1/5 | 16 | 81.2 | 455827 | 0.10 |
+| chains | 0/5 (0.00) | 0 | 0 | 5 | 0 | - | 0 | 0.0 | 0 | 0.00 |
+
+medians per scored run; cost is the arm's total as the runner reports it (pi's list price, or claude's total_cost_usd)
+mcp@parent wrong answers: redis x3, currencyservice x1
+mcp@parent departs from chains rank 1 on 5 of 5 runs: right on 1 of them, and rank 1 was right on 0
+mcp@candidate2 wrong answers: emailservice x1, redis x1, cartservice x1, paymentservice x1
+mcp@candidate2 departs from chains rank 1 on 2 of 5 runs: right on 1 of them, and rank 1 was right on 0
+skill@parent wrong answers: emailservice x1, redis x1
+skill@parent departs from chains rank 1 on 3 of 4 runs: right on 2 of them, and rank 1 was right on 0
+skill@candidate2 departs from chains rank 1 on 5 of 5 runs: right on 5 of them, and rank 1 was right on 0
+chains wrong answers: cartservice x2, emailservice x1, checkoutservice x1, paymentservice x1
+on the 4 cases every arm answered, mean AC@1: mcp@parent 0.00, mcp@candidate2 0.00, skill@parent 0.50, skill@candidate2 1.00, chains 0.00
+mcp@parent against mcp@candidate2: better on 0 cases, worse on 0, equal on 5 (sign test p = 1.000)
+mcp@parent against skill@parent: better on 0 cases, worse on 2, equal on 2 (sign test p = 0.500)
+mcp@parent against skill@candidate2: better on 0 cases, worse on 4, equal on 1 (sign test p = 0.125)
+mcp@parent against chains: better on 1 cases, worse on 0, equal on 4 (sign test p = 1.000)
+mcp@candidate2 against skill@parent: better on 0 cases, worse on 2, equal on 2 (sign test p = 0.500)
+mcp@candidate2 against skill@candidate2: better on 0 cases, worse on 4, equal on 1 (sign test p = 0.125)
+mcp@candidate2 against chains: better on 1 cases, worse on 0, equal on 4 (sign test p = 1.000)
+skill@parent against skill@candidate2: better on 0 cases, worse on 2, equal on 2 (sign test p = 0.500)
+skill@parent against chains: better on 2 cases, worse on 0, equal on 2 (sign test p = 0.500)
+skill@candidate2 against chains: better on 5 cases, worse on 0, equal on 0 (sign test p = 0.062)
+
+| case | label | mcp@parent | mcp@candidate2 | skill@parent | skill@candidate2 | chains |
+|---|---|---|---|---|---|---|
+| c-1d389615b3 | currencyservice | stable_pass: currencyservice | stable_pass: currencyservice | error: redis | stable_pass: currencyservice | stable_fail: cartservice |
+| c-b0f876b48e | checkoutservice | stable_fail: currencyservice | stable_fail: emailservice | stable_fail: emailservice | stable_pass: checkoutservice | stable_fail: emailservice |
+| c-d1059aa9c3 | currencyservice | stable_fail: redis | stable_fail: redis | stable_pass: currencyservice | stable_pass: currencyservice | stable_fail: checkoutservice |
+| c-d7fc5dfaee | currencyservice | stable_fail: redis | stable_fail: cartservice | stable_pass: currencyservice | stable_pass: currencyservice | stable_fail: cartservice |
+| c-e425dee775 | checkoutservice | stable_fail: redis | stable_fail: paymentservice | stable_fail: redis | stable_pass: checkoutservice | stable_fail: paymentservice |
+
+leak check: 6 of 195 runs voided; 0 errors
+  leak skill@parent rcaeval-heldout-2/c-0db34b4c7e/INC-0DB34B run 1: bash: climbs out with ..
+  leak skill@candidate2 rcaeval-heldout-2/c-18804bdd7f/INC-18804B run 1: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch/first_move.py
+  leak skill@parent rcaeval-heldout-2/c-34a5398b52/INC-34A539 run 1: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch/series.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch/spikes.py
+  leak skill@parent rcaeval-heldout-2/c-6f03d011b8/INC-6F03D0 run 1: bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch/fine.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch/logs2.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch/novel.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch/onset.py; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch/scan.py
+  leak skill@candidate2 rcaeval-heldout-2/c-e5abfe8ebd/INC-E5ABFE run 1: bash: climbs out with ..; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch; bash: reaches /private/tmp/claude-501/haiku-gates/agent-rca-guidance/scratch/onset.py
+  leak skill@parent rcaeval-miss/c-1d389615b3/INC-1D3896 run 1: bash: climbs out with ..
+
+GATE chains arm reproduces rcaeval_score.py: PASS (35/35 cases with the same rank 1 on every run; AC@1 0.8571 against 0.8571)

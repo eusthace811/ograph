@@ -234,3 +234,50 @@ Commands (from the lane-s-skill worktree; WORK=/private/tmp/claude-501/haiku-gat
       --out docs/evidence/agent-rca-guidance-haiku
 The result is reported as Haiku's: it says nothing about gpt-5.6-terra, the model of the gate as
 first written, and a decision taken on it is a decision on Haiku's evidence.
+
+================================================================================
+RESULT on Haiku (2026-11-25): claude-haiku-5-5 in Claude Code 2.1.332, runs (a) and (b) as amended
+================================================================================
+THIS IS HAIKU, NOT gpt-5.6-terra, the model passes 1 and 2 used. No row of those passes is read here.
+Rows: agent-rca-guidance-haiku/runs.jsonl (338 rows), reports report-a.txt and report-b.txt,
+transcripts.tar.gz (init line first in each). Every run finished: 0 errors, 0 limit refusals.
+Leak check: 6 of 170 runs voided in (a), 6 of 195 in (b) (5 new; Parent's misses and demo rows
+are shared): all skill runs that wrote helper scripts to a directory outside their workspace
+(`../scratch`, `runs/<id>/analysis`) or climbed out with `..`; the rule is the harness's as
+written. No run was voided for isolation: every init showed only the arm's tools (the 12 ograph
+MCP tools, or Bash and Read), no skills, no other MCP server, only built-in plugins, no memory.
+chains reproduces rcaeval_score.py: PASS in both (30/30 and 35/35 cases).
+Cost by claude's total_cost_usd: isolation trial $0.016, (a) $1.12, (b) $1.14; total $2.28.
+
+(a) Candidate 1 (34f7625) against Parent (0be3918), on paired runs
+  mcp    1. held-out: 21/25 (0.84) against 7/25 (0.28); better on 14, worse on 0, p = 0.000.  holds
+         2. departures naming the label (held-out, misses, demo): 1 of 7 (0.14) against 1 of 23
+            (0.04).                                                                            holds
+         3. misses recovered: 1 against 1.                                                    holds
+         (says hypothesis on held-out: 12/25 against 22/25, the regression of passes 1 and 2.)
+  skill  1. held-out, 21 paired: 13/21 (0.62) against 15/21 (0.71); better on 2, worse on 4,
+            p = 0.688, not significant.                                                        FAILS
+         2. 3 of 12 (0.25) against 3 of 10 (0.30).                                             FAILS
+         3. misses: 2 against 2 (4 paired).                                                    holds
+  Candidate 1: mcp passes, skill fails. Not KEEP.
+
+(b) Candidate 2 (ea05982) against Parent, on paired runs (held-out set rcaeval-heldout-2)
+  mcp    1. 25/30 (0.83) against 12/30 (0.40); better on 13, worse on 0, p = 0.000.            holds
+         2. 1 of 7 (0.14) against 1 of 23 (0.04).                                              holds
+         3. misses: 1 against 1.                                                               holds
+         4. says hypothesis: 23/30 against 29/30 on held-out-2 (30/39 against 38/39 over all
+            paired runs).                                                                      FAILS
+  skill  1. 25 paired: 22/25 (0.88) against 20/25 (0.80); better on 4, worse on 2, p = 0.688,
+            not significant.                                                                   holds
+         2. 5 of 8 (0.62) against 3 of 9 (0.33).                                               holds
+         3. misses: 4 against 2 (4 paired; 5/5 on all misses).                                 holds
+         4. says hypothesis: 19/25 against 12/25.                                              holds
+  Candidate 2: skill passes all four; mcp fails criterion 4. Not KEEP.
+
+Decision, per the Decision paragraph: neither Candidate 1 nor Candidate 2 passes in both families,
+so the guidance reverts to Parent (0be3918), on Haiku's evidence. This matches what
+integrate-phase-13 already ships (53f27ce). What Haiku showed beside the decision: the rank-1
+sentence lifts the mcp arm sharply (Parent leaves rank 1 for redis on 16 of 25 held-out runs);
+in mcp the "say it is a hypothesis" sentence of Candidate 2 recovers part of the wording
+regression (23/30) but not to Parent's level. Every agent arm stays below chains rank 1 on the
+held-out sets (chains 25/25 and 30/30). Seen and runs 2 and 3: not run (one run, as amended).
