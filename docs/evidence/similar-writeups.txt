@@ -12,7 +12,7 @@ OpenTelemetry demo at 8f6908eae154; services accounting, ad, agent, cart, chatbo
 
 ## base
 
-harvest: harvested 74 batches in 4.8 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+harvest: harvested 74 batches in 0.3 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
 top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/6
   miss INC-G-000 ('accounting', 'pool') -> []
   miss INC-G-001 ('accounting', 'disk') -> []
@@ -29,7 +29,7 @@ top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/
 
 ## plain
 
-harvest: harvested 74 batches in 2.8 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+harvest: harvested 74 batches in 0.3 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
 top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/6
   miss INC-G-000 ('accounting', 'pool') -> [('id:inc/inc-p-005', 1.0), ('id:inc/inc-p-004', 1.0)]
   miss INC-G-001 ('accounting', 'disk') -> [('id:inc/inc-g-000', 1.0), ('id:inc/inc-p-005', 1.0)]
@@ -46,7 +46,7 @@ top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/
 
 ## classify
 
-harvest: harvested 74 batches in 36.2 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+harvest: harvested 74 batches in 0.3 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
 top-1 hits by fault: pool 6/6, disk 6/6, cert 6/6, memory 6/6, dns 6/6, queue 6/6
 fault class proposed, by fault (past titles | new titles):
   pool    {'CONNECTION_POOL': 6} | {'CONNECTION_POOL': 6}
@@ -58,7 +58,7 @@ fault class proposed, by fault (past titles | new titles):
 
 ## telemetry-base
 
-harvest: harvested 146 batches in 10.3 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+harvest: harvested 146 batches in 0.6 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
 top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/6
   miss INC-G-000 ('accounting', 'pool') -> [('id:inc/inc-p-005', 1.0), ('id:inc/inc-p-004', 1.0)]
   miss INC-G-001 ('accounting', 'disk') -> [('id:inc/inc-g-000', 1.0), ('id:inc/inc-p-005', 1.0)]
@@ -75,7 +75,7 @@ top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/
 
 ## telemetry
 
-harvest: harvested 146 batches in 6.6 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+harvest: harvested 146 batches in 0.5 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
 top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/6
   miss INC-G-000 ('accounting', 'pool') -> [('id:inc/inc-p-005', 1.0), ('id:inc/inc-p-004', 1.0)]
   miss INC-G-001 ('accounting', 'disk') -> [('id:inc/inc-g-000', 1.0), ('id:inc/inc-p-005', 1.0)]
@@ -92,7 +92,7 @@ top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/
 
 ## both
 
-harvest: harvested 146 batches in 9.5 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+harvest: harvested 146 batches in 0.6 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
 top-1 hits by fault: pool 6/6, disk 6/6, cert 6/6, memory 6/6, dns 6/6, queue 6/6
 fault class proposed, by fault (past titles | new titles):
   pool    {'CONNECTION_POOL': 6} | {'CONNECTION_POOL': 6}

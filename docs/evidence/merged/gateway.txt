@@ -1,0 +1,33 @@
+ontology check: 0 problems []
+catalog: proposed 27 accepted 27 quarantined 0
+
+| kind | cases | cases with some fact committed (valid siblings of the bad fact) | quarantined facts (first reason) |
+|---|---|---|---|
+| unknown-predicate | 3 | 3 | 3 (evt:colour is not an ontology property) |
+| unknown-class | 3 | 0 | 3 (evt:Gremlin is not an ontology class) |
+| app-outside-catalog | 3 | 0 | 3 (id:app/bad-app-outside-catalog-0 is not in the catalog) |
+| near-twin-app-name | 3 | 0 | 9 ("inventory-service-uk" is close to id:app/inventory-service-eu (0.98) but names a sibling or ties another entity; not created) |
+| variant-app-name | 3 | 0 | 9 ("inventory-service-eu-canary" is close to id:app/inventory-service-eu (0.95) but names a sibling or ties another entity; not created) |
+| unknown-app-name | 3 | 0 | 9 ("Ledger Service" is not in the ops:Application catalog; not created) |
+| fuzzy-app-name | 3 | 0 | 9 ("currencies-svc" only fuzzily matches id:app/currency (0.88); not created) |
+| bad-iri | 3 | 0 | 3 (IRI <https://ograph.dev/id/ev/Has Space> does not follow the id scheme) |
+| vocabulary | 3 | 3 | 3 ("P1" is not in the closed vocabulary of evt:severity) |
+| datatype | 3 | 0 | 9 (SHACL DatatypeConstraintComponent: "yesterday" is not a well-formed <http://www.w3.org/2001/XMLSchema#dateTime>) |
+| range | 3 | 0 | 9 (SHACL ClassConstraintComponent: <https://ograph.dev/id/team/bedrock> is not a <https://ograph.dev/ops#Application>) |
+| domain | 3 | 3 | 3 (SHACL ClassConstraintComponent: subject of ops:dependsOn must be a ops:Application) |
+| no-evidence | 3 | 0 | 9 (no evidence) |
+| unknown-evidence | 3 | 0 | 9 (evidence never-read is not a record this harvest read) |
+| low-confidence-llm | 3 | 0 | 9 (model confidence 0.20 is below 0.5) |
+| functional | 3 | 0 | 12 (SHACL MaxCountConstraintComponent: 2 values, at most 1 allowed) |
+| unconfirmed-model-edge | 3 | 3 | 3 (unconfirmed: no catalog or traces edge backs this model-proposed ops:dependsOn) |
+| episode-ends-before-start | 3 | 3 | 3 (SHACL LessThanOrEqualsConstraintComponent: an episode cannot end before it starts) |
+| resolved-before-opened | 3 | 3 | 3 (SHACL LessThanOrEqualsConstraintComponent: an incident cannot be resolved before it opened) |
+| missing-required | 3 | 0 | 6 (SHACL MinCountConstraintComponent: an event needs a time) |
+end times kept on good episodes and incidents, with start <= end: 6/6
+model-proposed edge the catalog declares, committed: true
+
+batch: proposed 377 facts, accepted 251, quarantined 126, fuzzy catalog matches 3, 27 ms
+bad subjects with a committed fact: 18; good events missing: 0/50; full SHACL audit violations: 0
+re-submit: removed 0 added 0 (an unchanged batch writes nothing: 0 and 0)
+bad facts (the faulty fact of each case) committed: 0
+GATEWAY GATE: PASS

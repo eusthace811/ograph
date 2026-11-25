@@ -1,0 +1,38 @@
+{
+ "page": "target/lab-demo.html",
+ "load_ms": 14,
+ "sections": 4,
+ "marks": 13,
+ "arrows": 8,
+ "nodes": 26,
+ "arrow_click": "opened c3-0-1",
+ "arrow_shot": "target/shots/demo-arrow.png",
+ "filter_click": "filtered to ledger-db: 1 of 3 lanes shown (ledger-db)",
+ "filter_shot": "target/shots/demo-filter.png",
+ "filter_clear": "0 lanes dimmed after a second click",
+ "copy_click": "ograph verdict id:chain/inc-5377-a7370ff7d4358525 reject --evidence TICKET --by \"$USER\"",
+ "dark_bg": "rgb(22, 22, 21)",
+ "dark_shot": "target/shots/demo-dark.png",
+ "phone_scroll": "390 page width at a 390 px viewport",
+ "phone_shot": "target/shots/demo-phone.png",
+ "js_errors": []
+}
+{
+ "page": "target/lab-merged.html",
+ "load_ms": 74,
+ "sections": 90,
+ "marks": 2308,
+ "arrows": 130,
+ "nodes": 990,
+ "arrow_click": "opened c47-0",
+ "arrow_shot": "target/shots/merged-arrow.png",
+ "filter_click": "filtered to redis: 1 of 8 lanes shown (redis)",
+ "filter_shot": "target/shots/merged-filter.png",
+ "filter_clear": "0 lanes dimmed after a second click",
+ "copy_click": "ograph verdict id:chain/inc-90376d-2ef4e7b5ba5c4dea reject --evidence TICKET --by \"$USER\"",
+ "dark_bg": "rgb(22, 22, 21)",
+ "dark_shot": "target/shots/merged-dark.png",
+ "phone_scroll": "390 page width at a 390 px viewport",
+ "phone_shot": "target/shots/merged-phone.png",
+ "js_errors": []
+}

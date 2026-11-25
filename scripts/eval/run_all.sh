@@ -36,6 +36,34 @@ python3 scripts/eval/known_at_gate.py --bin $B/ograph --work target/known-at-gat
 # The catalog gate needs a git repository holding release/kubernetes-manifests.yaml of
 # GoogleCloudPlatform/microservices-demo (git init, add the file, commit).
 [ -d data/online-boutique-manifests ] && python3 scripts/eval/catalog_eval.py --bin $B/ograph --cases data/rcaeval-cases --manifests data/online-boutique-manifests --work target/catalog-eval --edges data/opentelemetry-demo > $E/catalog.txt
+# Phase 12 gates. These write stores, so they run on a mirror of the cases under target/.
+M=target/rcaeval-cases
+python3 scripts/eval/mirror_cases.py --cases data/rcaeval-cases --out $M >/dev/null
+python3 scripts/eval/test_agent_rca_eval.py 2> target/test-agent-rca-eval.txt
+python3 scripts/eval/rcaeval_score.py --bin $B/ograph --cases $M --out target/rcaeval-mirror.json >/dev/null
+python3 scripts/eval/chain_scores_gate.py --bin $B/ograph --cases $M --reuse --also examples/demo > target/chain-scores-gate.txt
+python3 scripts/eval/precedent_eval.py --bin $B/ograph --cases $M --out target/precedent > $E/precedent.txt
+python3 scripts/eval/incident_conflicts_eval.py --bin $B/ograph --demo examples/demo --cases $M --work target/incident-conflicts > $E/incident-conflicts.txt
+# $E/lab-check.txt and $E/lab-browser.txt keep the lane's notes above these outputs. The browser gate needs Chrome.
+for w in examples/demo data/rcaeval-merged; do n=$(basename $w); python3 scripts/eval/lab_check.py --bin $B/ograph --root $w --out target/lab-$n.html > target/lab-check-$n.txt; node scripts/eval/lab_browser.mjs target/lab-$n.html target/lab-$n > target/lab-browser-$n.txt; done
+# Ontology tooling, on a copy of the demo with no model and no source that asks for one.
+rm -rf target/demo-nomodel && cp -R examples/demo target/demo-nomodel && rm -f target/demo-nomodel/.ograph/store.redb
+python3 -c "import sys; p=sys.argv[1]; t=open(p).read(); t=t[:t.index('[llm.extract]')].replace('[[source]]\nkind = \"discussions\"\npath = \"chat-actions\"\nactions = true\n',''); open(p,'w').write(t)" target/demo-nomodel/.ograph/config.toml
+python3 scripts/eval/ontology_diff_eval.py --bin $B/ograph --demo target/demo-nomodel --work target/diff-eval > $E/ontology_diff.txt
+git show 25f2bc7:ontology/shapes.ttl > target/shapes-before-phase-12.ttl
+python3 scripts/eval/shapes_regression.py --bin $B/ograph --base target/shapes-before-phase-12.ttl --new ontology/shapes.ttl --demo target/demo-nomodel --cases $M --work target/shapes-regression > target/shapes-regression.txt
+python3 scripts/eval/ontology_lint_eval.py --bin $B/ograph --demo target/demo-nomodel --work target/lint-eval --stores target/shapes-regression/new > target/ontology-lint.txt
+# Against the ograph of an earlier build, with no writes under data/:
+# python3 scripts/eval/ab_readonly.py OLD/ograph $B/ograph --cases data/rcaeval-cases --demo target/demo-nomodel --work target/ab > target/ab-readonly.txt
+# LONG, about 20 minutes: every verdict replayed under every setting of the grid.
+# python3 scripts/eval/replay_gate.py --bin $B/ograph --cases $M --jobs 4 > $E/replay-grid.txt
+# MODEL-BACKED (pi logged in, each costs money):
+# similar_writeups_eval.py asks the model only in its classify and both modes, and keeps the
+# answers in WORK/llm.jsonl; --modes base,plain,telemetry-base,telemetry asks nothing.
+# [ -d data/opentelemetry-demo ] && python3 scripts/eval/similar_writeups_eval.py --bin $B/ograph --base OLD/ograph --repo data/opentelemetry-demo --work target/similar-writeups > $E/similar-writeups.txt
+# python3 scripts/eval/action_gate.py --bin $B/ograph --demo examples/demo > $E/action-gate.txt
+# scripts/eval/coverage_decline_eval.py and scripts/eval/agent_rca_eval.py: see the usage in each file.
+# Not rerunnable: ruled_out_eval.py is the evidence of a setting that was dropped (ruled_out_weight).
 tail -n 3 $E/*.txt
 # The 10x store run takes about 20 minutes plus compaction:
 # OGRAPH_CACHE_MB=4096 $B/store_bench --scale 10 --no-oxigraph --chunk 5000000 > $E/store-x10.txt

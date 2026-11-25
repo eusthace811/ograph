@@ -1,0 +1,27 @@
+# ab_readonly.py <ograph at 25f2bc7> <merged ograph>, demo without a model and without the chat-actions source
+identical  rankings
+identical  similar
+DIFFERENT  harvest
+identical  before INC-5377
+DIFFERENT  chains INC-5377
+DIFFERENT  chains INC-5377 --rank propagation
+DIFFERENT  similar INC-5377
+identical  blast ledger-db
+identical  news
+DIFFERENT  validate
+DIFFERENT  why INC-5377
+5 of 11 outputs identical
+top-1 similar past incident shares the root cause: 82/89 = 0.92; any of top 3: 0.94; chance about 0.20
+per fault (top-1 hits): {'cpu': 11, 'delay': 13, 'disk': 14, 'loss': 14, 'mem': 15, 'socket': 15}
+tune (rep 1): top-1 23/29 = 0.79; top 3 0.83
+held out (reps 2-3): top-1 59/60 = 0.98; top 3 1.00
+new binary, RCAEval AC@1 AC@3 Avg@5: | chain | 0.93 | 0.99 | 0.98 |
+
+# The demo answers that differ, with the fields the lanes added removed (same_but_for.py):
+identical but for precedent, scores, weakest: chains.new.json
+identical but for precedent, scores, weakest: chains-prop.new.json
+identical but for ruled_out: similar.new.json
+DIFFERENT but for verdicts: why.new.json
+why INC-5377: the 8 facts differ only in harvested_at, the time of each store's own harvest
+validate: the old --json is a list of violations ([]), the new one is {violations, shapes, unmatched} with 0 violations
+harvest: 439 triples old, 446 new; the 7 more are corr:settings on the 7 stored chains

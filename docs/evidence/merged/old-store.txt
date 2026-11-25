@@ -1,0 +1,32 @@
+# A store harvested by ograph at 25f2bc7 (no history tables), then read by the merged build.
+harvest/correlation/inc-5377: 22 proposed, 22 accepted, 0 quarantined, +27 -0 quads (0.00 s)
+harvested 16 batches in 0.8 s; 1 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+1795569899 552960 store before
+--- merged status on the old store
+ograph: the graph is stale: 14 source files changed no full harvest is recorded (.ograph/config.toml, .ograph/ontology.ttl, alerts.json, catalog/catalog-info.yaml, config.jsonl and 9 more); run `ograph harvest`; 4 incidents have chains but no verdict (INC-5377, INC-4501, INC-4388, INC-4120).
+rc 0
+1795569899 552960 store after status
+--- merged chains on the old store
+id:inc/inc-5377 on checkout at 2026-11-22T22:26:40Z: 9 candidate events
+  1. ledger-db              score 0.944
+     id:chain/inc-5377-a7370ff7d4358525 0.94: ledger-db:ALERT -> payments-api:LOG_ERROR -> payments-api:ALERT -> checkout:ALERT -> incident
+       0.99  ledger-db:ALERT -> payments-api:LOG_ERROR  (time 0.99, severity 1.00, catalog dependency)
+1795569899 552960 store after chains
+--- merged status again
+ograph: the graph is stale: 14 source files changed no full harvest is recorded (.ograph/config.toml, .ograph/ontology.ttl, alerts.json, catalog/catalog-info.yaml, config.jsonl and 9 more); run `ograph harvest`; 4 incidents have chains but no verdict (INC-5377, INC-4501, INC-4388, INC-4120).
+rc 0
+--- merged harvest, then status, changes, known-at
+harvested 16 batches in 0.2 s; 1 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+ograph: 4 incidents have chains but no verdict (INC-5377, INC-4501, INC-4388, INC-4120).
+rc 0
+{"harvested_at":"2026-11-25T01:24:59.559Z","changed":[],"unjudged":["INC-5377","INC-4501","INC-4388","INC-4120"]}
+verdict recorded in https://ograph.dev/graph/harvest/verdicts/inc-5377-a7370ff7d4358525 (16 facts, 0 quarantined)
+ograph: 3 incidents have chains but no verdict (INC-4501, INC-4388, INC-4120).
+rc after verdict 0
+ograph: no record of what was known at 2026-11-25T00:24:59.935Z: the history of this store starts at 2026-11-25T01:24:59.361Z (history_days = 90)
+ograph: as known at 2026-11-25T01:24:59.996Z: 0 quads recorded since are hidden, 0 removed since are restored; the history starts at 2026-11-25T01:24:59.361Z, and only episodes a harvest recorded and the history still holds are seen
+id:inc/inc-5377 on checkout at 2026-11-22T22:26:40Z: 9 candidate events
+  1. ledger-db              score 0.944
+--- fresh store made by the merged binary
+ograph: the graph is stale: 3 source files changed no full harvest is recorded (.ograph/config.toml, .ograph/ontology.ttl, .ograph/shapes.ttl); run `ograph harvest`.
+rc fresh 0

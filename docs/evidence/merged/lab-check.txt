@@ -1,0 +1,6 @@
+target/lab-demo.html: 39173 bytes, 4 incidents, 9793 bytes per incident
+checked 13 before events, 8 top-chain links and 16 blast and before applications
+0 failures
+target/lab-merged.html: 2630955 bytes, 90 incidents, 29232 bytes per incident
+checked 2308 before events, 130 top-chain links and 760 blast and before applications
+0 failures

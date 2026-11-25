@@ -55,7 +55,8 @@ def main():
         for (i,) in incidents:
             assert og(root, "verdict", f"id:chain/{i.lower()}-1", "reject", "--evidence", "hook-eval", "--by", "hook-eval").returncode == 0
         state("every incident judged", root, None)
-        src_file = next(p for p in sorted(root.iterdir()) if p.suffix in (".json", ".jsonl") and p.name != "incidents.json")
+        config = (root / ".ograph" / "config.toml").read_text()
+        src_file = next(p for p in sorted(root.iterdir()) if p.suffix in (".json", ".jsonl") and p.name != "incidents.json" and f'path = "{p.name}"' in config)
         time.sleep(0.05); src_file.write_text(src_file.read_text())
         state(f"{src_file.name} edited after the harvest", root, rf"ograph: the graph is stale: 1 source files changed since the harvest at .* \({src_file.name}\); run `ograph harvest`\.")
         assert og(root, "harvest").returncode == 0

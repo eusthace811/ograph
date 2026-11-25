@@ -1,0 +1,10 @@
+# gateway_eval is in gateway.txt. shapes_regression.py --base <ontology/shapes.ttl at 25f2bc7> --new ontology/shapes.ttl
+workspaces: 91 (demo + 90 RCAEval cases)
+facts quarantined: baseline 667, candidate 667
+workspaces whose quarantine changed: 0
+SHAPES REGRESSION: PASS
+
+# diff_stores.py: ontology 1.3 against the 91 stores harvested with the shapes of 25f2bc7
+workspaces: 91
+workspaces with a BREAKING change or a predicted quarantine: 0; stored facts that would be quarantined: 0
+DIFF STORES: PASS

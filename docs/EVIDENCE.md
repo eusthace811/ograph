@@ -760,3 +760,51 @@ No number separates the two builds: every ratio is inside the other build's rang
 - **The time is recording time.** A store that first harvests a year of exports today knows all of it from today.
 - **`serve`, `similar`, `why`, `code`, `news` and `lab` have no `--known-at`.**
 - **Not measured:** a view far back on a large store. Building one reads every graph first written after the time, so its cost grows with what was added since, and it keeps those quads in memory.
+
+## Phase 12, integration: the nine lanes in one build (`merged/`)
+
+The lanes were merged in the order F, G, A2, A1, C2, C1, D, E, B, and every deterministic gate ran again on the merged binary. No gate called a model: a `pi` that refuses and logs stood first on `PATH`, and it refused 496 calls, all from harvests of the demo's `chat-actions` source. A file under `docs/evidence/` was overwritten only when the merged output equals the lane's apart from timings. Every other output is in `docs/evidence/merged/` beside the lane's file.
+
+| Gate | Lane result | Merged build | File |
+|---|---|---|---|
+| `cargo test --workspace` | passes on every lane | 79 + 20 + 12 passed, 0 failed | |
+| RCAEval, chain ranking, AC@1 / AC@3 / Avg@5 | 0.93 / 0.99 / 0.98 | the same; rankings identical to 25f2bc7 on 90 cases | `rcaeval-final.txt`, `merged/ab-readonly.txt` |
+| `similar_eval.py`, top-1 shares the root cause | 82/89 = 0.92 | 82/89 = 0.92, output identical | `similar-eval.txt` |
+| `gateway_eval` | PASS | PASS, with lane B's two time-order kinds | `merged/gateway.txt` |
+| SHACL core suite | 98 of 98 | 98 of 98 | `shacl-core.txt` |
+| SPARQL correctness | 0 mismatches over 41 queries | 0 mismatches over 41 queries | `merged/store-x1.txt` |
+| A1 `chain_scores_gate.py` | 2454 chains, 3533 links, 0 failures | the same numbers, PASS | `merged/chain-scores-gate.txt` |
+| A1 `precedent_eval.py` | AC@1 0.933 with no verdicts; marks on 41 of 45 rank-1 roots | identical apart from timings | `precedent.txt` |
+| A2 `replay_gate.py` | grid and replay agree at every point | see below | `merged/replay-grid.txt` |
+| B shapes regression, `diff_stores.py` | 0 of 91 workspaces changed | 0 of 91 changed, 0 facts would be quarantined | `merged/time_order.txt` |
+| B `ontology_diff_eval.py` | 14 mutations, 0 mismatched | 14 mutations, 0 mismatched | `merged/ontology_diff.txt` |
+| B `ontology_lint_eval.py` | PASS | PASS; `ontology check` on ontology 1.3 gives 0 problems, 0 warnings | `merged/ontology_lint.txt` |
+| C1 `incident_conflicts_eval.py` | PASS | identical | `incident-conflicts.txt` |
+| C2 `similar_writeups_eval.py`, all six modes | classify 36/36, plain 0/36 | identical, from the lane's cached answers | `similar-writeups.txt` |
+| D `lab_check.py`, `lab_browser.mjs` | 0 failures, no script errors | 0 failures, no script errors | `merged/lab-check.txt`, `merged/lab-browser.txt` |
+| E `resolve_eval.py` | precision 1.000, recall 0.971 | identical | `resolve.txt` |
+| E `cite_eval.py`, sets first and fresh | 31 of 31, 44 of 44 flags right | the same | `merged/cite-check.txt` |
+| E `hook_eval.py` | PASS, slowest 17.6 ms | PASS, slowest 29.6 ms | `hook.txt` |
+| E pi and MCP contract | PASS | PASS | `merged/pi-contract.txt` |
+| F `test_agent_rca_eval.py` | passes | 14 tests pass | |
+| G `known_at_gate.py` | GATE PASSED | GATE PASSED | `merged/known-at.txt` |
+
+**Outputs that changed, and why.**
+
+- **`known-at.txt`.** Each stored chain has one more fact, `corr:settings` from lane A2, so the harvest lines and the history row counts are one higher per chain.
+- **`ontology_diff.txt`, `time_order.txt`.** These ran on a demo copy with no model and without the `chat-actions` source, so `disc:about` has 3 uses, not 21, and 667 facts are quarantined, not 669.
+- **`ontology_lint.txt`.** `shape:OperatorAction` from lane C1 joins the shapes that match nothing.
+- **`pi-contract.txt`.** The investigation prompt is 6368 characters, not 5492, because other lanes added to `investigation.md`.
+- **`ab-readonly.txt`.** Against 25f2bc7 the demo's `chains` differ only by `scores`, `weakest` and `precedent`, `similar` only by `ruled_out`, `why` only by harvest time, and `validate --json` is now an object.
+- **`lab-check.txt`.** The page reads `ograph chains` and prints each link's score and the weakest link. On the 90-case page that is 41471 + 14281 bytes, about 620 per incident, which puts lane D's 26952 bytes per incident above its own budget of 27120. The 29232 in the file also counts longer source paths of this run's case mirror.
+
+**What the merge itself changed.**
+
+- **Verdict reads.** Lane A1's reader of an incident's verdicts took every verdict on a chain. It now takes the current one from lane A2's history, so a superseded verdict is neither `ruled_out` nor a precedent (`a_superseded_verdict_is_neither_a_precedent_nor_ruled_out`).
+- **One notion of resemblance.** `similar` and the precedents of `chains` share one function, with lane C2's stated signature and rank fusion. `precedent.txt` did not change.
+- **`replay` ranks as a harvest does.** It reads past verdicts only when `precedent_weight` is above 0.
+- **`ograph status` on an older store.** A store from before lane G's history tables failed a read-only open with `Table 'born' does not exist`. `status` now falls back to the open that adds the tables (`merged/old-store.txt`).
+- **`hook_eval.py`.** It edited the first JSON file of the demo, which after lane C1 is a labels file no source reads. It now edits a file `config.toml` names.
+- **Ontology 1.3.** Lane B's 1.2 plus the terms of lanes A2, C1 and C2. `evt:OperatorAction` with signal `OPERATOR_ACTION` is in `enrich::WRITES`.
+
+**Not run.** `action_gate.py`, `coverage_decline_eval.py`, `agent_rca_eval.py` and `llm_gate.py` need the model. `ruled_out_eval.py` needs `ruled_out_weight`, which lane A1 dropped.

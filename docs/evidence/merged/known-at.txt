@@ -1,0 +1,53 @@
+harvest of v1:
+  harvest/catalog/: 10 proposed, 10 accepted, 0 quarantined, +15 -0 quads
+  harvest/ownership/ownership.jsonl: 9 proposed, 9 accepted, 0 quarantined, +12 -0 quads
+  harvest/alerts/alerts.json: 14 proposed, 14 accepted, 0 quarantined, +19 -0 quads
+  harvest/incidents/all: 7 proposed, 7 accepted, 0 quarantined, +13 -0 quads
+  harvest/correlation/inc-1: 7 proposed, 7 accepted, 0 quarantined, +12 -0 quads
+
+store after v1: 159744 bytes; growth of 3 harvests of the same files: [0, 0, 0] bytes; history rows {'born': 5, 'added': 0, 'history': 0, 'table bytes': 4096}
+
+harvest of v2:
+  harvest/catalog/: 11 proposed, 11 accepted, 0 quarantined, +2 -1 quads
+  harvest/ownership/ownership.jsonl: 9 proposed, 9 accepted, 0 quarantined, +2 -2 quads
+  harvest/alerts/alerts.json: 14 proposed, 14 accepted, 0 quarantined, +0 -0 quads
+  harvest/incidents/all: 7 proposed, 7 accepted, 0 quarantined, +0 -0 quads
+  harvest/correlation/inc-1: 14 proposed, 14 accepted, 0 quarantined, +9 -2 quads
+store after v2: 192512 bytes (+32768, in pages of the file's allocator); history rows {'born': 5, 'added': 13, 'history': 5, 'table bytes': 12288}
+
+| command | now differs from t1 | --known-at t1 equals t1 |
+|---|---|---|
+| `chains INC-1` | yes | yes (261 bytes, exit 0) |
+| `chains INC-1 --json` | yes | yes (748 bytes, exit 0) |
+| `chains INC-1 --rank propagation --json` | yes | yes (763 bytes, exit 0) |
+| `before INC-1 --window 30m` | yes | yes (204 bytes, exit 0) |
+| `before INC-1 --window 30m --json` | yes | yes (352 bytes, exit 0) |
+| `blast fraud-api` | yes | yes (43 bytes, exit 1) |
+| `blast ledger-db --json` | yes | yes (186 bytes, exit 0) |
+| `sparql SELECT ?a ?b WHERE { ?a ops:dependsOn ?b } ORDER BY ?a ?b` | yes | yes (77 bytes, exit 0) |
+| `sparql SELECT ?p WHERE { id:app\/ledger-db ops:supports ?p } --json` | yes | yes (71 bytes, exit 0) |
+| `sparql SELECT ?g ?at WHERE { GRAPH ?g { ?g harv:at ?at ; harv:source "catalog" } }` | yes | yes (49 bytes, exit 0) |
+
+standard error of the last one:
+  ograph: as known at 2026-11-25T01:20:45.456Z: 13 quads recorded since are hidden, 5 removed since are restored; the history starts at 2026-11-25T01:20:45.227Z, and only episodes a harvest recorded and the history still holds are seen
+
+`changes --since t1`: 2 listed, exactly the two made
+  + id:app/checkout ops:dependsOn id:app/fraud-api
+        2026-11-25T01:20:45.653Z g:harvest/catalog/ [catalog via ogrep-entities]
+  ~ id:app/ledger-db ops:supports id:process/settlement (was id:process/billing)
+        2026-11-25T01:20:45.657Z g:harvest/ownership/ownership.jsonl [ownership via ownership-v1]
+`changes --since now`: 0 listed, exit 1
+
+a time before the store existed: exit 2, ograph: no record of what was known at 2026-11-25T01:20:45.1...
+compact with history_days = 0: dropped 18 rows, {'born': 5, 'added': 0, 'history': 0, 'table bytes': 4096} left; --known-at t1 then exits 2
+
+RCAEval, 90 cases, metrics and traces emptied after t1:
+  chains --known-at t1 equal to the chains saved at t1, both rank modes: 90 of 90
+  chains now differ from t1: 90 of 90
+  store growth of a harvest of the same files: max 0 bytes
+  medians per case: 445 quads in a 561152-byte store file at t1; after the re-harvest 342 rows in `added` and `history`, 28672 bytes in the history tables, file size -178176 bytes
+  one `chains --json` process on each of 20 cases, 5 runs each, the two forms taking turns; median (min to max) ms:
+    now       11.2 (9.8 to 14.6)
+    known-at  11.5 (10.0 to 16.8)
+
+GATE PASSED
