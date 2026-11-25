@@ -1,0 +1,51 @@
+Phase 13, lane V: `actions` on by default on `discussions` sources (lane-v-actions, from
+integrate-phase-13 74b3696).
+
+GATE, written and committed before any code change or model run (2026-11-25)
+---------------------------------------------------------------------------
+The default of `actions` on a `discussions` source changes from false to true only if all of
+these hold. An explicit `actions = false` must keep working. `known_apps` stays off; it is used
+only without `actions`.
+
+1. C1 passed. scripts/eval/action_gate.py on claude-haiku-5-5: precision 1.00, recall 1.00, 0
+   actions on ask/propose/plan threads, times exact, replay 0 calls, the broken model commits 0
+   (action-gate-haiku.txt, phase12-haiku.txt). Already met; cited, not rerun.
+
+2. Thread categories do not get worse with `actions`. The actions prompt asks for more, so this
+   is the real risk. Two arms on copies of examples/demo (generate.py, no model cache), the
+   binary of 74b3696, the [llm.extract] of phase12-haiku.txt (scripts/eval/claude_model.py,
+   claude-haiku-5-5, parallel 4). The arms differ in one line: the `discussions` source
+   (discussions/ops.json, the 16 labeled threads of threads-labels.json) has `actions = false`
+   in OFF and `actions = true` in ON. The `chat-actions` source is as in the demo in both. Each
+   arm is harvested uncached 3 times and scripts/eval/llm_gate.py runs after each harvest.
+   Pass: every ON run has accuracy >= 0.85 and an llm_gate PASS, and the ON runs' correct
+   threads in total are not fewer than the OFF runs'. A run with a refused or failed model call
+   on ops.json is NOT MEASURED and is run again once; twice is NOT MEASURED for the criterion.
+   If criterion 2 fails, the default is not flipped: DROP for the default, the option stays.
+
+3. Without a model, the flag changes no fact. A copy of examples/demo with no [llm.extract]
+   section, harvested with the new binary with the `discussions` source's `actions` absent,
+   `false` and `true`, and with the 74b3696 binary with it absent: every quad (graph, subject,
+   predicate, object, from `ograph --json sparql`) is identical apart from harvest times.
+
+4. The deterministic gates are unchanged on the new binary (docs/EVIDENCE.md, Phase 13
+   integration, and scripts/eval/run_all.sh). RCAEval cases are read through a mirror under
+   target/ (mirror_cases.py); data/rcaeval-cases is not written.
+     cargo test --workspace passes; cargo clippy --all-targets reports nothing
+     rcaeval_score.py chain AC@1 0.93 (AC@3 0.99, Avg@5 0.98)
+     similar_eval.py top-1 similar 0.92
+     replay_gate.py 0 disagreements
+     demo chains unchanged: `chains` on the demo's incidents byte for byte against 74b3696, with
+       no model, and between the ON and OFF arms of criterion 2 (operator actions are no
+       root-cause candidates, so the extra actions must not move a chain)
+     shacl_suite.py 98 of 98; chain_scores_gate.py 0 failures
+     lab_check.py 0 failures and lab_browser.mjs no script errors, on the demo and the 90-case
+       store
+   No step here calls a model: a `pi` that refuses stands first on PATH, as in the Phase 13
+   integration.
+
+5. Cost is reported, not gated: the extra model calls and claude total_cost_usd of the demo's
+   first harvest after upgrading. Measured on an OFF-arm copy (warm cache of the old default)
+   harvested again by the new binary with no `actions` key.
+
+Budget for every model call in this lane: $8 by claude's total_cost_usd.
