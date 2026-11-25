@@ -19,12 +19,21 @@ neutral path, with a copied binary and a copied skill. The copy is scanned befor
 the transcript after it (`leaks_in_dir`, `leaks_in_transcript`); a hit voids the run.
 
 Cases: a seeded sample of the RCAEval export (--cases, labels in its labels.json) and the demo
-incidents (--demo, labeled below from the story examples/demo/generate.py writes).
+incidents (--demo, labeled below from the story examples/demo/generate.py writes). --holdout N
+adds N cases drawn by --holdout-seed from those outside the sample and outside the misses, as
+suite rcaeval-heldout; --skip-sample leaves the sample itself out of the run.
+
+Guidance: by default the agent arms read skills/ograph and scripts/agent from the working tree.
+--guidance LABEL=REV[,LABEL=REV] takes both from a git revision instead, and the arm `mcp@LABEL`
+or `skill@LABEL` reads that revision's text, so two revisions of the guidance can be compared on
+the same cases, binary, model and settings.
 
 Usage:
   agent_rca_eval.py --bin target/release/ograph --cases data/rcaeval-cases --sample 30 \\
       --demo examples/demo --runs 3 --out docs/evidence/agent-rca [--arms mcp,skill,raw,chains]
       [--reference rcaeval_score.json] [--misses] [--parallel 4] [--work DIR] [--fresh]
+      [--guidance parent=REV,candidate=REV --arms mcp@parent,mcp@candidate,chains]
+      [--holdout 25 --holdout-seed 13 --skip-sample]
   agent_rca_eval.py --mirror-cases data/rcaeval-cases target/rcaeval-ref
       (a writable copy of the cases by symlink, to run rcaeval_score.py for --reference)
 
@@ -85,6 +94,7 @@ class Arm:
     answer: object              # (ctx, case, workspace) -> Answer
     unavailable: object = None  # (ctx) -> reason the arm cannot run here, or None
     rule: object = None         # (tool name, args as text) -> what the call broke, or None
+    guide: str = ""             # the guidance label whose skill and extension the arm reads
 
 
 class Ctx:
@@ -97,8 +107,9 @@ class Ctx:
         self.work.mkdir(parents=True, exist_ok=True)
         self.bin = self.work / "bin" / "ograph"
         self.nobin = self.work / "nobin"
-        self.skill = self.work / "skills" / "ograph"
-        self.extension = self.work / "ext" / "ograph.ts"
+        self.guides = {"": None, **dict(g.split("=", 1) for g in (getattr(a, "guidance", None) or "").split(",") if g)}
+        self.skill = self.skill_of("")
+        self.extension = self.extension_of("")
         self.cases_dir = pathlib.Path(a.cases).resolve() if a.cases else None
         self.secret = [REPO, *( [self.cases_dir] if self.cases_dir else [])]
         main = REPO.parents[2] if REPO.parent.name == "worktrees" else REPO
@@ -106,13 +117,26 @@ class Ctx:
         self.lock = threading.Lock()
         self.staged = {}
 
+    def guide_dir(self, label):
+        return self.work / "guide" / label if label else self.work
+
+    def skill_of(self, label): return self.guide_dir(label) / "skills" / "ograph"
+    def extension_of(self, label): return self.guide_dir(label) / "ext" / "ograph.ts"
+    def agent_of(self, label): return self.guide_dir(label) / "scripts" / "agent" if label else REPO / "scripts" / "agent"
+
     def setup(self):
-        for d in (self.bin.parent, self.nobin, self.skill.parent, self.extension.parent): d.mkdir(parents=True, exist_ok=True)
+        for d in (self.bin.parent, self.nobin): d.mkdir(parents=True, exist_ok=True)
         shutil.copy2(pathlib.Path(self.a.bin).resolve(), self.bin)
         shim = self.nobin / "ograph"
         shim.write_text("#!/bin/sh\necho 'ograph: command not found' >&2\nexit 127\n"); shim.chmod(0o755)
-        shutil.rmtree(self.skill, ignore_errors=True)
-        shutil.copytree(REPO / "skills" / "ograph", self.skill)
+        for label, rev in self.guides.items():
+            for d in (self.skill_of(label).parent, self.extension_of(label).parent): d.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(self.skill_of(label), ignore_errors=True)
+            if not rev:
+                shutil.copytree(REPO / "skills" / "ograph", self.skill_of(label)); continue
+            shutil.rmtree(self.agent_of(label), ignore_errors=True)
+            tar = subprocess.run(["git", "-C", str(REPO), "archive", rev, "skills/ograph", "scripts/agent"], capture_output=True, check=True).stdout
+            subprocess.run(["tar", "-x", "-C", str(self.guide_dir(label))], input=tar, check=True)
 
     def env(self, first):
         """The harness's environment without anything that names the repository or the cases."""
@@ -138,6 +162,13 @@ def rcaeval_cases(cases_dir, sample, seed):
     picks = [rng.choice(cells[c]) for c in sorted(cells)]
     rng.shuffle(picks)
     return [Case("rcaeval", cid, labels[cid]["incident"], labels[cid]["root"], cases_dir / cid) for cid in picks[:sample]]
+
+
+def holdout_cases(cases_dir, n, seed, taken):
+    """`n` cases outside `taken`, drawn by `seed`: data the guidance under test was not written from."""
+    labels = json.loads((cases_dir / "labels.json").read_text())
+    picks = random.Random(seed).sample([cid for cid in sorted(labels) if cid not in taken], n)
+    return [Case("rcaeval-heldout", cid, labels[cid]["incident"], labels[cid]["root"], cases_dir / cid) for cid in picks]
 
 
 def missed_cases(cases_dir, reference, taken):
@@ -233,7 +264,7 @@ def leaks_in_transcript(ctx, ws, events, arm):
     mentions the dataset, the labels file, the repository or the cases directory."""
     found = []
     words = secret_words(ctx)
-    allowed = [str(ws), str(ctx.bin.parent), str(ctx.nobin), str(ctx.skill.parent)]
+    allowed = [str(ws), str(ctx.bin.parent), str(ctx.nobin), *(str(ctx.skill_of(g).parent) for g in ctx.guides)]
     banned = [str(ctx.work), str(pathlib.Path.home()), "/Volumes", "/Users", "/home", "/mnt"] + [str(p) for p in ctx.secret]
     for e in events:
         if e.get("type") == "tool_execution_start":
@@ -324,30 +355,50 @@ def chains_answer(ctx, case, ws):
 
 # ---------- arms
 
-def extension_tools(ctx):
-    return [t["name"] for t in json.loads(re.search(r"^const tools: any\[\] = (.*);$", ctx.extension.read_text(), re.M)[1])]
+def extension_tools(ctx, guide=""):
+    return [t["name"] for t in json.loads(re.search(r"^const tools: any\[\] = (.*);$", ctx.extension_of(guide).read_text(), re.M)[1])]
 
 
-def mcp_unavailable(ctx):
+def mcp_unavailable(ctx, guide=""):
     if not shutil.which("pi"): return "pi is not on PATH"
-    seed = ctx.work / "ext" / "seed"
+    if guide not in ctx.guides: return f"no --guidance {guide}=REV"
+    ext = ctx.extension_of(guide)
+    seed = ext.parent / "seed"
     shutil.rmtree(seed, ignore_errors=True); (seed / ".ograph").mkdir(parents=True)
     (seed / ".ograph" / "config.toml").write_text("")
-    p = run([sys.executable, REPO / "scripts" / "agent" / "install.py", "--bin", ctx.bin, "--root", seed, "--out", ctx.extension], seed)
-    if p.returncode != 0 or not ctx.extension.exists(): return f"scripts/agent/install.py failed: {(p.stderr or p.stdout).strip()[-200:]}"
-    return None if extension_tools(ctx) else "the generated extension registers no tools"
+    p = run([sys.executable, ctx.agent_of(guide) / "install.py", "--bin", ctx.bin, "--root", seed, "--out", ext], seed)
+    if p.returncode != 0 or not ext.exists(): return f"scripts/agent/install.py failed: {(p.stderr or p.stdout).strip()[-200:]}"
+    return None if extension_tools(ctx, guide) else "the generated extension registers no tools"
 
 
 def needs_pi(ctx):
     return None if shutil.which("pi") else "pi is not on PATH"
 
 
+def mcp_arm(guide=""):
+    return Arm("mcp" + (f"@{guide}" if guide else ""), "pi with only the ograph tools (scripts/agent extension)", True,
+               pi_answer(lambda ctx: ["--extension", str(ctx.extension_of(guide)), "--tools", ",".join("ograph_" + t for t in extension_tools(ctx, guide))], lambda ctx: ctx.nobin),
+               lambda ctx: mcp_unavailable(ctx, guide), lambda name, args: None if name.startswith("ograph_") else "not an ograph tool", guide)
+
+
+def skill_arm(guide=""):
+    return Arm("skill" + (f"@{guide}" if guide else ""), "pi with skills/ograph, bash and read", True,
+               pi_answer(lambda ctx: ["--skill", str(ctx.skill_of(guide)), "--tools", "bash,read"], lambda ctx: ctx.bin.parent),
+               lambda ctx: needs_pi(ctx) or (None if guide in ctx.guides else f"no --guidance {guide}=REV"), guide=guide)
+
+
+GUIDED = {"mcp": mcp_arm, "skill": skill_arm}
+
+
+def arm_named(name):
+    """An arm of ARMS, or `mcp@LABEL` / `skill@LABEL` for the guidance --guidance names LABEL."""
+    base, _, label = name.partition("@")
+    return GUIDED[base](label) if label and base in GUIDED else ARMS.get(name)
+
+
 ARMS = {arm.name: arm for arm in (
-    Arm("mcp", "pi with only the ograph tools (scripts/agent extension)", True,
-        pi_answer(lambda ctx: ["--extension", str(ctx.extension), "--tools", ",".join("ograph_" + t for t in extension_tools(ctx))], lambda ctx: ctx.nobin),
-        mcp_unavailable, lambda name, args: None if name.startswith("ograph_") else "not an ograph tool"),
-    Arm("skill", "pi with skills/ograph, bash and read", True,
-        pi_answer(lambda ctx: ["--skill", str(ctx.skill), "--tools", "bash,read"], lambda ctx: ctx.bin.parent), needs_pi),
+    mcp_arm(),
+    skill_arm(),
     Arm("raw", "pi with bash and read over the raw files, no ograph", False,
         pi_answer(lambda ctx: ["--tools", "bash,read"], lambda ctx: ctx.nobin),
         needs_pi, lambda name, args: "uses ograph" if re.search(r"\bograph\b", args) else None),
@@ -495,26 +546,34 @@ def main(argv=None):
     ap.add_argument("--model", default="openai/gpt-5.6-terra"); ap.add_argument("--parallel", type=int, default=4)
     ap.add_argument("--timeout", type=int, default=600); ap.add_argument("--work"); ap.add_argument("--reference")
     ap.add_argument("--misses", action="store_true", help="add the cases --reference ranks wrong, as suite rcaeval-miss")
+    ap.add_argument("--holdout", type=int, default=0, help="add N cases outside the sample and the misses, as suite rcaeval-heldout")
+    ap.add_argument("--holdout-seed", type=int, default=13)
+    ap.add_argument("--skip-sample", action="store_true", help="run no case of the sample; it still stays out of --holdout and --misses")
+    ap.add_argument("--guidance", help="LABEL=REV[,LABEL=REV]: the skill and pi extension text of a git revision, for arms mcp@LABEL and skill@LABEL")
     ap.add_argument("--report-only", action="store_true", help="run nothing; report the rows OUT/runs.jsonl holds")
     ap.add_argument("--fresh", action="store_true"); ap.add_argument("--keep", action="store_true", help="keep each run's workspace")
     ap.add_argument("--strict", action="store_true", help="an arm that cannot run fails the harness instead of being skipped")
     a = ap.parse_args(argv)
     if a.mirror_cases: return mirror(*a.mirror_cases)
     if not a.bin or not a.out or not (a.cases or a.demo): ap.error("--bin, --out and one of --cases or --demo are required")
-    unknown = [n for n in a.arms.split(",") if n not in ARMS]
-    if unknown: ap.error(f"unknown arm {', '.join(unknown)}; arms are {', '.join(ARMS)}")
+    unknown = [n for n in a.arms.split(",") if not arm_named(n)]
+    if unknown: ap.error(f"unknown arm {', '.join(unknown)}; arms are {', '.join(ARMS)}, and mcp@LABEL or skill@LABEL with --guidance")
     if a.runs < 1 or a.parallel < 1: ap.error("--runs and --parallel must be 1 or more")
     ctx = Ctx(a); ctx.setup()
-    if a.misses and not (a.cases and a.reference): ap.error("--misses needs --cases and --reference")
-    cases = rcaeval_cases(ctx.cases_dir, a.sample, a.seed) if a.cases else []
-    if a.misses: cases += missed_cases(ctx.cases_dir, a.reference, {c.id for c in cases})
+    if (a.misses or a.holdout) and not (a.cases and a.reference): ap.error("--misses and --holdout need --cases and --reference")
+    seen = rcaeval_cases(ctx.cases_dir, a.sample, a.seed) if a.cases else []
+    misses = missed_cases(ctx.cases_dir, a.reference, {c.id for c in seen}) if a.misses or a.holdout else []
+    cases = [] if a.skip_sample else list(seen)
+    if a.holdout: cases += holdout_cases(ctx.cases_dir, a.holdout, a.holdout_seed, {c.id for c in seen + misses})
+    if a.misses: cases += misses
     if a.demo: cases += demo_cases(pathlib.Path(a.demo).resolve())
     arms, skipped = [], {}
     for name in a.arms.split(","):
-        why = ARMS[name].unavailable and ARMS[name].unavailable(ctx)
+        arm = arm_named(name)
+        why = arm.unavailable and arm.unavailable(ctx)
         if why and a.strict: raise SystemExit(f"arm {name} cannot run: {why}")
         if why: skipped[name] = why
-        else: arms.append(ARMS[name])
+        else: arms.append(arm)
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
     log = out / "runs.jsonl"
     wanted = {(c.key, arm.name, n) for c in cases for arm in arms for n in range(1, a.runs + 1)}
@@ -534,6 +593,8 @@ def main(argv=None):
             print(f"{row['arm']:<6} {row['case']} run {row['run']}: {row['status']} {row['root']} {row['wall_s']} s {row['why'][:120]}", file=sys.stderr, flush=True)
     if todo: print(f"{len(todo)} runs in {time.time() - t:.0f} s at --parallel {a.parallel}", file=sys.stderr)
     if not a.work: shutil.rmtree(ctx.work, ignore_errors=True)
+    for label, rev in ctx.guides.items():
+        if rev: print(f"guidance {label} = {rev} ({subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--short', rev], capture_output=True, text=True).stdout.strip()})")
     ok = report(cases, arms, skipped, [done[k] for k in sorted(done) if k in wanted], a.runs, a.reference, a.model)
     return 0 if ok else 1
 
