@@ -1119,3 +1119,21 @@ No gate called a model: the refusing `pi` stood first on `PATH`. `cargo test --w
 | `test_pi.mjs` | PASS, prompt 8016 characters | PASS, prompt 8056 characters | `merged-13/pi-contract.txt` |
 
 The `uses` gate counts 106 more facts, in two files. In each, the facts that went equal the facts predicted. `chat-actions/actions.json` goes from 126 to 216 facts and `discussions/ops.json` from 467 to 483: these are the `evt:sourceRecord` facts that threads now carry, one per message. No file of the gate has an incident that another file states, so finding 1 adds no provenance nodes there. The prompt grew 40 characters because of a74561f's edit to `investigation.md`, which came after the merged run of `test_pi.mjs`. These fixes do not touch the prompt.
+
+## Phase 13, lane V: operator actions on by default (`actions-default.txt`)
+
+Phase 12 lane C1 left `actions` off on `discussions` sources until its accuracy gate passed. It passed on Haiku (`action-gate-haiku.txt`). Before any change, `actions-default.txt` set four more conditions. The one at risk was that the longer actions prompt could make the thread categories worse.
+
+| Criterion | Result |
+|---|---|
+| 1. C1 passed | Yes: precision 1.00, recall 1.00, 0 actions on threads that ask, propose or plan (`action-gate-haiku.txt`) |
+| 2. Categories no worse with actions (Haiku, 3 uncached runs per arm) | OFF 48/48, ON 48/48; `llm_gate.py` PASS in all 6 runs (`actions-default/`) |
+| 3. No model: the flag changes no fact | 672 quads identical with `actions` absent, false and true, and on the old binary |
+| 4. Deterministic gates | chain AC@1 0.93, similar 0.92, `replay_gate.py` 0 of 18630 cases disagree, chain scores 0 failures, SHACL 98/98, lab 0 failures, no script errors, tests and clippy clean |
+| 5. Cost of the demo's first harvest after upgrading | 16 calls, one per `ops.json` thread, $0.0073 on Haiku, once |
+
+**Verdict: KEEP.** `actions` defaults to `true`. `actions = false` restores the prompt from before actions, so answers cached then still hold. `known_apps` still works only with `actions = false`. When a source sets `known_apps` and leaves actions on, the harvest now says so in a DEGRADED note instead of ignoring it in silence, and `catalog_slice_gate.py` sets `actions = false` to measure what it measured before.
+
+With actions on, the 16 demo category threads gained 9 operator actions, the same in all three runs. Each one is a done action on reading, but no labels exist for them. `chains`, `before`, `blast`, `news` and `why` are byte-identical between the arms. `similar INC-5377` lists one more mitigation for INC-4120: the thread that names it is dated 20 days after the incident in the generated data, and `evt:during` does not look at the time.
+
+The demo's committed cache holds pi's answers to the old prompt, and the default now misses them for `discussions/ops.json`. A harvest with no working model therefore keeps only the rule facts of those 16 threads, so `news` counts 0 related threads instead of 2. A harvest with pi asks the 16 questions once. After that, `llm_gate.py` on `examples/demo` can pass from the cache again. That refresh was not done here: pi is out of quota.

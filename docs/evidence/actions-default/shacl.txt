@@ -1,0 +1,2 @@
+total=98 pass=98 fail=0 err=0
+exit 0

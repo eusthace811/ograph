@@ -1,0 +1,4 @@
+target/lab-demo.html: 39171 bytes, 4 incidents, 9792 bytes per incident
+checked 13 before events, 8 top-chain links and 16 blast and before applications
+0 failures
+exit 0
