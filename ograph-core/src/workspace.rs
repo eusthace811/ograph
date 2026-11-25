@@ -386,8 +386,11 @@ impl Workspace {
         let incidents = snap.subjects(ids.ty, c)?;
         let mut batches = Vec::new();
         for i in incidents {
-            let Ok(a) = correlate::analyze(&snap, &ids, i, &self.config.correlation) else { continue };
-            batches.push(chain_batch(&a, &self.config.correlation));
+            // Stored chains carry ranks, not marks, so the past is read only when it can move a rank.
+            let st = &self.config.correlation;
+            let past = if st.precedent_weight > 0.0 { crate::query::past(&snap, &ids, i, st)? } else { vec![] };
+            let Ok(a) = correlate::analyze(&snap, &ids, i, st, &past) else { continue };
+            batches.push(chain_batch(&a, st));
         }
         drop(snap);
         let mut catalog = None;
@@ -603,15 +606,15 @@ pub fn chain_batch(a: &correlate::Analysis, st: &Settings) -> Batch {
 
 // These tests use shell scripts as stand-ins for ogrep and the model command.
 #[cfg(all(test, unix))]
-mod tests {
+pub(crate) mod tests {
     use super::Workspace;
     use std::path::{Path, PathBuf};
 
-    const T: i64 = 1_795_386_400;
+    pub(crate) const T: i64 = 1_795_386_400;
 
     /// A workspace whose catalog is checkout -> payments-api -> ledger-db, with an incident on
     /// checkout at `T` and `sources` (kind, file, body) beside it.
-    fn fixture(name: &str, sources: &[(&str, &str, &str)]) -> PathBuf {
+    pub(crate) fn fixture(name: &str, sources: &[(&str, &str, &str)]) -> PathBuf {
         static OGREP: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
         let ogrep = OGREP.get_or_init(|| {
             let p = std::env::temp_dir().join(format!("ograph-test-ogrep-{}", std::process::id()));
@@ -641,7 +644,7 @@ mod tests {
         root
     }
 
-    fn alert(app: &str, name: &str, at: i64) -> String {
+    pub(crate) fn alert(app: &str, name: &str, at: i64) -> String {
         format!(r#"{{"labels":{{"alertname":"{name}","service":"{app}","severity":"critical"}},"startsAt":{at}}}"#)
     }
 
@@ -652,7 +655,7 @@ mod tests {
         rows.into_iter().map(|r| r.into_iter().map(Option::unwrap_or_default).collect()).collect()
     }
 
-    fn harvest(root: &Path, only: Option<&str>) -> Vec<crate::gateway::Outcome> {
+    pub(crate) fn harvest(root: &Path, only: Option<&str>) -> Vec<crate::gateway::Outcome> {
         Workspace::open(root).unwrap().harvest(only, |_, _| {}).unwrap()
     }
 
@@ -711,7 +714,7 @@ mod tests {
             None => ws.store.snapshot().unwrap(),
         };
         let ids = crate::correlate::Ids::new(&snap).unwrap();
-        let a = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+        let a = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation, &[]).unwrap();
         serde_json::to_string(&a).unwrap()
     }
 
@@ -772,7 +775,7 @@ mod tests {
         let ws = Workspace::open(&root).unwrap();
         let snap = ws.store.snapshot().unwrap();
         let ids = crate::correlate::Ids::new(&snap).unwrap();
-        let a = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+        let a = crate::query::chains(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
         let printed: Vec<Vec<String>> = a.apps.iter().enumerate().map(|(k, r)| vec![crate::vocab::compact(&r.chain.as_ref().unwrap().id), (k + 1).to_string()]).collect();
         assert_eq!(printed.len(), 2);
         assert_eq!(sparql(&root, "SELECT ?c ?r WHERE { ?c corr:rank ?r } ORDER BY ?r"), printed);

@@ -193,6 +193,22 @@ fn view(ws: &Workspace, known_at: Option<&str>) -> anyhow::Result<ograph_core::s
     Ok(snap)
 }
 
+/// Why a link scored what it did, for `ograph chains`.
+fn link_basis(l: &correlate::LinkScore) -> String {
+    let edge = match l.edge {
+        correlate::Edge::SameApp => "same application",
+        correlate::Edge::Catalog => "catalog dependency",
+        correlate::Edge::Trace => "dependency seen only in traces",
+        correlate::Edge::Other => "dependency from another source",
+        correlate::Edge::Indirect => "no direct dependency",
+    };
+    if l.known_pair {
+        format!("known pair, {edge}")
+    } else {
+        format!("time {:.2}, severity {:.2}, {edge}", l.time, l.severity)
+    }
+}
+
 fn print_suspects(suspects: &[query::Suspect]) {
     for s in suspects {
         println!("  {}. {:<22} score {:.2}  distance {}  explains {}", s.rank, s.app, s.score, s.distance, s.explains.join(", "));
@@ -311,7 +327,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             }
             let st = with_sets(st, &set)?;
             let i = query::lookup(&snap, &incident)?;
-            let mut a = correlate::analyze(&snap, &ids, i, &st)?;
+            let mut a = query::chains(&snap, &ids, i, &st)?;
             let (suspects, degraded) = ws.fallback_suspects(&snap, &a, &incident, &st);
             a.apps.truncate(top);
             let found = !a.apps.is_empty() || !suspects.is_empty();
@@ -319,9 +335,19 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 println!("{} on {} at {}: {} candidate events", ograph_core::vocab::compact(&a.incident), a.app, ograph_core::term::format_millis(a.at_ms), a.candidates);
                 for (k, r) in a.apps.iter().enumerate() {
                     println!("  {}. {:<22} score {:.3}", k + 1, r.app, r.score);
+                    if let Some(p) = &r.precedent {
+                        let gain = if st.precedent_weight == 0.0 { String::new() } else { format!(", score {:+.3}", st.precedent_weight * p.similarity) };
+                        println!("     {}:{} was accepted as the cause of {} (similarity {:.3}{gain}): {}", p.app, p.signal, p.incident, p.similarity, p.evidence.join("; "));
+                    }
                     if let Some(c) = &r.chain {
                         let path: Vec<String> = std::iter::once(&c.root).chain(&c.links).map(|s| format!("{}:{}", s.app_name, s.kind)).collect();
                         println!("     {} {:.2}: {} -> incident", ograph_core::vocab::compact(&c.id), c.confidence, path.join(" -> "));
+                        for l in &c.scores {
+                            println!("       {:.2}  {} -> {}  ({})", l.score, l.from, l.to, link_basis(l));
+                        }
+                        if c.scores.len() > 1 {
+                            println!("       weakest link: {} -> {} at {:.2}", c.weakest.from, c.weakest.to, c.weakest.score);
+                        }
                     }
                 }
             };
@@ -351,6 +377,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             print(json, &v, |v| {
                 for s in v {
                     println!("  {:.3}  {} on {} at {}  causes: [{}]  mitigations: [{}]", s.similarity, s.incident, s.app, s.at, s.cause_apps.join(", "), s.mitigations.join("; "));
+                    for r in &s.ruled_out {
+                        println!("         ruled out: {}:{} ({})", r.app, r.signal, r.evidence.join("; "));
+                    }
                 }
             });
             Ok(found)

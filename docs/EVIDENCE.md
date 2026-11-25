@@ -517,3 +517,72 @@ No number separates the two builds: every ratio is inside the other build's rang
 **`rcaeval-grid.txt` is stale.** Its tuning-split numbers come from a correlator older than the "proximity runs from the end of an episode" change. For example, it gives `(0.4, 0.5, 0.1, 0.0)` 0.87, and the current `ograph chains` gives 0.77. So no replay can reproduce that file, because the current ranking does not either. The gate compares the replay with the grid recomputed by the same binary, and `replay-grid.txt` holds every point. The recomputed grid still does not generalize. Its five best tuning points (0.90 on rep 1) score 0.72 to 0.77 on the held-out reps, against 0.87 for the shipped weights.
 
 **Not done.** Chains store `corr:settings`, and a verdict copies the chain's `corr:rank` and `corr:settings` as `rca:rank` and `rca:settings`. Replay uses them only to report how many stored chains predate the current settings. It does not reconstruct old settings from the hash. A workspace whose `.ograph/ontology.ttl` predates this lane quarantines `corr:settings` and refuses verdicts (`rca:supersededBy` is unknown to it) until the ontology is updated, as for any new term.
+
+## Phase 12, lane A1: chain scores and past verdicts
+
+### Why a chain scored what it did (`chain-scores.txt`, `scripts/eval/chain_scores_gate.py`)
+
+Each chain now carries `scores`, how every link scored, and `weakest`, the link to check first. The idea comes from semantica's causal-distance report. The gate, set before the code: the parts must recompute every link score and every chain confidence within 1e-9 on all 90 RCAEval cases, and the rankings must stay byte-identical.
+
+`chain_scores_gate.py` asks `ograph chains --json --top 1000` for each case in both rank modes, with the default weights and with `w_time = 0.5`, `w_severity = 0.3`, `known_pair_prior = 0.8`, then recomputes from the parts. RCAEval has no known pair on a best chain, so the gate also takes the demo, which has 24.
+
+| Check | Result |
+|---|---|
+| Chains and links recomputed | 2,454 chains, 3,533 links |
+| Largest difference between a link score and `w_time * time + w_severity * severity`, or the prior for a known pair | 0 |
+| Largest difference between a chain's confidence and the geometric mean of its link scores | 1.1e-16 |
+| Stored `corr:confidence` against the confidence rounded to the four decimals the graph keeps | 585 chains, difference 0 |
+| Links whose `from`, `to`, `severity` or the chain's `weakest` disagree with the chain | 0 |
+
+The dependency behind a link is `catalog` for 2,194 links, `same_app` for 836 and `indirect` for 503. No link is `trace`: on RCAEval every dependency the spans show is also in the catalog. A unit test covers that value (`a_link_names_where_its_dependency_comes_from`).
+
+Not done: `corr:linkScore` in the graph. A score belongs to a link, and the graph keeps a chain's links as plain `corr:link` events, so storing it needs a node per link. The store cannot tell a declared catalog dependency from one ogrep inferred from configuration, since both are in the catalog graph, so `edge` reports both as `catalog`.
+
+### Accepted causes as a ranking input (`precedent.txt`, `scripts/eval/precedent_eval.py`)
+
+`precedent_weight` adds to a root's score when a similar past incident's accepted cause has the same application and signal. The gain is the weight times the similarity. `chains` consults the three most similar incidents that have an accepted cause and names the one it matched. The idea comes from semantica's decision precedents. The keep rule, set before the run: held-out AC@1 must beat the baseline, with no case made wrong among those whose most similar judged incident has another root.
+
+The eval puts all 90 cases in one store and accepts every incident's true chain. It ranks each incident leave-one-out: the verdicts of all other incidents count, and its own never does. The weight is chosen on rep 1 and reported on reps 2-3.
+
+| Protocol | Weight chosen on rep 1 | Held-out AC@1 at weight 0 | Held-out AC@1 at the chosen weight | Fixed, broken (all 90) | Misleading cases still right |
+|---|---|---|---|---|---|
+| Leave-one-out | 0.01 | 0.933 | 1.000 | 6, 0 | 4 of 4 |
+| Earlier incidents only, as production sees them | 0.01 | 0.933 | 1.000 | 6, 0 | 8 of 8 |
+
+The rule passes. Why so small a weight is enough: the six cases the baseline gets wrong are exact ties at a score of 1.0, which breadth and onset then decide wrongly (measured: `ograph chains --json` on those six cases). Any positive weight breaks such a tie toward the root people accepted before. A larger weight starts to overrule real score gaps: with earlier incidents only, 0.05 breaks one case and 0.3 breaks three, all among the eight misleading ones.
+
+RCAEval repeats every fault three times on the same service, so leave-one-out always has two twins of each incident. Part 2 of the eval removes them, and was added after the first run as a harder test for harm. It accepts verdicts only on the incidents of three fault kinds and ranks the incidents of the other three, both ways round. AC@1 goes from 0.933 to 1.000 at weight 0.01 in both halves, three cases fixed and none broken in each. The misleading cases, 2 and 4, stay right. The first breaks come at 0.5 and at 0.2.
+
+The mark alone, at weight 0, agrees with the label. Leave-one-out, 84 of 90 rank-1 roots carry a precedent and all 84 are the true root, while none of the 6 unmarked ones is. Across faults, 82 of the 83 marked rank-1 roots are the true root.
+
+Verdict: KEEP, with the default left at 0. Two reasons to leave it off until a team turns it on. RCAEval has five root services, so every root has many precedents, and an estate where causes rarely repeat will see few matches. With a weight, a verdict changes the live ranks of similar incidents at once, but their stored `corr:rank` only at the next harvest, so `ograph verdict id:chain/<incident>-<rank>` can then name another chain than the one `chains` prints at that rank. A chain id is not affected.
+
+With verdicts stored and the weight at 0, every ranking equals the ranking without verdicts (`precedent.txt`, line 6).
+
+### Rejections on similar incidents (`ruled-out.txt`, `scripts/eval/ruled_out_eval.py`)
+
+`similar` now lists `ruled_out`: the application, signal and evidence of the roots a verdict rejected on each past incident. Before, it read only accepted causes.
+
+Two more uses of a rejection were built, measured and removed: `ruled_out_weight`, which lowered a root matching a rejection on a similar incident, and a "ruled out" mark on that root in `chains`. The eval rejects the wrong rank-1 chain on the six incidents that have one, then ranks every incident again.
+
+| Weight | AC@1, earlier incidents only | Broken |
+|---|---|---|
+| 0 | 0.933 | 0 |
+| 0.01 | 0.944 | 0 |
+| 0.02 to 0.15 | 0.933 | 1 |
+| 0.2 | 0.911 | 3 |
+| 0.5 | 0.844 | 9 |
+
+Rep 1 does not move at any weight up to 0.2, so the weight it chooses is 0, and the held-out result is the baseline's 0.933. The rule fails. Leave-one-out chooses 0.01 for 0.950 held out, but 0.02 already breaks a case.
+
+The mark is worse than no mark. With earlier incidents only, 11 rank-1 roots match a rejection, and 9 of them are the true root. An (application, signal) pair is too coarse here: nearly every root on RCAEval is a `METRIC_ANOMALY`, so a rejection of cartservice on one incident says little about cartservice on the next. A similarity floor helps: at 0.85, the lowest floor that leaves no mark on a true root in rep 1, reps 2-3 have 3 marked rank-1 roots and 1 of them is the true root. Three cases cannot carry a default.
+
+Verdict: `similar`'s `ruled_out` is kept, as a report of what people recorded. `ruled_out_weight` and the mark are dropped. The code that ran this eval is the commit titled "Experiment: past verdicts as a ranking input in chains", and `ruled_out_eval.py` needs a binary built from it.
+
+### What it does not change
+
+`scripts/eval/chain_scores_evidence.sh` runs `ab_compare.sh` with the binary from before this lane. 9 of 12 outputs are byte-identical, among them the 90 RCAEval rankings (chain AC@1 0.93) and the similar-incident scores (0.92). The three that differ are the demo's two `chains` answers and its `similar` answer, and `scripts/eval/same_but_for.py` shows they are equal once `scores`, `weakest` and `ruled_out` are removed.
+
+Latency was measured while other builds shared the machine, which is why every query takes 80 ms or more where it took 14 ms on a quiet machine. The demo's queries differ by 2 ms or less either way, inside that noise. On the store with 90 incidents and 90 accepted verdicts, `chains` takes a median of 109 ms against 102 ms. The 7 ms is the lookup of the precedent, which computes the signature of every other incident (the cause is inferred from the code, not profiled). A store without verdicts skips it.
+
+Not measured: precedents on a workspace whose causes rarely repeat, a verdict whose root's telemetry is gone as a precedent (a unit test covers `similar` there, none covers `chains`), and `precedent_weight` with `rank = "propagation"`.

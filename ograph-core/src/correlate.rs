@@ -37,13 +37,20 @@ pub struct Settings {
     pub only_signals: Vec<String>,
     /// Window for an incident's signature in `similar`: the onset pattern, not the whole lead-up.
     pub signature_window_s: i64,
+    /// How much an accepted cause of a similar past incident lifts a root with the same
+    /// application and signal: the score gains this times the similarity. 0 ranks on telemetry
+    /// alone.
+    pub precedent_weight: f64,
+    /// Evaluation: incidents that opened later count as past ones too, so a labeled set can be
+    /// scored leave-one-out.
+    pub past_any_time: bool,
 }
 
 impl Settings {
     /// Scores are probabilities and windows are spans, so out-of-range settings are refused
     /// rather than written as confidences the shapes then quarantine.
     pub fn check(&self) -> anyhow::Result<()> {
-        for (name, v) in [("min_confidence", self.min_confidence), ("w_time", self.w_time), ("w_severity", self.w_severity), ("known_pair_prior", self.known_pair_prior)] {
+        for (name, v) in [("min_confidence", self.min_confidence), ("w_time", self.w_time), ("w_severity", self.w_severity), ("known_pair_prior", self.known_pair_prior), ("precedent_weight", self.precedent_weight)] {
             anyhow::ensure!((0.0..=1.0).contains(&v), "correlation setting {name} = {v} must be between 0 and 1");
         }
         anyhow::ensure!(self.w_time + self.w_severity <= 1.0, "correlation settings w_time + w_severity = {} must not exceed 1", self.w_time + self.w_severity);
@@ -92,6 +99,8 @@ impl Default for Settings {
             ignore_dependencies: false,
             only_signals: vec![],
             signature_window_s: 900,
+            precedent_weight: 0.0,
+            past_any_time: false,
         }
     }
 }
@@ -119,6 +128,51 @@ pub struct Chain {
     pub root: Signal,
     pub links: Vec<Signal>,
     pub confidence: f64,
+    /// One per event of the chain, root first: the link that leaves it. The last one closes
+    /// the chain at the incident. `confidence` is their geometric mean.
+    pub scores: Vec<LinkScore>,
+    /// The first link with the lowest score: where the hypothesis is thinnest.
+    pub weakest: Weakest,
+}
+
+/// How one link scored. `score` is `known_pair_prior` for a known pair and
+/// `w_time * time + w_severity * severity` otherwise.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct LinkScore {
+    /// `application:SIGNAL` of the event the link leaves.
+    pub from: String,
+    /// `application:SIGNAL` of the event it reaches, or `incident`.
+    pub to: String,
+    /// Time proximity: 1 when the next event starts before this one ends, 0 a window later.
+    pub time: f64,
+    pub severity: f64,
+    pub known_pair: bool,
+    pub edge: Edge,
+    pub score: f64,
+}
+
+/// Where the dependency a link crosses comes from.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Edge {
+    /// Both ends are on one application, so the link crosses no dependency.
+    SameApp,
+    /// The catalog states it: declared in a file, or inferred by ogrep from configuration.
+    Catalog,
+    /// Only parent spans state it.
+    Trace,
+    /// Only some other source states it.
+    Other,
+    /// No single dependency: the link closes at the incident from more than one hop away, or
+    /// dependencies are ignored.
+    Indirect,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct Weakest {
+    pub from: String,
+    pub to: String,
+    pub score: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -127,6 +181,19 @@ pub struct Ranked {
     pub score: f64,
     pub first_ms: i64,
     pub chain: Option<Chain>,
+    /// The most similar past incident whose accepted cause has this root's application and signal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub precedent: Option<PastRoot>,
+}
+
+/// A root people accepted as the cause of a past incident that resembles the one under analysis.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct PastRoot {
+    pub incident: String,
+    pub similarity: f64,
+    pub app: String,
+    pub signal: String,
+    pub evidence: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -338,22 +405,51 @@ impl Settings {
     /// when the next event (or the incident) arrives is adjacent to it. Measuring from the start
     /// made a cause that began five minutes before the incident and never stopped score below a
     /// one-point blip seconds before it.
-    fn link(&self, a: &Signal, to_kind: &str, to_ms: i64) -> f64 {
+    fn link(&self, a: &Signal, to_kind: &str, to_ms: i64) -> Parts {
         let w = (self.window_s * 1000) as f64;
         let gap = (to_ms - a.until_ms.min(to_ms)) as f64;
+        let severity = a.severity.min(1.0);
         if ((to_ms - a.at_ms) as f64) < -1000.0 || gap > w {
-            return 0.0;
+            return Parts { time: 0.0, severity, known_pair: false, score: 0.0 };
         }
-        if self.known(&a.kind, to_kind) {
-            return self.known_pair_prior;
-        }
-        let prox = (1.0 - gap.max(0.0) / w).clamp(0.0, 1.0);
-        self.w_time * prox + self.w_severity * a.severity.min(1.0)
+        let time = (1.0 - gap.max(0.0) / w).clamp(0.0, 1.0);
+        let known_pair = self.known(&a.kind, to_kind);
+        let score = if known_pair { self.known_pair_prior } else { self.w_time * time + self.w_severity * severity };
+        Parts { time, severity, known_pair, score }
     }
 }
 
-/// Builds chains and ranks root-cause applications.
-pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::Result<Analysis> {
+struct Parts {
+    time: f64,
+    severity: f64,
+    known_pair: bool,
+    score: f64,
+}
+
+/// Where the dependency of `caller` on `callee` comes from: the harvest sources whose graphs
+/// state it, the catalog first.
+fn edge(s: &Snapshot, ids: &Ids, callee: Id, caller: Id) -> anyhow::Result<Edge> {
+    if callee == caller {
+        return Ok(Edge::SameApp);
+    }
+    let harvest = format!("{}harvest/", crate::vocab::GRAPH);
+    let mut found = Edge::Indirect;
+    for g in s.graphs_of([caller, ids.depends, callee])? {
+        let graph = literal(s, g).unwrap_or_default();
+        match graph.strip_prefix(&harvest).and_then(|rest| rest.split('/').next()) {
+            Some("catalog") => return Ok(Edge::Catalog),
+            Some("traces") => found = Edge::Trace,
+            _ if found == Edge::Indirect => found = Edge::Other,
+            _ => {}
+        }
+    }
+    Ok(found)
+}
+
+/// Builds chains and ranks root-cause applications. `past` holds the accepted causes of similar
+/// incidents, most similar first: a root with the application and signal of one is marked with
+/// it, and gains `precedent_weight` times its similarity.
+pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[PastRoot]) -> anyhow::Result<Analysis> {
     let (app, t, cands) = candidates(s, ids, incident, st)?;
     let incident_iri = literal(s, incident).unwrap_or_default();
     // Which application calls which, inside the scope: a link may go from an event on X to an
@@ -388,7 +484,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
             }
             let last = &cands[*path.last().unwrap()];
             // An event inside `after_s` closes as if it happened at the incident.
-            let close = st.link(last, "INCIDENT", t.max(last.at_ms)).max(1e-9);
+            let close = st.link(last, "INCIDENT", t.max(last.at_ms)).score.max(1e-9);
             let conf = ((logsum + close.ln()) / path.len() as f64).exp();
             let gated = close >= st.min_confidence && conf >= st.min_confidence;
             // Equal confidence prefers the longer path: it explains more of the cascade.
@@ -405,7 +501,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
                 if !can_follow(last, next) {
                     continue;
                 }
-                let l = st.link(last, &next.kind, next.at_ms);
+                let l = st.link(last, &next.kind, next.at_ms).score;
                 if l >= st.min_confidence {
                     let mut p = path.clone();
                     p.push(ni);
@@ -413,13 +509,19 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
                 }
             }
         }
-        let chain = best.map(|(path, conf, gated)| {
-            let c = Chain { id: chain_iri(&incident_iri, &cands[path[0]].iri), root: cands[path[0]].clone(), links: path[1..].iter().map(|&i| cands[i].clone()).collect(), confidence: conf };
-            if gated {
-                chains.push(c.clone());
+        let chain = match best {
+            Some((path, conf, gated)) => {
+                let scores = link_scores(s, ids, st, &cands, &path, app, t)?;
+                let low = scores.iter().fold(&scores[0], |low, l| if l.score < low.score { l } else { low });
+                let weakest = Weakest { from: low.from.clone(), to: low.to.clone(), score: low.score };
+                let c = Chain { id: chain_iri(&incident_iri, &cands[path[0]].iri), root: cands[path[0]].clone(), links: path[1..].iter().map(|&i| cands[i].clone()).collect(), confidence: conf, scores, weakest };
+                if gated {
+                    chains.push(c.clone());
+                }
+                Some(c)
             }
-            c
-        });
+            None => None,
+        };
         best_any.push(chain);
     }
     let w_ms = (st.window_s * 1000) as f64;
@@ -428,7 +530,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
         RankMode::Chain => {
             for c in &chains {
                 let first = cands.iter().filter(|x| x.app == c.root.app).map(|x| x.at_ms).min().unwrap_or(c.root.at_ms);
-                let e = per_app.entry(c.root.app).or_insert_with(|| Ranked { app: c.root.app_name.clone(), score: f64::MIN, first_ms: first, chain: None });
+                let e = per_app.entry(c.root.app).or_insert_with(|| Ranked { app: c.root.app_name.clone(), score: f64::MIN, first_ms: first, chain: None, precedent: None });
                 if c.confidence > e.score {
                     e.score = c.confidence;
                     e.chain = Some(c.clone());
@@ -450,11 +552,16 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
                 });
                 let onset = ((t - peak_at) as f64 / w_ms).clamp(0.0, 1.0);
                 let score = ws * strength + wc * chain.as_ref().map_or(0.0, |c| c.confidence) + wp * spread + we * onset;
-                per_app.insert(x, Ranked { app: cands[strongest].app_name.clone(), score, first_ms: cands[mine[0]].at_ms, chain });
+                per_app.insert(x, Ranked { app: cands[strongest].app_name.clone(), score, first_ms: cands[mine[0]].at_ms, chain, precedent: None });
             }
         }
     }
     let mut apps: Vec<Ranked> = per_app.into_values().collect();
+    for r in &mut apps {
+        let Some(root) = r.chain.as_ref().map(|c| &c.root) else { continue };
+        r.precedent = past.iter().find(|p| p.app == root.app_name && p.signal == root.kind).cloned();
+        r.score += st.precedent_weight * r.precedent.as_ref().map_or(0.0, |p| p.similarity);
+    }
     match st.rank {
         // Sustained, saturated anomalies tie on confidence. Among ties the root whose chain
         // reaches more applications explains more of the cascade, then the earlier onset wins.
@@ -467,6 +574,24 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::
     Ok(Analysis { incident: incident_iri, app: app_name(s, ids, app), at_ms: t, candidates: cands.len(), apps })
 }
 
+/// The score of every link along `path`, then of the link that closes it at the incident, with
+/// the same calls the search scored them by. None of them is outside the window, where a link
+/// scores 0 whatever its parts: the search follows only links inside it, and a candidate still
+/// under way when the window opens closes inside it.
+fn link_scores(s: &Snapshot, ids: &Ids, st: &Settings, cands: &[Signal], path: &[usize], incident_app: Id, t: i64) -> anyhow::Result<Vec<LinkScore>> {
+    let label = |x: &Signal| format!("{}:{}", x.app_name, x.kind);
+    let mut out = Vec::with_capacity(path.len());
+    for (k, &i) in path.iter().enumerate() {
+        let a = &cands[i];
+        let (to, parts, edge) = match path.get(k + 1).map(|&n| &cands[n]) {
+            Some(next) => (label(next), st.link(a, &next.kind, next.at_ms), edge(s, ids, a.app, next.app)?),
+            None => ("incident".to_owned(), st.link(a, "INCIDENT", t.max(a.at_ms)), edge(s, ids, a.app, incident_app)?),
+        };
+        out.push(LinkScore { from: label(a), to, time: parts.time, severity: parts.severity, known_pair: parts.known_pair, edge, score: parts.score });
+    }
+    Ok(out)
+}
+
 /// Confidence at the resolution ranking cares about, so float noise cannot break a tie.
 fn quantize(x: f64) -> i64 {
     (x * 1e9).round() as i64
@@ -475,4 +600,59 @@ fn quantize(x: f64) -> i64 {
 /// Distinct applications a chain passes through.
 fn breadth(c: &Chain) -> usize {
     std::iter::once(&c.root).chain(&c.links).map(|s| s.app).collect::<FxHashSet<_>>().len()
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use crate::workspace::Workspace;
+    use crate::workspace::tests::{T, alert, fixture, harvest};
+    use std::path::Path;
+
+    /// The best chain of each ranked application, one line per link.
+    fn links(root: &Path) -> Vec<(String, Vec<String>, String)> {
+        let ws = Workspace::open(root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let ids = super::Ids::new(&snap).unwrap();
+        let a = super::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation, &[]).unwrap();
+        a.apps
+            .iter()
+            .map(|r| {
+                let c = r.chain.as_ref().unwrap();
+                let scores = c.scores.iter().map(|l| format!("{} -> {} {:.4} time {:.4} severity {:.2} known {} {:?}", l.from, l.to, l.score, l.time, l.severity, l.known_pair, l.edge)).collect();
+                (format!("{} {:.4}", r.app, c.confidence), scores, format!("{} -> {} {:.4}", c.weakest.from, c.weakest.to, c.weakest.score))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_chain_says_how_each_link_scored_and_which_is_weakest() {
+        let deployment = format!(r#"{{"service":"payments-api","version":"2","at":{}}}"#, T - 180);
+        let root = fixture("link-scores", &[("deployments", "deployments.jsonl", &deployment), ("alerts", "alerts.json", &format!("[{}]", alert("checkout", "ErrorRate", T - 60)))]);
+        harvest(&root, None);
+        // 0.6 * (1 - 120 s / 1800 s) + 0.4 * 0.25 = 0.66, and sqrt(0.66 * 0.9) = 0.7707.
+        let deployed = (
+            "payments-api 0.7707".to_owned(),
+            vec![
+                "payments-api:DEPLOYMENT -> checkout:ALERT 0.6600 time 0.9333 severity 0.25 known false Catalog".to_owned(),
+                "checkout:ALERT -> incident 0.9000 time 0.9667 severity 1.00 known true SameApp".to_owned(),
+            ],
+            "payments-api:DEPLOYMENT -> checkout:ALERT 0.6600".to_owned(),
+        );
+        let alerted = ("checkout 0.9000".to_owned(), vec!["checkout:ALERT -> incident 0.9000 time 0.9667 severity 1.00 known true SameApp".to_owned()], "checkout:ALERT -> incident 0.9000".to_owned());
+        assert_eq!(links(&root), [alerted, deployed]);
+    }
+
+    #[test]
+    fn a_link_names_where_its_dependency_comes_from() {
+        let root = fixture("link-edges", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        // checkout reaches ledger-db only through payments-api, so no one dependency closes the chain.
+        assert_eq!(links(&root)[0].1, ["ledger-db:ALERT -> incident 0.9000 time 0.6667 severity 1.00 known true Indirect"]);
+        let span = |id: &str, parent: &str, service: &str| format!(r#"{{"trace_id":"t1","span_id":"{id}","parent_span_id":"{parent}","service":"{service}","start_ms":{}000,"duration_us":1000,"status":"ok"}}"#, T - 900);
+        std::fs::write(root.join("traces.jsonl"), format!("{}\n{}\n", span("a", "", "checkout"), span("b", "a", "ledger-db"))).unwrap();
+        let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
+        std::fs::write(root.join(".ograph/config.toml"), config + "[[source]]\nkind = \"traces\"\npath = \"traces.jsonl\"\n").unwrap();
+        harvest(&root, None);
+        assert_eq!(links(&root)[0].1, ["ledger-db:ALERT -> incident 0.9000 time 0.6667 severity 1.00 known true Trace"]);
+    }
 }

@@ -151,6 +151,8 @@ Start with Netflix's published settings as defaults (post, page 9 figure):
 
 All of these are configuration, not code, because a settlement failure can surface hours after its cause. The engine walks candidate chains depth-first over the native time index. It stores each chain with the records it used and writes nothing as a conclusion. The RCAEval gate below tunes these values.
 
+Verdicts feed back into ranking in one direction only. An accepted cause of a similar past incident can lift a root with the same application and signal (`precedent_weight`, off by default). A rejection does not lower one: on RCAEval most roots that matched an earlier rejection were the true cause, so `similar` reports rejections and ranking ignores them (docs/EVIDENCE.md, Phase 12, lane A1).
+
 ## LLM access through pi
 
 ograph holds no LLM credentials and contains no provider code. Every model call goes through `pi`, which already owns authentication. At home that is a Codex login. On a corporate network it is a pi provider extension that talks to the corporate LLM gateway. ograph itself does not change between the two.

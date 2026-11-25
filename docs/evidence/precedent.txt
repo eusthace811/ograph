@@ -1,0 +1,100 @@
+merged harvest: 10.7 s, rc 0; harvested 273 batches in 10.4 s; 666 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+90 incidents in one store; every incident has 2 to 2 others with the same root service and fault
+no verdicts: AC@1 all 0.933, rep 1 0.933, reps 2-3 0.933
+
+PART 1. accepted a true chain for 90/90 incidents
+with the verdicts stored and precedent_weight 0, every ranking equals the one without verdicts: True
+
+leave-one-out (all other incidents): 4 incidents are misleading (no judged incident to compare, or the most similar one has another root)
+
+precedent_weight, leave-one-out (all other incidents): AC@1 per weight
+  0     all 0.933  rep 1 0.933  reps 2-3 0.933  misleading 4/4  fixed 0  broken 0 (0 of them misleading)
+  0.01  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 6  broken 0 (0 of them misleading)
+  0.02  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 6  broken 0 (0 of them misleading)
+  0.05  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 6  broken 0 (0 of them misleading)
+  0.1   all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 6  broken 0 (0 of them misleading)
+  0.15  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 6  broken 0 (0 of them misleading)
+  0.2   all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 6  broken 0 (0 of them misleading)
+  0.3   all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 6  broken 0 (0 of them misleading)
+  0.5   all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 6  broken 0 (0 of them misleading)
+  1     all 0.989  rep 1 1.000  reps 2-3 0.983  misleading 3/4  fixed 6  broken 1 (1 of them misleading)
+  chosen on rep 1: precedent_weight = 0.01 (rep 1 AC@1 1.000); held-out reps 2-3 AC@1 1.000 against 0.933 at weight 0
+    fixed at 0.01: c-1d389615b3 rep 2 loss on currencyservice: rank 1 was cartservice, is currencyservice
+    fixed at 0.01: c-3a0809d8d0 rep 3 loss on currencyservice: rank 1 was cartservice, is currencyservice
+    fixed at 0.01: c-b0f876b48e rep 2 delay on checkoutservice: rank 1 was emailservice, is checkoutservice
+    fixed at 0.01: c-d1059aa9c3 rep 3 disk on currencyservice: rank 1 was checkoutservice, is currencyservice
+    fixed at 0.01: c-d7fc5dfaee rep 1 loss on currencyservice: rank 1 was cartservice, is currencyservice
+    fixed at 0.01: c-e425dee775 rep 1 delay on checkoutservice: rank 1 was paymentservice, is checkoutservice
+  'accepted before' mark at weight 0: 84 of 90 rank-1 roots carry the mark; 84 of them are the true root, 0 are not. Unmarked rank-1 roots: 0 of 6 are the true root
+
+earlier incidents only: 8 incidents are misleading (no judged incident to compare, or the most similar one has another root)
+
+precedent_weight, earlier incidents only: AC@1 per weight
+  0     all 0.933  rep 1 0.933  reps 2-3 0.933  misleading 8/8  fixed 0  broken 0 (0 of them misleading)
+  0.01  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 8/8  fixed 6  broken 0 (0 of them misleading)
+  0.02  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 8/8  fixed 6  broken 0 (0 of them misleading)
+  0.05  all 0.989  rep 1 0.967  reps 2-3 1.000  misleading 7/8  fixed 6  broken 1 (1 of them misleading)
+  0.1   all 0.978  rep 1 0.933  reps 2-3 1.000  misleading 6/8  fixed 6  broken 2 (2 of them misleading)
+  0.15  all 0.978  rep 1 0.933  reps 2-3 1.000  misleading 6/8  fixed 6  broken 2 (2 of them misleading)
+  0.2   all 0.978  rep 1 0.933  reps 2-3 1.000  misleading 6/8  fixed 6  broken 2 (2 of them misleading)
+  0.3   all 0.967  rep 1 0.900  reps 2-3 1.000  misleading 5/8  fixed 6  broken 3 (3 of them misleading)
+  0.5   all 0.967  rep 1 0.900  reps 2-3 1.000  misleading 5/8  fixed 6  broken 3 (3 of them misleading)
+  1     all 0.967  rep 1 0.900  reps 2-3 1.000  misleading 5/8  fixed 6  broken 3 (3 of them misleading)
+  chosen on rep 1: precedent_weight = 0.01 (rep 1 AC@1 1.000); held-out reps 2-3 AC@1 1.000 against 0.933 at weight 0
+    fixed at 0.01: c-1d389615b3 rep 2 loss on currencyservice: rank 1 was cartservice, is currencyservice
+    fixed at 0.01: c-3a0809d8d0 rep 3 loss on currencyservice: rank 1 was cartservice, is currencyservice
+    fixed at 0.01: c-b0f876b48e rep 2 delay on checkoutservice: rank 1 was emailservice, is checkoutservice
+    fixed at 0.01: c-d1059aa9c3 rep 3 disk on currencyservice: rank 1 was checkoutservice, is currencyservice
+    fixed at 0.01: c-d7fc5dfaee rep 1 loss on currencyservice: rank 1 was cartservice, is currencyservice
+    fixed at 0.01: c-e425dee775 rep 1 delay on checkoutservice: rank 1 was paymentservice, is checkoutservice
+  'accepted before' mark at weight 0: 78 of 90 rank-1 roots carry the mark; 78 of them are the true root, 0 are not. Unmarked rank-1 roots: 6 of 12 are the true root
+
+PART 2. across faults, at the weight Part 1 chose leave-one-out (0.01)
+merged harvest: 15.5 s, rc 0; harvested 273 batches in 15.5 s; 666 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+
+accepted the true chain of the 45 incidents with faults ['cpu', 'delay', 'disk']; scoring the 45 with faults ['loss', 'mem', 'socket']; 2 of them are misleading
+
+precedent_weight across faults: AC@1 per weight
+  0     all 0.933  rep 1 0.933  reps 2-3 0.933  misleading 2/2  fixed 0  broken 0 (0 of them misleading)
+  0.01  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 2/2  fixed 3  broken 0 (0 of them misleading)
+  0.02  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 2/2  fixed 3  broken 0 (0 of them misleading)
+  0.05  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 2/2  fixed 3  broken 0 (0 of them misleading)
+  0.1   all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 2/2  fixed 3  broken 0 (0 of them misleading)
+  0.15  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 2/2  fixed 3  broken 0 (0 of them misleading)
+  0.2   all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 2/2  fixed 3  broken 0 (0 of them misleading)
+  0.3   all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 2/2  fixed 3  broken 0 (0 of them misleading)
+  0.5   all 0.978  rep 1 1.000  reps 2-3 0.967  misleading 1/2  fixed 3  broken 1 (1 of them misleading)
+  1     all 0.978  rep 1 1.000  reps 2-3 0.967  misleading 1/2  fixed 3  broken 1 (1 of them misleading)
+  chosen on rep 1: precedent_weight = 0.01 (rep 1 AC@1 1.000); held-out reps 2-3 AC@1 1.000 against 0.933 at weight 0
+    fixed at 0.01: c-1d389615b3 rep 2 loss on currencyservice: rank 1 was cartservice, is currencyservice
+    fixed at 0.01: c-3a0809d8d0 rep 3 loss on currencyservice: rank 1 was cartservice, is currencyservice
+    fixed at 0.01: c-d7fc5dfaee rep 1 loss on currencyservice: rank 1 was cartservice, is currencyservice
+  at the Part 1 weight 0.01: AC@1 1.000 against 0.933 at weight 0; misleading 2/2 right against 2/2
+    fixed at the Part 1 weight 0.01: c-1d389615b3 rep 2 loss on currencyservice: rank 1 was cartservice, is currencyservice
+    fixed at the Part 1 weight 0.01: c-3a0809d8d0 rep 3 loss on currencyservice: rank 1 was cartservice, is currencyservice
+    fixed at the Part 1 weight 0.01: c-d7fc5dfaee rep 1 loss on currencyservice: rank 1 was cartservice, is currencyservice
+  'accepted before' mark at weight 0: 42 of 45 rank-1 roots carry the mark; 42 of them are the true root, 0 are not. Unmarked rank-1 roots: 0 of 3 are the true root
+merged harvest: 20.8 s, rc 0; harvested 273 batches in 20.6 s; 666 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+
+accepted the true chain of the 45 incidents with faults ['loss', 'mem', 'socket']; scoring the 45 with faults ['cpu', 'delay', 'disk']; 4 of them are misleading
+
+precedent_weight across faults: AC@1 per weight
+  0     all 0.933  rep 1 0.933  reps 2-3 0.933  misleading 4/4  fixed 0  broken 0 (0 of them misleading)
+  0.01  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 3  broken 0 (0 of them misleading)
+  0.02  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 3  broken 0 (0 of them misleading)
+  0.05  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 3  broken 0 (0 of them misleading)
+  0.1   all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 3  broken 0 (0 of them misleading)
+  0.15  all 1.000  rep 1 1.000  reps 2-3 1.000  misleading 4/4  fixed 3  broken 0 (0 of them misleading)
+  0.2   all 0.978  rep 1 0.933  reps 2-3 1.000  misleading 3/4  fixed 3  broken 1 (1 of them misleading)
+  0.3   all 0.956  rep 1 0.867  reps 2-3 1.000  misleading 2/4  fixed 3  broken 2 (2 of them misleading)
+  0.5   all 0.956  rep 1 0.867  reps 2-3 1.000  misleading 2/4  fixed 3  broken 2 (2 of them misleading)
+  1     all 0.956  rep 1 0.867  reps 2-3 1.000  misleading 2/4  fixed 3  broken 2 (2 of them misleading)
+  chosen on rep 1: precedent_weight = 0.01 (rep 1 AC@1 1.000); held-out reps 2-3 AC@1 1.000 against 0.933 at weight 0
+    fixed at 0.01: c-b0f876b48e rep 2 delay on checkoutservice: rank 1 was emailservice, is checkoutservice
+    fixed at 0.01: c-d1059aa9c3 rep 3 disk on currencyservice: rank 1 was checkoutservice, is currencyservice
+    fixed at 0.01: c-e425dee775 rep 1 delay on checkoutservice: rank 1 was paymentservice, is checkoutservice
+  at the Part 1 weight 0.01: AC@1 1.000 against 0.933 at weight 0; misleading 4/4 right against 4/4
+    fixed at the Part 1 weight 0.01: c-b0f876b48e rep 2 delay on checkoutservice: rank 1 was emailservice, is checkoutservice
+    fixed at the Part 1 weight 0.01: c-d1059aa9c3 rep 3 disk on currencyservice: rank 1 was checkoutservice, is currencyservice
+    fixed at the Part 1 weight 0.01: c-e425dee775 rep 1 delay on checkoutservice: rank 1 was paymentservice, is checkoutservice
+  'accepted before' mark at weight 0: 41 of 45 rank-1 roots carry the mark; 40 of them are the true root, 1 are not. Unmarked rank-1 roots: 2 of 4 are the true root

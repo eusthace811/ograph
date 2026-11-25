@@ -17,11 +17,11 @@ pub fn tools() -> Value {
     json!([
         {"name": "before", "description": "Events in the window before an incident on its application and the applications it depends on, newest first, with their signal type and strength. Start every investigation here.",
          "inputSchema": s(json!({"incident": {"type": "string", "description": "incident id like INC-5377 or an IRI"}, "window": {"type": "string", "description": "like 10m (the default) or 2h"}}), &["incident"])},
-        {"name": "chains", "description": "Correlation chains and ranked root-cause applications for an incident. Each chain is a hypothesis with its evidence, not a conclusion.",
+        {"name": "chains", "description": "Correlation chains and ranked root-cause applications for an incident. Each chain is a hypothesis with its evidence, not a conclusion. `scores` says how each link scored (time proximity, severity, known pair, where the dependency comes from) and `weakest` names the link to check first. `precedent` on an application means its root has the application and signal of the accepted cause of a similar past incident.",
          "inputSchema": s(json!({"incident": {"type": "string"}, "rank": {"type": "string", "enum": ["chain", "propagation"]}}), &["incident"])},
         {"name": "blast", "description": "Applications that depend on an application, by distance, and the business processes they support.",
          "inputSchema": s(json!({"app": {"type": "string"}}), &["app"])},
-        {"name": "similar", "description": "Past incidents that resemble this one, with their accepted causes and mitigations.",
+        {"name": "similar", "description": "Past incidents that resemble this one, with their accepted causes and mitigations, and `ruled_out`: the roots people rejected on each, with their evidence.",
          "inputSchema": s(json!({"incident": {"type": "string"}}), &["incident"])},
         {"name": "code", "description": "Where an incident points in the code: the lines behind the events before it, the commits before it and the located lines each one changed, the files its description is about, and past write-ups that resemble it. Needs a code source; ogrep failures are listed under degraded.",
          "inputSchema": s(json!({"incident": {"type": "string"}, "top": {"type": "integer", "description": "how many files and write-ups to list (default 5)"}}), &["incident"])},
@@ -52,7 +52,7 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
             if p.get("rank").and_then(Value::as_str) == Some("propagation") {
                 st.rank = RankMode::Propagation;
             }
-            let mut a = correlate::analyze(&snap, &ids, query::lookup(&snap, arg(p, "incident")?)?, &st)?;
+            let mut a = query::chains(&snap, &ids, query::lookup(&snap, arg(p, "incident")?)?, &st)?;
             let (suspects, _) = ws.fallback_suspects(&snap, &a, arg(p, "incident")?, &st);
             a.apps.truncate(5);
             if suspects.is_empty() { serde_json::to_value(a)? } else { serde_json::to_value(query::Chains { analysis: a, suspects })? }
