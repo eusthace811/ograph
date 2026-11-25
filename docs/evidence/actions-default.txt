@@ -1,0 +1,127 @@
+Phase 13, lane V: `actions` on by default on `discussions` sources (lane-v-actions, from
+integrate-phase-13 74b3696).
+
+GATE, written and committed before any code change or model run (2026-11-25)
+---------------------------------------------------------------------------
+The default of `actions` on a `discussions` source changes from false to true only if all of
+these hold. An explicit `actions = false` must keep working. `known_apps` stays off; it is used
+only without `actions`.
+
+1. C1 passed. scripts/eval/action_gate.py on claude-haiku-5-5: precision 1.00, recall 1.00, 0
+   actions on ask/propose/plan threads, times exact, replay 0 calls, the broken model commits 0
+   (action-gate-haiku.txt, phase12-haiku.txt). Already met; cited, not rerun.
+
+2. Thread categories do not get worse with `actions`. The actions prompt asks for more, so this
+   is the real risk. Two arms on copies of examples/demo (generate.py, no model cache), the
+   binary of 74b3696, the [llm.extract] of phase12-haiku.txt (scripts/eval/claude_model.py,
+   claude-haiku-5-5, parallel 4). The arms differ in one line: the `discussions` source
+   (discussions/ops.json, the 16 labeled threads of threads-labels.json) has `actions = false`
+   in OFF and `actions = true` in ON. The `chat-actions` source is as in the demo in both. Each
+   arm is harvested uncached 3 times and scripts/eval/llm_gate.py runs after each harvest.
+   Pass: every ON run has accuracy >= 0.85 and an llm_gate PASS, and the ON runs' correct
+   threads in total are not fewer than the OFF runs'. A run with a refused or failed model call
+   on ops.json is NOT MEASURED and is run again once; twice is NOT MEASURED for the criterion.
+   If criterion 2 fails, the default is not flipped: DROP for the default, the option stays.
+
+3. Without a model, the flag changes no fact. A copy of examples/demo with no [llm.extract]
+   section, harvested with the new binary with the `discussions` source's `actions` absent,
+   `false` and `true`, and with the 74b3696 binary with it absent: every quad (graph, subject,
+   predicate, object, from `ograph --json sparql`) is identical apart from harvest times.
+
+4. The deterministic gates are unchanged on the new binary (docs/EVIDENCE.md, Phase 13
+   integration, and scripts/eval/run_all.sh). RCAEval cases are read through a mirror under
+   target/ (mirror_cases.py); data/rcaeval-cases is not written.
+     cargo test --workspace passes; cargo clippy --all-targets reports nothing
+     rcaeval_score.py chain AC@1 0.93 (AC@3 0.99, Avg@5 0.98)
+     similar_eval.py top-1 similar 0.92
+     replay_gate.py 0 disagreements
+     demo chains unchanged: `chains` on the demo's incidents byte for byte against 74b3696, with
+       no model, and between the ON and OFF arms of criterion 2 (operator actions are no
+       root-cause candidates, so the extra actions must not move a chain)
+     shacl_suite.py 98 of 98; chain_scores_gate.py 0 failures
+     lab_check.py 0 failures and lab_browser.mjs no script errors, on the demo and the 90-case
+       store
+   No step here calls a model: a `pi` that refuses stands first on PATH, as in the Phase 13
+   integration.
+
+5. Cost is reported, not gated: the extra model calls and claude total_cost_usd of the demo's
+   first harvest after upgrading. Measured on an OFF-arm copy (warm cache of the old default)
+   harvested again by the new binary with no `actions` key.
+
+Budget for every model call in this lane: $8 by claude's total_cost_usd.
+
+RESULTS (2026-11-25). Model calls: claude-haiku-5-5 in headless Claude Code 2.1.332 only; no
+call failed or was refused. Total $0.141 by total_cost_usd (282 calls for criterion 2, 16 for criterion 5).
+-----------------------------------------------------------------------------------------------
+1. MET. Cited: action-gate-haiku.txt, ACTION GATE: PASS.
+
+2. PASS. Accuracy on the 16 labeled threads (actions-default/llm-gate-{off,on}-{1,2,3}.txt):
+     OFF  16/16 16/16 16/16   (48 of 48)   llm_gate PASS x3
+     ON   16/16 16/16 16/16   (48 of 48)   llm_gate PASS x3
+   Every ON run: replay 47 -> 47 cache lines (0 calls), the broken model commits nothing out of
+   vocabulary, no invented application, audit 0 violations.
+   What ON adds on ops.json (unlabeled for actions, so not scored): 9 operator actions, the
+   same 9 kind/application/time in all three runs, each a done action in its thread on reading
+   (CONFIG ledger-db "Raised pool size to 200", ROLLBACK checkout "rolled back", FLAG
+   auth-service x2, CONFIG orders-api, FAILOVER web-frontend, RESTART ledger-db "restarted
+   archiving", CONFIG payments-api "reverted the setting", DEPLOY search-api "rolled out
+   search-api 1.9.0"). One more, SCALE orders-api "bumped max to 80 and the memory limit", is
+   quarantined: its quote has no word that states a SCALE. The two FLAG actions of one message
+   share one node (same application, kind and time), so `validate` counts 8 OperatorAction
+   focus nodes more, 0 violations.
+   ON against OFF, same run, binary of this lane, a refusing pi on PATH: `chains` (both rank
+   modes), `before`, `similar` of INC-4120, 4388, 4501 and `news`, `blast ledger-db`,
+   `why INC-5377` are byte-identical in all three pairs. `similar INC-5377` differs in one
+   field: INC-4120's mitigations gain "CONFIG ledger-db at 2026-11-21T06:26:40Z: Raised pool
+   size to 200". The demo's ops.json thread naming INC-4120 is dated 20 days after INC-4120
+   opened (generated data), and an action in a thread naming exactly one incident is
+   evt:during that incident whatever its time. This is the documented rule, not a change here.
+
+3. PASS. A demo copy with no [llm.extract]: 672 quads (17 harv:at quads aside, one per batch)
+   identical for the new binary with `actions` absent, false and true, and for the 74b3696
+   binary with it absent; the harvest output is identical too, apart from times
+   (sha1 of the sorted quads fe44419931d3faac738b00d87e35280db860b4e5). Without a model the
+   option asks nothing and says nothing.
+
+4. PASS, with refusing pi first on PATH.
+     cargo test --workspace     102 + 23 + 14 passed (one new test: no key asks for actions,
+                                `actions = false` does not, known_apps with actions says so);
+                                clippy --workspace --all-targets reports nothing
+     ab_compare.sh 74b3696 new  10 of 12 identical: chains INC-5377 (both modes), before,
+                                similar, blast, validate, why, rcaeval.json, rcaeval.txt,
+                                similar.txt. Different: harvest.txt and news.json, see below
+     rcaeval_score.py           chain AC@1 / AC@3 / Avg@5 0.93 / 0.99 / 0.98, per-case identical
+     similar_eval.py            82/89 = 0.92, identical
+     replay_gate.py             207/207 points agree, 0 of 18630 cases disagree, PASS
+     chain_scores_gate.py       2454 chains, 3533 links, 0 failures, PASS
+     shacl_suite.py             98 of 98
+     lab_check.py               0 failures on the demo and the 90-case store
+     lab_browser.mjs            no script errors on either
+     skill_coverage.py --no-run 0 unmentioned, 0 uncovered, PASS
+   The two differences in ab_compare are the demo's committed model cache, not a ranking
+   change. examples/demo/.ograph/cache/llm.jsonl holds pi's answers to the prompt without
+   actions. With the new default, ops.json's 16 threads miss that cache; with pi refusing they
+   are DEGRADED ("model call failed"), so ops.json keeps its 83 rule facts and loses the
+   model's categories and disc:about, and `news` counts 0 related threads instead of 2. A harvest
+   with a working pi asks 16 questions once and then is cached again (criterion 5).
+   llm_gate.py on examples/demo itself needs that one pi harvest before it can pass again.
+
+5. Cost of the demo's first harvest after upgrading (OFF run 1 copy, warm cache of the old
+   default, harvested by the new binary with no `actions` key): 16 model calls, one per
+   ops.json thread, $0.0073 on Haiku, 22 s wall with parallel 4; cache 47 -> 63 lines; the next
+   harvest makes 0 calls. chat-actions already had `actions = true`, so its 31 threads ask
+   nothing new. In any workspace the cost is one call per thread of each discussions source
+   that did not set `actions`, once; one that sets `actions = false` asks nothing.
+
+VERDICT: KEEP. `actions` is on by default; `actions = false` turns it off.
+
+FOLLOW-UP (integration, 2026-11-25)
+-----------------------------------
+examples/demo pins `actions = false` on its `discussions` source until one harvest with the demo's
+model refreshes its cache (pi is out of quota). The `chat-actions` source keeps `actions = true` as
+before, so the demo shows actions exactly as it did. With the pin, on this branch's binary, a fresh
+copy of examples/demo harvested once and then scripts/eval/llm_gate.py: 16/16 threads classified
+as labeled, replay 185 -> 185 cache lines (0 model calls), MODEL GATE: PASS.
+The extra `similar INC-5377` mitigation for INC-4120 is correct and stays: it comes from the demo
+thread "... Raised pool size to 200, latency recovered. INC-4120", which is INC-4120's recorded
+mitigation; the demo data only dates that message 19 days after the incident.

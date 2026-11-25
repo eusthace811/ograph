@@ -58,14 +58,15 @@ pub enum Source {
     Traces { path: PathBuf },
     /// JSON or JSON lines from an error tracker: one exception per record, with its stack trace.
     Errors { path: PathBuf },
-    /// `actions` also asks the model for what people did (`evt:OperatorAction`). Off by
-    /// default: it is another prompt, so it calls the model again for every thread.
+    /// `actions` also asks the model for what people did (`evt:OperatorAction`). On by
+    /// default since its gates passed (docs/EVIDENCE.md, Phase 13 lane V); `actions = false`
+    /// asks with the prompt from before actions existed.
     Discussions {
         path: PathBuf,
-        #[serde(default)]
+        #[serde(default = "yes")]
         actions: bool,
-        /// Sends each thread, without `actions`, with the catalog applications it may name by
-        /// another name. Off by default: the gate has not shown it earns its place.
+        /// Sends each thread, with `actions = false`, with the catalog applications it may name
+        /// by another name. Off by default: the gate has not shown it earns its place.
         #[serde(default)]
         known_apps: bool,
     },

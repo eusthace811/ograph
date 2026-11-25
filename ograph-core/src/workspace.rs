@@ -1024,6 +1024,36 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_discussions_source_asks_for_actions_unless_it_says_actions_false() {
+        let thread = format!(r#"[{{"ts":"{}.000100","channel":"ops","text":"INC-1: rolled back checkout to 4.0.9"}}]"#, T - 100);
+        let root = fixture("actions-default", &[("discussions", "ops.json", &thread)]);
+        let answer = r#"{"category":"UNKNOWN","sentiment":"urgent","apps":["checkout"],"calls":[],"actions":[{"kind":"ROLLBACK","app":"checkout","message":1,"quote":"rolled back checkout"}],"confidence":0.9}"#;
+        std::fs::write(root.join("answer.json"), answer).unwrap();
+        let cfg = root.join(".ograph/config.toml");
+        let model = format!("[llm.extract]\ncommand = [\"sh\", \"-c\", \"cat > '{}'; cat '{}'\"]\nmodel = \"fixture\"\n", root.join("prompt.txt").display(), root.join("answer.json").display());
+        let config = std::fs::read_to_string(&cfg).unwrap();
+        let actions = "SELECT ?a WHERE { ?a a evt:OperatorAction }";
+        let run = |config: &str| {
+            std::fs::write(&cfg, config.to_owned() + &model).unwrap();
+            let out = harvest(&root, None);
+            let degraded = out.iter().find(|o| o.graph.contains("/discussions/")).unwrap().degraded.clone();
+            (std::fs::read_to_string(root.join("prompt.txt")).unwrap(), sparql(&root, actions).len(), degraded)
+        };
+
+        let (prompt, n, degraded) = run(&config);
+        assert!(prompt.contains("[m1] INC-1: rolled back checkout") && prompt.contains("\"actions\""), "{prompt}");
+        assert_eq!((n, degraded.len()), (1, 0));
+
+        let (prompt, n, _) = run(&config.replace("path = \"ops.json\"\n", "path = \"ops.json\"\nactions = false\n"));
+        assert!(!prompt.contains("[m1]") && !prompt.contains("\"actions\""), "{prompt}");
+        assert_eq!(n, 0);
+
+        let (_, n, degraded) = run(&config.replace("path = \"ops.json\"\n", "path = \"ops.json\"\nknown_apps = true\n"));
+        assert_eq!(n, 1);
+        assert_eq!(degraded, ["known_apps = true is used only with actions = false; the threads were sent without the catalog list"]);
+    }
+
+    #[test]
     fn uses_names_the_facts_of_other_files_that_would_lose_what_they_point_at() {
         let thread = format!(r#"[{{"ts":"{}.000100","channel":"ops","text":"INC-10: rolled back checkout to 4.0.9"}}]"#, T - 100);
         let root = fixture("uses-cascade", &[("discussions", "ops.json", &thread), ("incidents", "more.json", &format!(r#"[{{"id":"INC-10","service":"checkout","opened":{T}}}]"#))]);

@@ -36,7 +36,7 @@ Usage: catalog_slice_gate.py --parent BIN --candidate BIN --demo examples/demo -
 import argparse, datetime, json, pathlib, re, shutil, statistics, subprocess, sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-SOURCES = '[[source]]\nkind = "discussions"\npath = "discussions"\n[[source]]\nkind = "discussions"\npath = "chat-actions"\n[[source]]\nkind = "discussions"\npath = "chat-mentions"\n'
+SOURCES = '[[source]]\nkind = "discussions"\npath = "discussions"\nactions = false\n[[source]]\nkind = "discussions"\npath = "chat-actions"\nactions = false\n[[source]]\nkind = "discussions"\npath = "chat-mentions"\nactions = false\n'
 APP = "https://ograph.dev/id/app/"
 
 def og(binp, root, *args):

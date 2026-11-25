@@ -28,6 +28,8 @@ path = "metrics.csv"
 [[source]]
 kind = "discussions"
 path = "discussions"
+# Its model cache holds answers to the prompt without actions; turn this on after one harvest with the model.
+actions = false
 [[source]]
 kind = "discussions"
 path = "chat-actions"

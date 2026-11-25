@@ -1,0 +1,4 @@
+target/lab-rcaeval-merged.html: 2595167 bytes, 90 incidents, 28835 bytes per incident
+checked 2308 before events, 130 top-chain links and 760 blast and before applications
+0 failures
+exit 0

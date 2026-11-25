@@ -1,0 +1,20 @@
+{
+ "page": "target/lab-demo.html",
+ "load_ms": 13,
+ "sections": 4,
+ "marks": 13,
+ "arrows": 8,
+ "nodes": 26,
+ "arrow_click": "opened c3-0-1",
+ "arrow_shot": "target/lab-demo-arrow.png",
+ "filter_click": "filtered to ledger-db: 1 of 3 lanes shown (ledger-db)",
+ "filter_shot": "target/lab-demo-filter.png",
+ "filter_clear": "0 lanes dimmed after a second click",
+ "copy_click": "ograph verdict id:chain/inc-5377-a7370ff7d4358525 reject --evidence TICKET --by \"$USER\"",
+ "dark_bg": "rgb(22, 22, 21)",
+ "dark_shot": "target/lab-demo-dark.png",
+ "phone_scroll": "390 page width at a 390 px viewport",
+ "phone_shot": "target/lab-demo-phone.png",
+ "js_errors": []
+}
+exit 0

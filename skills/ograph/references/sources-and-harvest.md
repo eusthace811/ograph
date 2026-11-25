@@ -93,10 +93,11 @@ path = "exports/news.jsonl"
 - `classify = true` on an `incidents` source asks the model (`[llm.extract]`) for each title's
   fault class (`inc:faultClass`: CPU, MEMORY, DISK, CONNECTION_POOL, ...). A class needs a quote
   from the title, or it becomes UNKNOWN, which `similar` ignores.
-- `actions = true` on a `discussions` source also asks the model for what people did in chat
-  (rollback, restart, scale, failover, flag, config, deploy) as `OPERATOR_ACTION` events, timed
-  by their message. A proposal, question or negation is quarantined, not stored. `similar`
-  lists them as mitigations; correlation leaves them out.
+- With a model, a `discussions` source also asks for what people did in chat (rollback,
+  restart, scale, failover, flag, config, deploy) as `OPERATOR_ACTION` events, timed by their
+  message. A proposal, question or negation is quarantined, not stored. `similar` lists them as
+  mitigations; correlation leaves them out. It is on by default; `actions = false` on the
+  source turns it off.
 - A typo in a key (`windw_s`, `[corelation]`) is an error, not ignored.
 - Full field lists: `docs/REFERENCE.md`, "Input formats".
 
@@ -131,6 +132,7 @@ re-harvest makes no model calls. A model's dependency needs a catalog or trace e
 
 If people in chat call applications by short names (`auth`, `notif service`, `the ledger`), and
 `disc:about` misses them with `only fuzzily matches` or `not in the catalog` in quarantine, set
-`known_apps = true` on that `discussions` source. Each thread then goes to the model with the
+`actions = false` and `known_apps = true` on that `discussions` source (`known_apps` works only
+without actions). Each thread then goes to the model with the
 catalog names it may mean. It is off by default because it is not yet proven not to add wrong
 applications; check new `disc:about` links after turning it on.

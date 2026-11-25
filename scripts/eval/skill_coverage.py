@@ -53,7 +53,7 @@ EXTRA = [
     ("status --json fields", r"`unjudged`"),
     ("history_days", r"history_days"),
     ("lab panels", r"(?s)ograph lab.{0,600}neighbourhood"),
-    ("operator actions (actions = true, OPERATOR_ACTION)", r"actions = true"),
+    ("operator actions (on by default, actions = false, OPERATOR_ACTION)", r"actions = false"),
     ("[incidents] merge policy", r"\[incidents\][^\n]*merge|merge = \{"),
 ]
 
