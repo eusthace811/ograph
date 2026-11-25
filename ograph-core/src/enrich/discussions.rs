@@ -141,8 +141,9 @@ struct Thread {
 /// One action the model reports. The model names the kind, the application, the message and
 /// the words; the time is that message's, and the evidence is that message's record. An action
 /// whose message does not exist, whose words are not in that message, whose application the
-/// thread does not name, or whose words read as a question, a plan or something not done is
-/// withheld with the reason. The gateway then checks the kind and the application.
+/// thread does not name, whose words read as a question, a plan or something not done, or whose
+/// words do not state its kind is withheld with the reason. The gateway then checks the kind and
+/// the application.
 fn action(b: &mut Batch, key: &str, a: &serde_json::Value, thread: &str, msgs: &[(i64, String, usize)], during: Option<&NamedNode>, m: &Extraction) {
     let kind = str_field(a, &["kind"]).unwrap_or("").to_uppercase();
     let name = str_field(a, &["app"]).unwrap_or("");
@@ -162,7 +163,8 @@ fn action(b: &mut Batch, key: &str, a: &serde_json::Value, thread: &str, msgs: &
     } else if let Some(why) = not_done(said, quote) {
         Some(format!("\"{quote}\" {why}, not a done action"))
     } else {
-        CUES.iter().find(|(k, _)| *k == kind).filter(|(_, cues)| !cues.iter().any(|c| quote.to_lowercase().contains(c))).map(|_| format!("\"{quote}\" does not say what a {kind} does"))
+        let q = format!(" {}", quote.to_lowercase().replace(|c: char| !(c.is_alphanumeric() || c == '_'), " "));
+        CUES.iter().find(|(k, _)| *k == kind).filter(|(_, cues)| !cues.iter().any(|c| q.contains(&format!(" {c}")))).map(|_| format!("\"{quote}\" does not say what a {kind} does"))
     };
     if let Some(reason) = refused {
         b.withhold(s, evt::ACTION_KIND, lit(kind.as_str()), &ev, m, reason);
@@ -175,16 +177,16 @@ fn action(b: &mut Batch, key: &str, a: &serde_json::Value, thread: &str, msgs: &
     }
 }
 
-/// Word stems one of which the quote of an action of each kind must hold, so a quote that only
-/// describes symptoms cannot carry an action. A kind outside this table is left to the gateway's
-/// vocabulary check.
+/// Per kind, word stems one of which must start a word of an action's quote, so a quote that
+/// only describes symptoms cannot carry an action. A kind outside this table is left to the
+/// gateway's vocabulary check.
 const CUES: &[(&str, &[&str])] = &[
     ("ROLLBACK", &["roll", "revert", "back to", "downgrad"]),
     ("RESTART", &["restart", "bounce", "reboot", "recycl", "kill", "cycled"]),
     ("SCALE", &["scal", "replica", "instance", "node", "worker", "capacity", "pod"]),
     ("FAILOVER", &["fail", "traffic", "promot", "switch", "drain", "moved", "evacuat"]),
     ("FLAG", &["flag", "flip", "toggl", "enabl", "disabl", "turned off", "turned on"]),
-    ("CONFIG", &["config", "setting", "limit", "timeout", "pool", "max", "rais", "lower", "bump", "set ", "revert", "chang"]),
+    ("CONFIG", &["config", "setting", "limit", "timeout", "pool", "max", "rais", "lower", "bump", "set", "revert", "chang"]),
     ("DEPLOY", &["deploy", "rolled out", "shipp", "releas", "hotfix", "push"]),
 ];
 

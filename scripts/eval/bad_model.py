@@ -10,7 +10,7 @@ apps = ["web-frontend", "checkout", "payments-api", "orders-api", "search-api", 
 named = sorted((m.start(), a) for a in apps for m in [re.search(re.escape(a), text)] if m)
 calls = [{"from": "checkout", "to": "ledger-db", "quote": "checkout reads ledger-db directly"}]
 if len(named) >= 2:
-    calls.append({"from": named[1][1], "to": named[0][1], "quote": text})
+    calls.append({"from": named[1][1], "to": named[0][1], "quote": re.sub(r"(?m)^\[m\d+\] ", "", text)})
 # Every answer also reports actions that must not be committed: words that are not in the
 # message, a kind outside the vocabulary, an application the thread does not name, a message
 # that does not exist, a question as if it were done, and a symptom quoted as a restart.
@@ -22,7 +22,7 @@ actions = [
     {"kind": "REBOOT", "app": first, "message": 1, "quote": m1},
     {"kind": "RESTART", "app": "made-up-service", "message": 1, "quote": m1},
     {"kind": "SCALE", "app": first, "message": 99, "quote": m1},
-    {"kind": "RESTART", "app": first, "message": 1, "quote": m1},
+    {"kind": "RESTART", "app": first, "message": 1, "quote": m1.split(",")[0]},
 ] + [{"kind": "ROLLBACK", "app": first, "message": int(n), "quote": t} for n, t in msgs if t.endswith("?")][:1]
 # Salt 0 spreads the demo threads over all six failure modes.
 k = int(hashlib.sha256(("0" + text).encode()).hexdigest(), 16) % 6

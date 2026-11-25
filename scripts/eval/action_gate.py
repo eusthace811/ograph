@@ -17,7 +17,7 @@ import argparse, collections, datetime, json, pathlib, shutil, subprocess, sys, 
 KINDS = {"ROLLBACK", "RESTART", "SCALE", "FAILOVER", "FLAG", "CONFIG", "DEPLOY"}
 APPS = {"web-frontend", "checkout", "payments-api", "orders-api", "search-api", "inventory", "auth-service", "ledger-db", "notifications", "elasticsearch"}
 Q = """SELECT ?k ?app ?at ?q ?rec WHERE { GRAPH ?g { ?a a evt:OperatorAction ; evt:actionKind ?k ; evt:on ?app ; evt:at ?at ; evt:summary ?q ; evt:sourceRecord ?rec } FILTER(CONTAINS(STR(?g), "/discussions/")) }"""
-QUARANTINE = """SELECT ?f ?r WHERE { GRAPH ?g { ?x a harv:Quarantined ; harv:fact ?f ; harv:reason ?r } FILTER(CONTAINS(STR(?g), "discussions")) FILTER(CONTAINS(?f, "action/")) }"""
+QUARANTINE = """SELECT ?f ?r WHERE { GRAPH ?g { ?x a harv:Quarantined ; harv:fact ?f ; harv:reason ?r } FILTER(CONTAINS(STR(?g), "discussions")) FILTER(CONTAINS(?f, "id:ev/action-")) }"""
 
 def og(binp, root, *args):
     p = subprocess.run([binp, "--root", str(root), *args], capture_output=True, text=True)

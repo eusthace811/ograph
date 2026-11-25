@@ -11,7 +11,7 @@ ograph ontology check
 ```
 
 ```
-ontology v1.1: 26 classes, 62 properties, 8 closed vocabularies, 132 shapes; 0 problems
+ontology v1.1: 27 classes, 64 properties, 9 closed vocabularies, 138 shapes; 0 problems
 ```
 
 It reports drift between the code and the file, such as a property the code writes that the
@@ -22,6 +22,10 @@ Version 1.1 added the code terms: the classes `evt:Commit` and `evt:Exception`, 
 `evt:revision`, `evt:changedFile` and `evt:codeLocation`, and the signals `COMMIT` and
 `EXCEPTION`. A workspace created before it needs the new `ontology.ttl` and `shapes.ttl` before
 a `code` or `errors` source is added, or their facts are quarantined.
+
+The operator-action terms came later in 1.1: the class `evt:OperatorAction`, the properties
+`evt:actionKind` (a closed vocabulary) and `evt:during`, and the signal `OPERATOR_ACTION`. A
+workspace whose `ontology.ttl` lacks them quarantines the actions a model reads from chat.
 
 ## Diff before you install a change
 
