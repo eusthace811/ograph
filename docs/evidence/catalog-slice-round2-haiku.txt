@@ -1,0 +1,70 @@
+Phase 13 lane P, round 2 of the catalog slice gate, on Haiku in Claude Code.
+
+GATE AMENDMENT, written and committed before any Haiku run (2026-11-25)
+-----------------------------------------------------------------------
+Why. pi's usage limit stopped round 2 before its first call (catalog-slice-round2.txt), and pi
+has no Anthropic login. Round 2 runs on Haiku in headless Claude Code instead.
+
+What changes: the model and the runner, nothing else. Both binaries harvest with the
+[llm.extract] command
+  ["python3", "<worktree>/scripts/eval/claude_model.py", "--model", "claude-haiku-5-5", "--cost-log", ...]
+and model name "claude:claude-haiku-5-5" (catalog_slice_gate.py --llm, --llm-label), in place of
+the demo's pi command (openai/gpt-6-luna). claude_model.py calls `claude -p` (v2.1.332) with no
+tools, no settings, no memory, no MCP servers, no skills or slash commands, no saved session,
+thinking off and a neutral working directory, the counterpart of pi's --no-tools --no-session
+--no-extensions --no-skills --no-context-files --thinking off. The model ID claude-haiku-5-5 is
+what `claude --model claude-haiku-5-5` resolves to.
+
+Unchanged: binaries (parent target/lane-p/ograph-parent from 5179213; candidate
+target/lane-p/ograph-candidate-efc41b5, efc41b5), the demo and its labels, 3 runs each,
+interleaved, fresh workspaces with no cache, and the pass conditions as written in
+catalog_slice_gate.py and docs/EVIDENCE.md, decided on held-out set B only (--decide heldout):
+mean recall of the candidate above the parent's, with the candidate's lowest run at least the
+parent's highest; mean precision not lower; mean false positives not higher; B (cache keys)
+passes. Set A and the other groups are reported, not decided on.
+
+Round 1's numbers are gpt-6-luna's and are not compared with these. A fresh output directory,
+target/lane-p/gate2-haiku; nothing of target/lane-p/gate2 (pi's) is read. A model refusal on a
+limit is retried once after a few minutes; if it refuses again the result is NOT MEASURED. Run
+once. The verdict follows the written rule: the list goes on by default only if this run passes;
+otherwise it stays KEEP-OFF. The result is Haiku's, not gpt-6-luna's.
+
+Command (from the lane-p-catalog-slice worktree):
+  python3 scripts/eval/catalog_slice_gate.py --parent target/lane-p/ograph-parent \
+    --candidate target/lane-p/ograph-candidate-efc41b5 --demo examples/demo --out target/lane-p/gate2-haiku \
+    --decide heldout --runs 3 --llm-label claude:claude-haiku-5-5 \
+    --llm '["python3", "<worktree>/scripts/eval/claude_model.py", "--model", "claude-haiku-5-5", "--cost-log", "<worktree>/target/lane-p/gate2-haiku-cost.jsonl"]'
+
+RESULT (2026-11-25): PASS on held-out set B, on claude-haiku-5-5
+-----------------------------------------------------------------
+642 model calls, all answered by claude-haiku-5-5, 0 failed; $0.246 by claude's total_cost_usd.
+Decided on `heldout` (set B, 26 labeled applications), 3 runs each:
+  parent     mean precision 1.000, mean recall 0.500 (runs 0.500-0.500), mean false positives 0.00,
+             mean real mentions quarantined 11.33
+  candidate  mean precision 1.000, mean recall 0.833 (runs 0.808-0.846), mean false positives 0.00,
+             mean real mentions quarantined 3.33
+  Recall gain beyond the spread (candidate's lowest 0.808 >= parent's highest 0.500): yes.
+  Precision not lower: yes. False positives not higher: yes. B (cache keys): exactly the 3 threads.
+Reported, not decided on: over all 109 labels the candidate's precision is 0.990-1.000 (one false
+positive in run 1, on set A) and recall 0.890-0.899, against the parent's 1.000 and 0.752-0.771.
+Round 1's precision failure (0.977 to 0.938) was gpt-6-luna on round 1's code; it is not compared.
+
+Verdict under the written rule ("turn the list on by default only if that run passes"): the
+condition is met, on Haiku. The default is not changed in this commit: the demo's configured
+model is gpt-6-luna, on which round 2 is still unmeasured, so whether to switch the default on
+Haiku's evidence is left to the maintainer. Until then the lane stays KEEP-OFF in code.
+Full output: target/lane-p/gate2-haiku.txt, copied below without the per-thread lines.
+
+B. cache keys: first harvest asked 107 threads, 35 with a known-applications list, 3 of them listing notifications; after the catalog edit the harvest asked 3: exactly those
+run 1 parent: precision 1.000 (82/82), recall 0.752 (82/109), false positives 0, real mentions quarantined 23, app names quarantined 38, model calls committed 1; ops P 18/18 R 18/20, incidents P 34/34 R 34/34, mentions P 17/17 R 17/29, heldout P 13/13 R 13/26
+run 1 candidate: precision 0.990 (98/99), recall 0.899 (98/109), false positives 1, real mentions quarantined 9, app names quarantined 22, model calls committed 1; ops P 18/18 R 18/20, incidents P 34/34 R 34/34, mentions P 24/25 R 24/29, heldout P 22/22 R 22/26
+run 2 parent: precision 1.000 (82/82), recall 0.752 (82/109), false positives 0, real mentions quarantined 25, app names quarantined 44, model calls committed 1; ops P 18/18 R 18/20, incidents P 34/34 R 34/34, mentions P 17/17 R 17/29, heldout P 13/13 R 13/26
+run 2 candidate: precision 1.000 (97/97), recall 0.890 (97/109), false positives 0, real mentions quarantined 9, app names quarantined 21, model calls committed 1; ops P 18/18 R 18/20, incidents P 34/34 R 34/34, mentions P 24/24 R 24/29, heldout P 21/21 R 21/26
+run 3 parent: precision 1.000 (84/84), recall 0.771 (84/109), false positives 0, real mentions quarantined 23, app names quarantined 41, model calls committed 3; ops P 18/18 R 18/20, incidents P 34/34 R 34/34, mentions P 19/19 R 19/29, heldout P 13/13 R 13/26
+run 3 candidate: precision 1.000 (97/97), recall 0.890 (97/109), false positives 0, real mentions quarantined 11, app names quarantined 24, model calls committed 2; ops P 18/18 R 18/20, incidents P 34/34 R 34/34, mentions P 23/23 R 23/29, heldout P 22/22 R 22/26
+decided on: heldout
+parent: mean precision 1.000, mean recall 0.500 (runs 0.500-0.500), mean false positives 0.00, mean real mentions quarantined 11.33
+candidate: mean precision 1.000, mean recall 0.833 (runs 0.808-0.846), mean false positives 0.00, mean real mentions quarantined 3.33
+A. recall gain beyond the spread: True; precision not lower: True; false positives not higher: True
+CATALOG SLICE GATE: PASS
+exit 0

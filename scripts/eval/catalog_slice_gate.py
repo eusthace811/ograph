@@ -30,6 +30,7 @@ A run whose model calls fail stops the gate as NOT MEASURED (exit 3) and keeps t
 runs, so a rerun resumes.
 
 Usage: catalog_slice_gate.py --parent BIN --candidate BIN --demo examples/demo --out DIR [--runs 3]
+           [--llm '["python3", "scripts/eval/claude_model.py", ...]' --llm-label claude:claude-haiku-5-5]
        catalog_slice_gate.py --candidate BIN --demo examples/demo --out DIR --keys-only
 """
 import argparse, datetime, json, pathlib, re, shutil, statistics, subprocess, sys
@@ -46,7 +47,7 @@ def og(binp, root, *args):
 def rows(binp, root, q):
     return json.loads(og(binp, root, "--json", "sparql", q))["rows"]
 
-def workspace(demo, d, known=False, model=None):
+def workspace(demo, d, known=False, model=None, label="echo"):
     if d.exists(): shutil.rmtree(d)
     shutil.copytree(demo, d, ignore=shutil.ignore_patterns("store.redb", "cache"))
     cfg = d / ".ograph" / "config.toml"
@@ -55,7 +56,7 @@ def workspace(demo, d, known=False, model=None):
     if known:
         text = text.replace(SOURCES, SOURCES.replace('path = "discussions"\n', 'path = "discussions"\nknown_apps = true\n').replace('path = "chat-actions"\n', 'path = "chat-actions"\nknown_apps = true\n').replace('path = "chat-mentions"\n', 'path = "chat-mentions"\nknown_apps = true\n'))
     if model:
-        text = text.split("[llm.extract]")[0] + f'[llm.extract]\ncommand = {json.dumps(model)}\nmodel = "echo"\nparallel = 4\n'
+        text = text.split("[llm.extract]")[0] + f'[llm.extract]\ncommand = {json.dumps(model)}\nmodel = {json.dumps(label)}\nparallel = 4\n'
     cfg.write_text(text)
 
 def root_key(channel, at):
@@ -96,7 +97,7 @@ def accuracy(a, labels):
             d = out / f"run{r}-{name}"
             done = d / "score.json"
             if not done.exists():
-                workspace(pathlib.Path(a.demo).resolve(), d, known=name == "candidate")
+                workspace(pathlib.Path(a.demo).resolve(), d, known=name == "candidate", model=a.llm, label=a.llm_label)
                 (d / "harvest.out").write_text(og(getattr(a, name), d, "harvest"))
                 if "model call failed" in (d / "harvest.out").read_text():
                     why = re.search(r"model call failed for thread [^:]+: (.{0,120})", (d / "harvest.out").read_text()).group(1)
@@ -158,6 +159,8 @@ def main():
     ap.add_argument("--parent"); ap.add_argument("--candidate", required=True); ap.add_argument("--demo", required=True)
     ap.add_argument("--out", required=True); ap.add_argument("--runs", type=int, default=3); ap.add_argument("--keys-only", action="store_true")
     ap.add_argument("--decide", default="ops,incidents,mentions", help="label groups the pass condition reads")
+    ap.add_argument("--llm", type=json.loads, help="JSON list: the [llm.extract] command for both binaries, instead of the demo's")
+    ap.add_argument("--llm-label", default="echo", help="the [llm.extract] model name that goes with --llm")
     a = ap.parse_args()
     a.candidate = str(pathlib.Path(a.candidate).resolve()); a.decide = a.decide.split(",")
     pathlib.Path(a.out).mkdir(parents=True, exist_ok=True)
