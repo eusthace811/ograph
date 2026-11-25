@@ -31,6 +31,10 @@ use std::path::{Path, PathBuf};
 pub type Error = redb::Error;
 pub type Result<T> = std::result::Result<T, Error>;
 
+fn read_only() -> Error {
+    redb::Error::Io(std::io::Error::other("the store is open read-only"))
+}
+
 pub fn corrupted(msg: impl Into<String>) -> Error {
     redb::Error::Corrupted(msg.into())
 }
@@ -57,8 +61,14 @@ pub enum GraphSel {
 }
 
 pub struct Store {
-    db: Database,
+    db: Db,
     path: PathBuf,
+}
+
+enum Db {
+    Write(Database),
+    /// Opened without writing the file, so a read pays no fsync (see [`Store::open_read_only`]).
+    Read(redb::ReadOnlyDatabase),
 }
 
 impl Store {
@@ -71,12 +81,20 @@ impl Store {
             .set_cache_size(cache_mb << 20)
             .set_concurrency_mode(redb::ConcurrencyMode::MultiWriter)
             .create(path)?;
-        let store = Self { db, path: path.to_owned() };
+        let store = Self { db: Db::Write(db), path: path.to_owned() };
         // Only a new file lacks the tables, so a read command opens without a commit and its fsync.
         if store.snapshot().is_err() {
             store.transact(|_| Ok(()))?;
         }
         Ok(store)
+    }
+
+    /// An existing store opened for reading only. Opening for writing marks the file open and
+    /// syncs it, which on a slow disk costs more than a short read; this does neither. A file
+    /// that needs recovery is refused, so the caller can fall back to [`Store::open`].
+    pub fn open_read_only(path: &Path) -> Result<Self> {
+        let db = Database::builder().set_concurrency_mode(redb::ConcurrencyMode::MultiWriter).open_read_only(path)?;
+        Ok(Self { db: Db::Read(db), path: path.to_owned() })
     }
 
     pub fn path(&self) -> &Path {
@@ -99,7 +117,8 @@ impl Store {
     /// Every commit is durable whatever `durable` says: redb refuses non-durable commits on a
     /// file shared between processes (see [`Store::open`]).
     pub fn transact_with<R>(&self, _durable: bool, f: impl FnOnce(&mut Tx<'_>) -> Result<R>) -> Result<R> {
-        let txn = self.db.begin_write()?;
+        let Db::Write(db) = &self.db else { return Err(read_only()) };
+        let txn = db.begin_write()?;
         let out = {
             let mut tx = Tx::open(&txn)?;
             let out = f(&mut tx)?;
@@ -116,11 +135,15 @@ impl Store {
     }
 
     pub fn snapshot(&self) -> Result<Snapshot> {
-        Snapshot::open(self.db.begin_read()?)
+        Snapshot::open(match &self.db {
+            Db::Write(db) => db.begin_read()?,
+            Db::Read(db) => db.begin_read()?,
+        })
     }
 
     pub fn compact(&mut self) -> Result<bool> {
-        Ok(self.db.compact(redb::CompactionMode::default())?)
+        let Db::Write(db) = &mut self.db else { return Err(read_only()) };
+        Ok(db.compact(redb::CompactionMode::default())?)
     }
 }
 
@@ -620,6 +643,25 @@ mod tests {
         second.transact(|tx| tx.clear_graph(g)).unwrap();
         assert_eq!(first.snapshot().unwrap().events_on(app, 0, Id::MAX).unwrap(), vec![]);
         drop((first, second));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn a_read_only_handle_sees_commits_and_leaves_the_file_alone() {
+        let (writer, g, app, path) = events("read-only", 3);
+        let modified = || std::fs::metadata(&path).unwrap().modified().unwrap();
+        let before = modified();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let reader = Store::open_read_only(&path).unwrap();
+        assert_eq!(reader.snapshot().unwrap().events_on(app, 0, Id::MAX).unwrap().len(), 3);
+        assert!(reader.transact(|_| Ok(())).is_err());
+        writer.transact(|tx| tx.clear_graph(g)).unwrap();
+        let after_commit = modified();
+        assert_eq!(reader.snapshot().unwrap().events_on(app, 0, Id::MAX).unwrap(), vec![]);
+        drop(reader);
+        assert!(after_commit > before);
+        assert_eq!(modified(), after_commit, "the reader wrote nothing");
+        drop(writer);
         let _ = std::fs::remove_file(path);
     }
 }

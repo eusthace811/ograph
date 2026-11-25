@@ -89,6 +89,21 @@ enum Cmd {
     },
     /// Provenance of every fact about a node
     Why { node: String },
+    /// Application names, aliases or IRIs (at most 5) to catalog applications, by the harvest's
+    /// matching rules
+    Resolve {
+        #[arg(required = true)]
+        mentions: Vec<String>,
+    },
+    /// Check the chain ids, incident ids, application names and IRIs an answer cites
+    #[command(name = "cite-check")]
+    CiteCheck {
+        /// The answer's file, or - for standard input
+        file: PathBuf,
+    },
+    /// Source files changed since the last full harvest, and incidents with chains but no
+    /// verdict; prints nothing when nothing is due
+    Status,
     /// Accept or reject a chain, with evidence
     Verdict {
         chain: String,
@@ -188,7 +203,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         Some(r) => r,
         None => workspace::find(&cwd).ok_or_else(|| anyhow::anyhow!("no .ograph/ here or above; run `ograph init`"))?,
     };
-    let ws = Workspace::open(&root)?;
+    let ws = if matches!(cli.cmd, Cmd::Status) { Workspace::open_reading(&root)? } else { Workspace::open(&root)? };
     let json = cli.json;
     match cli.cmd {
         Cmd::Init => unreachable!(),
@@ -386,6 +401,45 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 }
             });
             Ok(!p.facts.is_empty())
+        }
+        Cmd::Resolve { mentions } => {
+            let snap = ws.store.snapshot()?;
+            let r = query::resolve(&snap, &mentions)?;
+            print(json, &r, |r| {
+                for m in &r.results {
+                    let target = m.app.as_deref().map(|a| format!(" -> {a}")).unwrap_or_default();
+                    println!("{:<10} {}{target}  ({})", format!("{:?}", m.status).to_lowercase(), m.mention, m.rationale);
+                    if m.app.is_none() {
+                        for c in &m.candidates {
+                            println!("{:<10}   {:.3}  {}", "", c.score, c.app);
+                        }
+                    }
+                }
+                if !r.skipped.is_empty() {
+                    println!("skipped (at most {} per call): {}", query::MAX_MENTIONS, r.skipped.join(", "));
+                }
+            });
+            Ok(r.results.iter().any(|m| m.status == query::MentionStatus::Resolved))
+        }
+        Cmd::CiteCheck { file } => {
+            let text = if file.as_os_str() == "-" { std::io::read_to_string(std::io::stdin())? } else { std::fs::read_to_string(&file)? };
+            let snap = ws.store.snapshot()?;
+            let c = ograph_core::cite::check(&snap, &text)?;
+            print(json, &c, |c| {
+                for x in c {
+                    println!("{:<8} {:<9} {}  (line {}: {})", format!("{:?}", x.status).to_lowercase(), format!("{:?}", x.kind).to_lowercase(), x.cited, x.line, x.detail);
+                }
+            });
+            Ok(c.iter().all(|x| x.status == ograph_core::cite::Status::Present))
+        }
+        Cmd::Status => {
+            let s = ograph_core::status::status(&ws)?;
+            if json {
+                println!("{}", serde_json::to_string(&s)?);
+            } else if let Some(n) = s.note() {
+                println!("{n}");
+            }
+            Ok(s.due())
         }
         Cmd::Verdict { chain, decision, evidence, by } => {
             let o = ws.verdict(&chain, decision == "accept", &by, &evidence)?;

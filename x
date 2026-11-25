@@ -10,6 +10,8 @@
 #                          Windows, which Git Bash has on PATH, ~/.cargo/bin elsewhere)
 #   ./x install-skill [dir]  copy skills/ograph into dir (default ~/.claude/skills and
 #                          ~/.agents/skills)
+#   ./x install-hook [settings.json]  add a Claude Code SessionStart hook that runs
+#                          `ograph status` (default ~/.claude/settings.json; needs python3)
 #   ./x test [args]        cargo test --workspace --locked
 #   ./x vendor             cargo vendor into ./vendor; while it exists, ./x builds offline from it
 #   ./x <anything else>    passed to cargo (clippy, fmt, tree, ...)
@@ -150,6 +152,10 @@ case "$1" in
              echo "installed the ograph skill to $d/ograph"
            done
            echo "restart your agent to load it" ;;
+
+  install-hook)
+           shift
+           python3 "$HERE/scripts/agent/install_hook.py" "$@" ;;
 
   test)    shift; run_cargo test --workspace --locked "$@" ;;
 

@@ -139,6 +139,15 @@ impl Catalog {
         self.known.contains(iri)
     }
 
+    /// The entity whose name `name` extends with words that are not filler, such as
+    /// `legacy-checkout` for `checkout`: a sibling however far its score falls.
+    pub fn extended(&self, class: &'static str, name: &str) -> Option<&NamedNode> {
+        let w = words(name);
+        let mut hits: Vec<&NamedNode> = self.names.iter().filter(|((c, _), (_, k))| *c == class && k.len() < w.len() && sibling(&w, k)).map(|(_, (n, _))| n).collect();
+        hits.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        hits.first().copied()
+    }
+
     pub fn resolve(&self, class: &'static str, name: &str) -> Resolution {
         let key = norm(name);
         if key.is_empty() {
@@ -156,17 +165,59 @@ impl Catalog {
     }
 
     fn score(&self, class: &'static str, name: &str, key: &str) -> Resolution {
+        self.explain_fuzzy(class, name, key).resolution
+    }
+
+    /// [`Catalog::resolve`] with its reason and the best-scoring entities, for `ograph resolve`.
+    pub fn explain(&self, class: &'static str, name: &str) -> Match {
+        let key = norm(name);
+        if key.is_empty() {
+            return Match { resolution: Resolution::Missing, why: "an empty name".into(), candidates: vec![] };
+        }
+        if let Some((n, _)) = self.names.get(&(class, key.clone())) {
+            return Match { resolution: Resolution::Exact(n.clone()), why: "exact name or alias".into(), candidates: vec![(n.clone(), 1.0)] };
+        }
+        self.explain_fuzzy(class, name, &key)
+    }
+
+    fn explain_fuzzy(&self, class: &'static str, name: &str, key: &str) -> Match {
         let mut scored: Vec<(f64, &NamedNode, &[String])> =
             self.names.iter().filter(|((c, _), _)| *c == class).map(|((_, k), (n, w))| (strsim::jaro_winkler(key, k), n, w.as_slice())).collect();
         scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.as_str().cmp(b.1.as_str())));
-        let Some(&(s, n, w)) = scored.first() else { return Resolution::Missing };
-        let runner_up = scored.iter().find(|x| x.1 != n).map_or(0.0, |x| x.0);
-        match s {
-            _ if s < FUZZY_QUARANTINE => Resolution::Missing,
-            _ if s >= FUZZY_ACCEPT && s - runner_up >= FUZZY_MARGIN && !sibling(&words(name), w) => Resolution::Fuzzy(n.clone(), s),
-            _ => Resolution::Ambiguous(n.clone(), s),
+        let mut candidates: Vec<(NamedNode, f64)> = Vec::new();
+        for (s, n, _) in &scored {
+            if candidates.len() == 3 {
+                break;
+            }
+            if !candidates.iter().any(|(c, _)| c == *n) {
+                candidates.push(((*n).clone(), *s));
+            }
         }
+        let Some(&(s, n, w)) = scored.first() else { return Match { resolution: Resolution::Missing, why: "the catalog is empty".into(), candidates } };
+        let runner = scored.iter().find(|x| x.1 != n);
+        let runner_up = runner.map_or(0.0, |x| x.0);
+        let best = vocab::compact(n.as_str());
+        let (resolution, why) = if s < FUZZY_QUARANTINE {
+            (Resolution::Missing, format!("nothing close: the best, {best}, scores {s:.3}, under {FUZZY_QUARANTINE}"))
+        } else if s < FUZZY_ACCEPT {
+            (Resolution::Ambiguous(n.clone(), s), format!("only fuzzily matches {best} ({s:.3}, under {FUZZY_ACCEPT})"))
+        } else if s - runner_up < FUZZY_MARGIN {
+            let other = runner.map(|x| vocab::compact(x.1.as_str())).unwrap_or_default();
+            (Resolution::Ambiguous(n.clone(), s), format!("{best} ({s:.3}) and {other} ({runner_up:.3}) are within {FUZZY_MARGIN}"))
+        } else if sibling(&words(name), w) {
+            (Resolution::Ambiguous(n.clone(), s), format!("close to {best} ({s:.3}) but names a sibling of it"))
+        } else {
+            (Resolution::Fuzzy(n.clone(), s), format!("fuzzy match on {best} ({s:.3}), {:.3} ahead of any other", s - runner_up))
+        };
+        Match { resolution, why, candidates }
     }
+}
+
+/// How a name resolved against the catalog, why, and the best-scoring entities (at most three).
+pub struct Match {
+    pub resolution: Resolution,
+    pub why: String,
+    pub candidates: Vec<(NamedNode, f64)>,
 }
 
 /// The store as it will look after the batch commits: union minus what only the replaced graph

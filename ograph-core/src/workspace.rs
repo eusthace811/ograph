@@ -82,6 +82,9 @@ pub fn find(start: &Path) -> Option<PathBuf> {
     None
 }
 
+/// The file under `.ograph/` that holds when the last full harvest started, in Unix ms.
+pub const HARVESTED: &str = "harvested";
+
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
 }
@@ -100,13 +103,26 @@ impl Workspace {
     }
 
     pub fn open(root: &Path) -> anyhow::Result<Self> {
+        Self::open_with(root, false)
+    }
+
+    /// For commands that only read: the store opens without writing its file when it can.
+    pub fn open_reading(root: &Path) -> anyhow::Result<Self> {
+        Self::open_with(root, true)
+    }
+
+    fn open_with(root: &Path, read_only: bool) -> anyhow::Result<Self> {
         let dir = root.join(".ograph");
         anyhow::ensure!(dir.is_dir(), "no .ograph/ in {}; run `ograph init`", root.display());
         let config: Config = toml::from_str(&std::fs::read_to_string(dir.join("config.toml"))?)?;
         config.correlation.check()?;
         let read = |n: &str, d: &str| std::fs::read_to_string(dir.join(n)).unwrap_or_else(|_| d.to_owned());
         let ontology = Ontology::load(&read("ontology.ttl", crate::ontology::DEFAULT_TTL), &read("shapes.ttl", crate::ontology::DEFAULT_SHAPES))?;
-        let store = Store::open(&dir.join("store.redb"))?;
+        let path = dir.join("store.redb");
+        let store = match read_only.then(|| Store::open_read_only(&path)) {
+            Some(Ok(s)) => s,
+            _ => Store::open(&path)?,
+        };
         Ok(Self { root: root.to_owned(), dir, config, ontology, store })
     }
 
@@ -164,6 +180,7 @@ impl Workspace {
     /// is one batch through the gateway.
     pub fn harvest(&self, only: Option<&str>, mut progress: impl FnMut(&Outcome, f64)) -> anyhow::Result<Vec<Outcome>> {
         let _write = self.store.write_lock()?;
+        let started = now_ms();
         let llm = self.llm();
         let code = self.code_repos();
         let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology, code: &code };
@@ -244,6 +261,9 @@ impl Workspace {
         }
         self.prune(&chains, &kept, &kept_below)?;
         self.store.flush()?;
+        if only.is_none() {
+            std::fs::write(self.dir.join(HARVESTED), started.to_string())?;
+        }
         Ok(out)
     }
 
@@ -431,7 +451,7 @@ fn kind(s: &Source) -> &'static str {
 /// A chain by IRI, or `id:chain/<incident>-<rank>` for the chain at that rank now. A name in
 /// the rank form that is not a chain, such as a chain id from before ids were stable, means
 /// the rank.
-fn find_chain(snap: &crate::store::Snapshot, chain: &str) -> anyhow::Result<u64> {
+pub(crate) fn find_chain(snap: &crate::store::Snapshot, chain: &str) -> anyhow::Result<u64> {
     let iri = resolve_iri(chain);
     let missing = || anyhow::anyhow!("no chain {chain}; `ograph chains INCIDENT` lists them");
     let leads = snap.iri(corr::LEADS_TO)?.ok_or_else(missing)?;
@@ -769,5 +789,86 @@ mod tests {
         let mut order = [Source::Traces { path: "t".into() }, Source::Errors { path: "e".into() }, Source::Alerts { path: "a".into() }, Source::Code { path: "c".into(), since: "30d".into() }, Source::ConfigChanges { path: "g".into() }];
         order.sort();
         assert_eq!(order.iter().map(Source::name).collect::<Vec<_>>(), ["config", "code", "alerts", "traces", "errors"]);
+    }
+
+    fn two_chains() -> PathBuf {
+        let alerts = [alert("ledger-db", "PoolSaturated", T - 600), alert("payments-api", "ErrorRate", T - 300)];
+        let root = fixture(&format!("cite-{}", std::thread::current().name().unwrap_or("x").replace("::", "-")), &[("alerts", "alerts.json", &format!("[{}]", alerts.join(",")))]);
+        harvest(&root, None);
+        root
+    }
+
+    fn cite(root: &Path, text: &str) -> Vec<(String, String, String)> {
+        let ws = Workspace::open(root).unwrap();
+        let c = crate::cite::check(&ws.store.snapshot().unwrap(), text).unwrap();
+        c.iter().map(|c| (format!("{:?}", c.kind), c.cited.clone(), format!("{:?}", c.status))).collect()
+    }
+
+    #[test]
+    fn cite_check_tells_present_stale_and_unknown_citations() {
+        let root = two_chains();
+        let ranked = sparql(&root, "SELECT ?c WHERE { ?c corr:rank ?r } ORDER BY ?r");
+        let (first, second) = (&ranked[0][0], &ranked[1][0]);
+        let text = format!("1. ledger-db {first}\nINC-1 and INC-9 on payments-api, ledger-service and id:app/checkout\n{second} is rank 1\nid:chain/inc-1-0123456789abcdef and id:chain/inc-1-2\n");
+        let s = |k: &str, c: &str, st: &str| (k.to_owned(), c.to_owned(), st.to_owned());
+        assert_eq!(cite(&root, &text), [
+            s("App", "ledger-db", "Present"),
+            s("Chain", first, "Present"),
+            s("Incident", "INC-1", "Present"),
+            s("Incident", "INC-9", "Unknown"),
+            s("App", "payments-api", "Present"),
+            s("App", "ledger-service", "Unknown"),
+            s("App", "id:app/checkout", "Present"),
+            s("Chain", second, "Stale"),
+            s("Chain", "id:chain/inc-1-0123456789abcdef", "Unknown"),
+            s("Chain", "id:chain/inc-1-2", "Present"),
+        ]);
+        // A narrower window drops the payments-api chain while its alert stays in the graph.
+        let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap();
+        std::fs::write(root.join(".ograph/config.toml"), config + "[correlation]\nwindow_s = 400\n").unwrap();
+        harvest(&root, None);
+        let pa = sparql(&root, "SELECT ?c WHERE { ?c corr:rank ?r }");
+        assert_eq!(pa.len(), 1);
+        let gone = if &pa[0][0] == first { second } else { first };
+        assert_eq!(cite(&root, gone), [s("Chain", gone, "Stale")]);
+    }
+
+    #[test]
+    fn status_is_silent_only_when_the_harvest_is_fresh_and_every_chain_judged() {
+        let root = fixture("status", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        let status = || crate::status::status(&Workspace::open(&root).unwrap()).unwrap();
+        let before = status();
+        assert_eq!(before.harvested_at, None);
+        assert_eq!(before.changed, [".ograph/config.toml", ".ograph/ontology.ttl", ".ograph/shapes.ttl", "alerts.json", "incidents.json"]);
+        harvest(&root, None);
+        assert!(status().changed.is_empty());
+        assert_eq!(status().unjudged, ["INC-1"]);
+        assert_eq!(status().note().unwrap(), "ograph: 1 incidents have chains but no verdict (INC-1).");
+        Workspace::open(&root).unwrap().verdict("id:chain/inc-1-1", true, "oncall", &["PM-1".into()]).unwrap();
+        assert_eq!(status().note(), None);
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(root.join("alerts.json"), format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600))).unwrap();
+        assert_eq!(status().changed, ["alerts.json"]);
+        assert!(status().note().unwrap().starts_with("ograph: the graph is stale: 1 source files changed since the harvest at "));
+        harvest(&root, None);
+        assert_eq!(status().note(), None);
+    }
+
+    #[test]
+    fn resolve_follows_the_gateway_and_stops_at_five() {
+        let root = two_chains();
+        let ws = Workspace::open(&root).unwrap();
+        let m: Vec<String> = ["ledger-db", "ledgr-db", "ledger-db-canary", "nothing-like-it", "id:app/checkout", "sixth"].map(str::to_owned).to_vec();
+        let r = crate::query::resolve(&ws.store.snapshot().unwrap(), &m).unwrap();
+        let got: Vec<(&str, String, Option<&str>)> = r.results.iter().map(|x| (x.mention.as_str(), format!("{:?}", x.status), x.app.as_deref())).collect();
+        assert_eq!(got, [
+            ("ledger-db", "Resolved".into(), Some("id:app/ledger-db")),
+            ("ledgr-db", "Resolved".into(), Some("id:app/ledger-db")),
+            ("ledger-db-canary", "Ambiguous".into(), None),
+            ("nothing-like-it", "Unresolved".into(), None),
+            ("id:app/checkout", "Resolved".into(), Some("id:app/checkout")),
+        ]);
+        assert_eq!(r.results[2].rationale, "only fuzzily matches id:app/ledger-db (0.914, under 0.93)");
+        assert_eq!(r.skipped, ["sixth"]);
     }
 }
