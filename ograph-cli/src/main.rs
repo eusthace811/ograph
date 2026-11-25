@@ -121,6 +121,9 @@ enum Cmd {
         /// coverage: where to write the proposed Turtle (default .ograph/proposed.ttl)
         #[arg(long)]
         out: Option<PathBuf>,
+        /// diff: the newer shapes.ttl (default the workspace's)
+        #[arg(long)]
+        shapes: Option<PathBuf>,
     },
     /// Write a self-contained HTML page over the graph (incidents, causes, timelines)
     Lab {
@@ -436,7 +439,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             print(json, &serde_json::json!({"quads": n, "path": path}), |_| println!("wrote {n} quads to {}", path.display()));
             Ok(n > 0)
         }
-        Cmd::Ontology { action, other, out } => {
+        Cmd::Ontology { action, other, out, shapes } => {
             if action == "coverage" {
                 let file = other.ok_or_else(|| anyhow::anyhow!("ontology coverage needs a file of questions, one per line"))?;
                 let llm = ws.llm().ok_or_else(|| anyhow::anyhow!("ontology coverage needs a model: add [llm.extract] to .ograph/config.toml"))?;
@@ -471,15 +474,32 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 });
                 Ok(p.is_empty())
             } else {
-                let other = other.ok_or_else(|| anyhow::anyhow!("ontology diff needs the other ontology.ttl"))?;
-                let newer = ograph_core::ontology::Ontology::load(&std::fs::read_to_string(other)?, ograph_core::ontology::DEFAULT_SHAPES)?;
-                let d = ws.ontology.diff(&newer);
-                print(json, &d, |d| {
-                    for x in d {
+                anyhow::ensure!(other.is_some() || shapes.is_some(), "ontology diff needs the newer ontology.ttl, --shapes FILE, or both");
+                let read = |p: Option<PathBuf>, name: &str, default: &str| -> anyhow::Result<String> {
+                    match p {
+                        Some(p) => Ok(std::fs::read_to_string(p)?),
+                        None => Ok(std::fs::read_to_string(ws.dir.join(name)).unwrap_or_else(|_| default.to_owned())),
+                    }
+                };
+                let newer = ograph_core::ontology::Ontology::load(&read(other, "ontology.ttl", ograph_core::ontology::DEFAULT_TTL)?, &read(shapes, "shapes.ttl", ograph_core::ontology::DEFAULT_SHAPES)?)?;
+                let snap = ws.store.snapshot()?;
+                let changes = ws.ontology.diff(&newer, &ograph_core::ontology::Usage::from_snapshot(&snap)?);
+                let quarantine = ograph_core::gateway::impact(&snap, &ws.ontology, &newer)?;
+                let breaks = changes.iter().any(|x| x.starts_with("BREAKING")) || !quarantine.is_empty();
+                print(json, &serde_json::json!({"changes": changes, "quarantine": quarantine}), |_| {
+                    for x in &changes {
                         println!("{x}");
                     }
+                    for q in &quarantine {
+                        println!("{} facts in {} would be quarantined", q.facts, q.graph);
+                        for (r, n) in q.reasons.iter().take(3) {
+                            println!("    {n}  {r}");
+                        }
+                    }
+                    let facts: usize = quarantine.iter().map(|q| q.facts).sum();
+                    println!("{} changes, {} breaking; a harvest under the newer ontology would quarantine {facts} stored facts in {} graphs", changes.len(), changes.iter().filter(|x| x.starts_with("BREAKING")).count(), quarantine.len());
                 });
-                Ok(!d.iter().any(|x| x.starts_with("BREAKING")))
+                Ok(!breaks)
             }
         }
         Cmd::Lab { out } => {
