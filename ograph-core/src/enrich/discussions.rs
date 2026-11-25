@@ -3,6 +3,7 @@
 //! vocabularies. The prompt is generated from the ontology, so prompt and gate cannot disagree.
 
 use super::{Ctx, json_records, parse_time, str_field};
+use crate::gateway::KnownApp;
 use crate::model::{Batch, Confidence, EntityRef, Extraction, Object, known, lit, obj, slug};
 use crate::ontology::Ontology;
 use crate::vocab::{RDF_TYPE, disc, evt, ops};
@@ -51,12 +52,51 @@ pub fn prompt(ont: &Ontology, actions: bool) -> String {
     p
 }
 
+/// The thread, then the catalog applications it may name by another name: those with a name or
+/// alias that shares a word with it, but none that it holds whole. A whole name already resolves
+/// exactly, and listing it led the model to take a plain word (git checkout, an inventory of
+/// hosts) for the application (docs/evidence/catalog-slice.txt). The list is per thread, so a
+/// catalog change asks the model again only about the threads whose list it changes; a thread
+/// with no list is sent as it always was.
+pub fn with_known<'a>(thread: &str, apps: &'a [KnownApp]) -> String {
+    let said = words(thread);
+    let named = |w: &String| said.iter().any(|t| t == w || (t.len().min(w.len()) >= 4 && (t.starts_with(w.as_str()) || w.starts_with(t.as_str()))));
+    let whole = |n: &String| {
+        let w = words(n);
+        !w.is_empty() && said.windows(w.len()).any(|x| x == w.as_slice())
+    };
+    let names = |a: &'a KnownApp| std::iter::once(&a.name).chain(&a.aliases);
+    let known: Vec<&KnownApp> = apps.iter().filter(|a| !names(a).any(whole) && names(a).flat_map(|n| words(n)).filter(|w| w.len() >= 2 && !STOP.contains(&w.as_str())).any(|w| named(&w))).collect();
+    if known.is_empty() {
+        return thread.to_owned();
+    }
+    let mut out = format!(
+        "{thread}\n\nKnown applications (from the catalog, not part of the thread; listed because a word of their name or alias appears above). \
+         When the thread refers to one of them, name it as written before the parentheses. Being listed does not mean the thread is about it:\n"
+    );
+    for a in known {
+        if a.aliases.is_empty() {
+            out.push_str(&format!("- {}\n", a.name));
+        } else {
+            out.push_str(&format!("- {} ({})\n", a.name, a.aliases.join(", ")));
+        }
+    }
+    out
+}
+
+/// Words that say what kind of thing an application is, not which one.
+const STOP: [&str; 7] = ["svc", "service", "srv", "server", "app", "api", "db"];
+
+fn words(s: &str) -> Vec<String> {
+    s.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_owned).collect()
+}
+
 fn incident_refs() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"\b(INC|SEV|PD|IR)-?\d{2,}\b").unwrap())
 }
 
-pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>, actions: bool) -> anyhow::Result<Batch> {
+pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>, actions: bool, known_apps: bool) -> anyhow::Result<Batch> {
     let mut b = Batch::new("discussions", key, "threads-v1");
     let rule = Extraction::Rule { extractor: "thread-regex".into() };
     // A thread is its channel and root timestamp: two channels can share a timestamp. Each
@@ -92,7 +132,7 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>, actions: bool) -> anyhow::
         incidents.sort_by_key(|r| crate::model::slug(r));
         incidents.dedup_by_key(|r| crate::model::slug(r));
         let during = (incidents.len() == 1).then(|| crate::model::entity("inc", incidents[0]));
-        texts.push(if actions { msgs.iter().enumerate().map(|(n, m)| format!("[m{}] {}", n + 1, m.1)).collect::<Vec<_>>().join("\n") } else { text.clone() });
+        texts.push(if actions { msgs.iter().enumerate().map(|(n, m)| format!("[m{}] {}", n + 1, m.1)).collect::<Vec<_>>().join("\n") } else if known_apps { with_known(&text, ctx.apps) } else { text.clone() });
         threads_out.push(Thread { node, ev, name, text, msgs, during });
     }
     let Some(llm) = ctx.llm else { return Ok(b) };
@@ -236,7 +276,20 @@ fn not_done(message: &str, quote: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::not_done;
+    use super::{not_done, with_known};
+    use crate::gateway::KnownApp;
+
+    #[test]
+    fn a_thread_carries_the_applications_it_shares_a_word_with() {
+        let app = |n: &str, a: &[&str]| KnownApp { name: n.into(), aliases: a.iter().map(|x| x.to_string()).collect() };
+        let apps = [app("auth-service", &[]), app("checkout", &[]), app("ledger-db", &["ledger-pg"]), app("notifications", &[]), app("payments-api", &["pay-gw"])];
+        let listed = |t: &str| with_known(t, &apps).lines().filter_map(|l| l.strip_prefix("- ")).map(str::to_owned).collect::<Vec<_>>();
+        assert_eq!(listed("auth svc and pay-gw both down"), ["auth-service"]);
+        assert_eq!(listed("git checkout fails, the ledger is full"), ["ledger-db (ledger-pg)"]);
+        assert_eq!(listed("notif queue is deep, the ledger is full"), ["ledger-db (ledger-pg)", "notifications"]);
+        assert_eq!(listed("the api service db is slow"), Vec::<String>::new());
+        assert_eq!(with_known("CardRail is down", &apps), "CardRail is down");
+    }
 
     #[test]
     fn only_a_done_action_reads_as_done() {

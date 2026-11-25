@@ -5,7 +5,7 @@ between applications: one with a quote that is not in the thread, and, when the 
 applications, the reverse of the order they appear in, quoted from the thread itself. It also
 reports actions that the checks must refuse."""
 import hashlib, json, re, sys
-text = sys.stdin.read().rsplit("The thread:\n", 1)[-1].strip()
+text = sys.stdin.read().rsplit("The thread:\n", 1)[-1].split("\n\nKnown applications", 1)[0].strip()
 apps = ["web-frontend", "checkout", "payments-api", "orders-api", "search-api", "inventory", "auth-service", "ledger-db", "notifications", "elasticsearch"]
 named = sorted((m.start(), a) for a in apps for m in [re.search(re.escape(a), text)] if m)
 calls = [{"from": "checkout", "to": "ledger-db", "quote": "checkout reads ledger-db directly"}]

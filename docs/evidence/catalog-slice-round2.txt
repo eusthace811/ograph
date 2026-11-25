@@ -1,0 +1,2 @@
+B. cache keys: first harvest asked 107 threads, 35 with a known-applications list, 3 of them listing notifications; after the catalog edit the harvest asked 3: exactly those
+run 1 parent: NOT MEASURED, model calls failed: model command failed: The ChatGPT user has reached their Subscription Sharing usage limit. Ask the user to try again aft

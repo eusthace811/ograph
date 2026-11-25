@@ -64,6 +64,10 @@ pub enum Source {
         path: PathBuf,
         #[serde(default)]
         actions: bool,
+        /// Sends each thread, without `actions`, with the catalog applications it may name by
+        /// another name. Off by default: the gate has not shown it earns its place.
+        #[serde(default)]
+        known_apps: bool,
     },
     News { path: PathBuf },
 }
@@ -150,6 +154,8 @@ pub struct Ctx<'a> {
     /// Every configured `code` repository, as an absolute path.
     pub code: &'a [PathBuf],
     pub merge: &'a records::Merge,
+    /// The catalog's applications as the naming sources of this harvest left them.
+    pub apps: &'a [crate::gateway::KnownApp],
 }
 
 /// The files a source's enricher reads: for a catalog, the operations files ogrep reads; for
@@ -249,7 +255,7 @@ pub fn harvest(source: &Source, ctx: &Ctx<'_>) -> Vec<Batch> {
             }),
             Source::Metrics { .. } => signals::metrics(&file, &key, ctx.detect),
             Source::Traces { .. } => signals::traces(&file, &key, ctx.detect),
-            Source::Discussions { actions, .. } => discussions::harvest(&file, &key, ctx, *actions),
+            Source::Discussions { actions, known_apps, .. } => discussions::harvest(&file, &key, ctx, *actions, *known_apps),
         };
         out.push(result.unwrap_or_else(|e| {
             let mut b = Batch::new(source.name(), &key, "failed");
