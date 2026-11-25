@@ -1,0 +1,12 @@
+# scripts/eval/action_gate.py on claude-haiku-5-5 (headless Claude Code 2.1.332 via scripts/eval/claude_model.py), demo copy harvested once with that model; see phase12-haiku.txt
+1. accuracy on 31 threads (25 labeled actions, 8 threads with none): committed 25, correct 25; precision 1.00, recall 1.00
+   actions committed on threads that only ask, propose or plan: 0 []
+   committed actions breaking a rule: 0 []
+   actions from the 16 unlabeled category threads (ops.json), not scored: 0
+   actions the model proposed and the checks refused, by reason: {}
+2. replay: cache lines 47 -> 47 (new model calls: 0)
+3. broken model (every action it reports is invented): committed 0, breaking a rule 0 []
+   refused, by reason: {'SHACL MinCountConstraintComponent': 149, 'does not say what a RESTART does': 25, 'is a proposal or a plan, not a done action': 2, 'is a question, not a done action': 3, 'is not in message 1': 26, 'is not in the closed vocabulary of evt:actionKind': 21, 'message 99 is not in the thread': 10, 'model confidence 0.20 is below 0.5': 32, 'the thread does not name "made-up-service"': 26}
+   audit: 0 violations (0.0 s)
+ACTION GATE: PASS
+exit 0

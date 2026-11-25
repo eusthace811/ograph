@@ -1,0 +1,42 @@
+# scripts/eval/coverage_decline_eval.py --runs 3 (uncached, the gate) on claude-haiku-5-5 (headless Claude Code 2.1.332 via scripts/eval/claude_model.py); --demo is the Haiku demo copy of phase12-haiku.txt
+baseline run 1: exit 1, 9 questions with gaps, 0 declined gaps
+   baseline proposes for 'How much revenue was lost during INC-4120?': []
+   baseline proposes for 'Which Kubernetes cluster runs payments-api?': ['KubernetesCluster', 'runs']
+   baseline proposes for 'Which customers were affected by INC-5377?': ['Customers']
+baseline run 2: exit 1, 8 questions with gaps, 0 declined gaps
+   baseline proposes for 'How much revenue was lost during INC-4120?': ['howMuchRevenueWasLost']
+   baseline proposes for 'Which Kubernetes cluster runs payments-api?': ['WhichKubernetesCluster', 'runs']
+   baseline proposes for 'Which customers were affected by INC-5377?': ['Customers', 'affectedBy']
+baseline run 3: exit 1, 9 questions with gaps, 0 declined gaps
+   baseline proposes for 'How much revenue was lost during INC-4120?': ['howMuchRevenueWasLost']
+   baseline proposes for 'Which Kubernetes cluster runs payments-api?': ['KubernetesCluster', 'runs']
+   baseline proposes for 'Which customers were affected by INC-5377?': ['Customers', 'affectedBy']
+treatment run 1: exit 1, 7 questions with gaps, 3 declined gaps
+   ops:KubernetesCluster: reappeared in proposed.ttl no; reported declined: ['Kubernetes cluster by eval']; other proposals ['runs']
+   ops:Revenue: reappeared in proposed.ttl no; reported declined: ['How much revenue was lost by eval']; other proposals []
+   ops:Customers: reappeared in proposed.ttl no; reported declined: ['customers by eval']; other proposals []
+treatment run 2: exit 1, 8 questions with gaps, 3 declined gaps
+   ops:KubernetesCluster: reappeared in proposed.ttl no; reported declined: ['Kubernetes cluster by eval']; other proposals ['runs']
+   ops:Revenue: reappeared in proposed.ttl no; reported declined: ['How much revenue was lost by eval']; other proposals []
+   ops:Customers: reappeared in proposed.ttl no; reported declined: ['customers by eval']; other proposals ['affectedBy']
+treatment run 3: exit 1, 7 questions with gaps, 3 declined gaps
+   ops:KubernetesCluster: reappeared in proposed.ttl no; reported declined: ['Kubernetes cluster by eval']; other proposals ['runs']
+   ops:Revenue: reappeared in proposed.ttl no; reported declined: ['How much revenue was lost by eval']; other proposals []
+   ops:Customers: reappeared in proposed.ttl no; reported declined: ['customers by eval']; other proposals []
+
+| question | baseline runs with a gap | treatment runs with a gap |
+|---|---|---|
+| How much error budget does search-api have left this month? | 3 | 3 |
+| Which SLO did checkout breach during the incident? | 3 | 3 |
+| Which business processes are affected if ledger-db fails? | 2 | 2 |
+| Which facts about checkout did a model propose, and with what confidence? | 1 | 1 |
+| Which feature flags are enabled for web-frontend? | 3 | 3 |
+| Which on-call engineer was paged for INC-5377? | 3 | 3 |
+| Which runbook covers ledger-db? | 3 | 3 |
+
+other questions found with a gap, summed over runs: baseline 18, treatment 18
+1. declined gaps never proposed again and reported as declined: True
+2. other gaps found as often as before: True
+3. every treatment run exits 1: True
+COVERAGE DECLINE GATE: PASS
+exit 0
