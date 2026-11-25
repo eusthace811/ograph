@@ -127,8 +127,14 @@ Inside SPARQL, escape a `/` in a prefixed name, and the dots of a version (`id:a
    had not written before: weak alone, a strong lead right after a change. OPERATOR_ACTION is
    something a person said in chat they did (a rollback, a restart); chains never start from
    one, and its time is when the message was posted.
-2. A chain is a hypothesis. Say "the strongest candidate is" with its score and evidence, never
-   "the cause is", unless a verdict accepted it.
+2. Rank 1 of `chains` is the answer to report, and it is a hypothesis: say "the strongest
+   candidate is" with its score, chain id and evidence, never "the cause is", unless a verdict
+   accepted it. Name another application only when you can quote evidence the ranking does not
+   use: a chat message or operator action, a deployment or config change no ranked chain
+   contains, a past write-up, a verdict (`precedent`, or `causes` in `similar`). Being earliest,
+   most severe or upstream is not such evidence: the ranking already weighed it. When you
+   depart, quote that evidence and keep rank 1 in the answer as the alternative. To say how sure
+   rank 1 is, read its `weakest` link and each link's `time`, `severity` and `edge`.
 3. Check `similar` before proposing a fix: a mitigation that worked before is the best lead.
 4. Run `blast` on the suspected cause to say who else is affected.
 5. Run `why` on any fact you cite, and name its source record so a person can open it.

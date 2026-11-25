@@ -21,8 +21,9 @@ id:inc/inc-5377 on checkout at 2026-11-22T22:26:40Z; scope: checkout(0) auth-ser
 - `sev` is a 0 to 1 score from the source's label: SEV1 1.00, SEV2 0.75, SEV3 0.50, SEV4 0.25
   (`why` shows the label). Deployments and config changes are SEV4 by default: their weight
   comes from timing, not severity.
-- The earliest strong events on the deepest dependency are usually the root, the later ones on
-  callers are symptoms. Changes (DEPLOYMENT, CONFIG_CHANGE) just before a symptom are leads.
+- This is a timeline, not a ranking. An early or severe event on a dependency is a lead for
+  `chains`, not the cause: `chains` already scores every event here by time, severity and the
+  dependency it crosses. Changes (DEPLOYMENT, CONFIG_CHANGE) just before a symptom are leads.
 - An episode that began before the window and was still under way counts too.
 - Nothing found? `--window 30m`, then `--window 2h`. Still nothing: say so.
 - `--json` adds `source_record` per event (`alerts.json#3`, `metrics.csv:347`), the raw record
@@ -63,6 +64,25 @@ ograph chains INC-5377
   application means people accepted that same application and signal as the cause of a
   similar past incident. Report it as support for the candidate, with the incident it names.
 - The chain id is stable across re-harvests. Use it for verdicts.
+
+Rank 1 is the answer to report. Name another application only when you can quote evidence the
+ranking does not use:
+
+- a person's chat message or an operator action that names the cause,
+- a deployment or config change that no ranked chain contains,
+- a past write-up (`code`), or a verdict (`precedent` above, `causes` in `similar`).
+
+Severity, being earliest and being upstream are not such evidence. The ranking has already
+scored the chain that starts at that event and placed it lower, so do not call rank 1 a symptom
+of it. A severity of 1.00 says the source rated the event high, not that the fault began there.
+
+To say how sure rank 1 is, read its links (`scores` in `--json`): the `weakest` one, its `time`
+and `severity` parts and its `edge`. A low time part, or an `edge` of `trace`, `other` or
+`indirect`, makes rank 1 less certain. Say so; it does not make another application the cause.
+
+When you depart from rank 1, quote the evidence and keep rank 1 in the answer as the
+alternative, with its score and chain id. Either way the cause is a hypothesis until a verdict
+accepts it: write "the strongest candidate is", never "the cause is".
 
 ## 3. Has this happened before
 
@@ -200,7 +220,8 @@ first symptom. Say so as a lead to check, not as a cause.
 ## What to report
 
 1. The timeline, newest first, minutes before the incident.
-2. The top candidates with score and chain id, called hypotheses.
+2. The top candidates with score and chain id, called hypotheses. Rank 1 first; if you name
+   another application, the evidence the ranking does not use, with rank 1 as the alternative.
 3. The similar past incident, its confirmed cause and the mitigation that worked.
 4. The blast radius: applications, business processes, other open incidents.
 5. With a `code` source: the commit, file and line behind the top candidate, if `code` found one.
