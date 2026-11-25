@@ -1,0 +1,103 @@
+OpenTelemetry demo at 8f6908eae154; services accounting, ad, agent, cart, chatbot, checkout; faults pool, disk, cert, memory, dns, queue
+36 past incidents worded as their write-ups, 36 new incidents worded differently
+
+| configuration | some answer | top-1 same service and fault | in top 3 | chance | chance given the application |
+|---|---|---|---|---|---|
+| base | 0/36 | 0/36 = 0.00 | 0/36 = 0.00 | 0.019 | 0.123 |
+| plain | 36/36 | 0/36 = 0.00 | 0/36 = 0.00 | 0.019 | 0.123 |
+| classify | 36/36 | 36/36 = 1.00 | 36/36 = 1.00 | 0.019 | 0.123 |
+| telemetry-base | 36/36 | 0/36 = 0.00 | 0/36 = 0.00 | 0.019 | 0.123 |
+| telemetry | 36/36 | 0/36 = 0.00 | 0/36 = 0.00 | 0.019 | 0.123 |
+| both | 36/36 | 36/36 = 1.00 | 36/36 = 1.00 | 0.019 | 0.123 |
+
+## base
+
+harvest: harvested 74 batches in 4.8 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/6
+  miss INC-G-000 ('accounting', 'pool') -> []
+  miss INC-G-001 ('accounting', 'disk') -> []
+  miss INC-G-002 ('accounting', 'cert') -> []
+  miss INC-G-003 ('accounting', 'memory') -> []
+  miss INC-G-004 ('accounting', 'dns') -> []
+  miss INC-G-005 ('accounting', 'queue') -> []
+  miss INC-G-006 ('ad', 'pool') -> []
+  miss INC-G-007 ('ad', 'disk') -> []
+  miss INC-G-008 ('ad', 'cert') -> []
+  miss INC-G-009 ('ad', 'memory') -> []
+  miss INC-G-010 ('ad', 'dns') -> []
+  miss INC-G-011 ('ad', 'queue') -> []
+
+## plain
+
+harvest: harvested 74 batches in 2.8 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/6
+  miss INC-G-000 ('accounting', 'pool') -> [('id:inc/inc-p-005', 1.0), ('id:inc/inc-p-004', 1.0)]
+  miss INC-G-001 ('accounting', 'disk') -> [('id:inc/inc-g-000', 1.0), ('id:inc/inc-p-005', 1.0)]
+  miss INC-G-002 ('accounting', 'cert') -> [('id:inc/inc-g-001', 1.0), ('id:inc/inc-g-000', 1.0)]
+  miss INC-G-003 ('accounting', 'memory') -> [('id:inc/inc-g-002', 1.0), ('id:inc/inc-g-001', 1.0)]
+  miss INC-G-004 ('accounting', 'dns') -> [('id:inc/inc-g-003', 1.0), ('id:inc/inc-g-002', 1.0)]
+  miss INC-G-005 ('accounting', 'queue') -> [('id:inc/inc-g-004', 1.0), ('id:inc/inc-g-003', 1.0)]
+  miss INC-G-006 ('ad', 'pool') -> [('id:inc/inc-p-011', 1.0), ('id:inc/inc-p-010', 1.0)]
+  miss INC-G-007 ('ad', 'disk') -> [('id:inc/inc-g-006', 1.0), ('id:inc/inc-p-011', 1.0)]
+  miss INC-G-008 ('ad', 'cert') -> [('id:inc/inc-g-007', 1.0), ('id:inc/inc-g-006', 1.0)]
+  miss INC-G-009 ('ad', 'memory') -> [('id:inc/inc-g-008', 1.0), ('id:inc/inc-g-007', 1.0)]
+  miss INC-G-010 ('ad', 'dns') -> [('id:inc/inc-g-009', 1.0), ('id:inc/inc-g-008', 1.0)]
+  miss INC-G-011 ('ad', 'queue') -> [('id:inc/inc-g-010', 1.0), ('id:inc/inc-g-009', 1.0)]
+
+## classify
+
+harvest: harvested 74 batches in 36.2 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+top-1 hits by fault: pool 6/6, disk 6/6, cert 6/6, memory 6/6, dns 6/6, queue 6/6
+fault class proposed, by fault (past titles | new titles):
+  pool    {'CONNECTION_POOL': 6} | {'CONNECTION_POOL': 6}
+  disk    {'DISK': 6} | {'DISK': 6}
+  cert    {'CERTIFICATE': 6} | {'CERTIFICATE': 6}
+  memory  {'MEMORY': 6} | {'MEMORY': 6}
+  dns     {'DNS': 6} | {'DNS': 6}
+  queue   {'QUEUE': 6} | {'QUEUE': 6}
+
+## telemetry-base
+
+harvest: harvested 146 batches in 10.3 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/6
+  miss INC-G-000 ('accounting', 'pool') -> [('id:inc/inc-p-005', 1.0), ('id:inc/inc-p-004', 1.0)]
+  miss INC-G-001 ('accounting', 'disk') -> [('id:inc/inc-g-000', 1.0), ('id:inc/inc-p-005', 1.0)]
+  miss INC-G-002 ('accounting', 'cert') -> [('id:inc/inc-g-001', 1.0), ('id:inc/inc-g-000', 1.0)]
+  miss INC-G-003 ('accounting', 'memory') -> [('id:inc/inc-g-002', 1.0), ('id:inc/inc-g-001', 1.0)]
+  miss INC-G-004 ('accounting', 'dns') -> [('id:inc/inc-g-003', 1.0), ('id:inc/inc-g-002', 1.0)]
+  miss INC-G-005 ('accounting', 'queue') -> [('id:inc/inc-g-004', 1.0), ('id:inc/inc-g-003', 1.0)]
+  miss INC-G-006 ('ad', 'pool') -> [('id:inc/inc-p-011', 1.0), ('id:inc/inc-p-010', 1.0)]
+  miss INC-G-007 ('ad', 'disk') -> [('id:inc/inc-g-006', 1.0), ('id:inc/inc-p-011', 1.0)]
+  miss INC-G-008 ('ad', 'cert') -> [('id:inc/inc-g-007', 1.0), ('id:inc/inc-g-006', 1.0)]
+  miss INC-G-009 ('ad', 'memory') -> [('id:inc/inc-g-008', 1.0), ('id:inc/inc-g-007', 1.0)]
+  miss INC-G-010 ('ad', 'dns') -> [('id:inc/inc-g-009', 1.0), ('id:inc/inc-g-008', 1.0)]
+  miss INC-G-011 ('ad', 'queue') -> [('id:inc/inc-g-010', 1.0), ('id:inc/inc-g-009', 1.0)]
+
+## telemetry
+
+harvest: harvested 146 batches in 6.6 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+top-1 hits by fault: pool 0/6, disk 0/6, cert 0/6, memory 0/6, dns 0/6, queue 0/6
+  miss INC-G-000 ('accounting', 'pool') -> [('id:inc/inc-p-005', 1.0), ('id:inc/inc-p-004', 1.0)]
+  miss INC-G-001 ('accounting', 'disk') -> [('id:inc/inc-g-000', 1.0), ('id:inc/inc-p-005', 1.0)]
+  miss INC-G-002 ('accounting', 'cert') -> [('id:inc/inc-g-001', 1.0), ('id:inc/inc-g-000', 1.0)]
+  miss INC-G-003 ('accounting', 'memory') -> [('id:inc/inc-g-002', 1.0), ('id:inc/inc-g-001', 1.0)]
+  miss INC-G-004 ('accounting', 'dns') -> [('id:inc/inc-g-003', 1.0), ('id:inc/inc-g-002', 1.0)]
+  miss INC-G-005 ('accounting', 'queue') -> [('id:inc/inc-g-004', 1.0), ('id:inc/inc-g-003', 1.0)]
+  miss INC-G-006 ('ad', 'pool') -> [('id:inc/inc-p-011', 1.0), ('id:inc/inc-p-010', 1.0)]
+  miss INC-G-007 ('ad', 'disk') -> [('id:inc/inc-g-006', 1.0), ('id:inc/inc-p-011', 1.0)]
+  miss INC-G-008 ('ad', 'cert') -> [('id:inc/inc-g-007', 1.0), ('id:inc/inc-g-006', 1.0)]
+  miss INC-G-009 ('ad', 'memory') -> [('id:inc/inc-g-008', 1.0), ('id:inc/inc-g-007', 1.0)]
+  miss INC-G-010 ('ad', 'dns') -> [('id:inc/inc-g-009', 1.0), ('id:inc/inc-g-008', 1.0)]
+  miss INC-G-011 ('ad', 'queue') -> [('id:inc/inc-g-010', 1.0), ('id:inc/inc-g-009', 1.0)]
+
+## both
+
+harvest: harvested 146 batches in 9.5 s; 0 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+top-1 hits by fault: pool 6/6, disk 6/6, cert 6/6, memory 6/6, dns 6/6, queue 6/6
+fault class proposed, by fault (past titles | new titles):
+  pool    {'CONNECTION_POOL': 6} | {'CONNECTION_POOL': 6}
+  disk    {'DISK': 6} | {'DISK': 6}
+  cert    {'CERTIFICATE': 6} | {'CERTIFICATE': 6}
+  memory  {'MEMORY': 6} | {'MEMORY': 6}
+  dns     {'DNS': 6} | {'DNS': 6}
+  queue   {'QUEUE': 6} | {'QUEUE': 6}

@@ -261,7 +261,7 @@ impl Workspace {
         let graphs = self.graph_names()?;
         let mut batches = Vec::new();
         // Every incident source is one batch, so an incident's fields merge across all of them.
-        let incidents: Vec<&Path> = ran.iter().filter(|s| matches!(s, Source::Incidents { .. })).map(|s| s.path()).collect();
+        let incidents: Vec<(&Path, bool)> = ran.iter().filter_map(|s| match s { Source::Incidents { path, classify } => Some((path.as_path(), *classify)), _ => None }).collect();
         let mut incidents_done = false;
         for src in &ran {
             if let Source::Incidents { .. } = src {
@@ -692,6 +692,51 @@ pub(crate) mod tests {
         let ws = Workspace::open(&root).unwrap();
         let similar = crate::query::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5).unwrap();
         assert_eq!(similar.iter().map(|s| (s.incident.as_str(), s.cause_apps.clone())).collect::<Vec<_>>(), [("id:inc/inc-1", vec!["ledger-db".to_owned()])]);
+    }
+
+    fn similar_to(root: &Path, incident: &str) -> Vec<(String, f64)> {
+        let ws = Workspace::open(root).unwrap();
+        crate::query::similar(&ws.store.snapshot().unwrap(), incident, &ws.config.correlation, 5).unwrap().into_iter().map(|s| (s.incident, s.similarity)).collect()
+    }
+
+    fn incidents(rows: &[(&str, &str, i64, &str)]) -> String {
+        let rows: Vec<String> = rows.iter().map(|(id, app, at, fault)| format!(r#"{{"id":"{id}","service":"{app}","opened":{at},"fault":"{fault}"}}"#)).collect();
+        format!("[{}]", rows.join(","))
+    }
+
+    #[test]
+    fn an_incident_without_telemetry_is_compared_by_what_it_states() {
+        let root = fixture("stated", &[]);
+        let d = 86_400;
+        std::fs::write(root.join("incidents.json"), incidents(&[("INC-1", "checkout", T, "pool"), ("INC-2", "checkout", T + d, "disk"), ("INC-3", "payments-api", T + 2 * d, "pool"), ("INC-4", "checkout", T + 3 * d, "pool")])).unwrap();
+        harvest(&root, None);
+        assert_eq!(similar_to(&root, "INC-4"), [("id:inc/inc-1".to_owned(), 1.0), ("id:inc/inc-3".to_owned(), 0.5), ("id:inc/inc-2".to_owned(), 0.5)]);
+    }
+
+    #[test]
+    fn what_an_incident_states_orders_equal_telemetry_matches() {
+        let d = 86_400;
+        let alerts: Vec<String> = [T, T + d, T + 2 * d].iter().map(|t| alert("ledger-db", "PoolSaturated", t - 600)).collect();
+        let root = fixture("fused", &[("alerts", "alerts.json", &format!("[{}]", alerts.join(",")))]);
+        std::fs::write(root.join("incidents.json"), incidents(&[("INC-1", "checkout", T, "pool"), ("INC-2", "checkout", T + d, "disk"), ("INC-3", "checkout", T + 2 * d, "pool")])).unwrap();
+        harvest(&root, None);
+        assert_eq!(similar_to(&root, "INC-3"), [("id:inc/inc-1".to_owned(), 1.0), ("id:inc/inc-2".to_owned(), 1.0)]);
+    }
+
+    #[test]
+    fn the_model_classifies_titles_and_a_class_it_cannot_quote_is_unknown() {
+        let root = fixture("classify", &[]);
+        std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-1","title":"checkout: name not resolved","service":"checkout","opened":{T}}},{{"id":"INC-2","title":"checkout errors","service":"checkout","opened":{}}}]"#, T + 60)).unwrap();
+        let model = r#"if grep -q resolved; then echo '{"fault_class":"DNS","quote":"name not resolved","confidence":0.9}'; else echo '{"fault_class":"DISK","quote":"disk full","confidence":0.9}'; fi"#;
+        let config = std::fs::read_to_string(root.join(".ograph/config.toml")).unwrap().replace("path = \"incidents.json\"\n", "path = \"incidents.json\"\nclassify = true\n");
+        std::fs::write(root.join(".ograph/config.toml"), format!("{config}[llm.extract]\ncommand = [\"sh\", \"-c\", {model:?}]\nmodel = \"stand-in\"\n")).unwrap();
+        harvest(&root, None);
+        assert_eq!(sparql(&root, "SELECT ?id ?c WHERE { ?i inc:id ?id ; inc:faultClass ?c } ORDER BY ?id"), [["INC-1", "DNS"], ["INC-2", "UNKNOWN"]]);
+        assert_eq!(violations(&root), 0);
+        std::fs::write(root.join(".ograph/config.toml"), config).unwrap();
+        let out = harvest(&root, None);
+        let degraded: Vec<&String> = out.iter().flat_map(|o| &o.degraded).collect();
+        assert_eq!(degraded, ["classify = true needs an [llm.extract] model; 2 incident titles have no fault class"]);
     }
 
     #[test]

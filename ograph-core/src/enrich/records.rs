@@ -3,7 +3,7 @@
 //! counting from 1 (an array element, or a non-blank JSON line).
 
 use super::{Ctx, Event, EvidenceRef, app, dt, event, json_records, ogrep, parse_time, rel, str_field};
-use crate::model::{Batch, EntityRef, Extraction, Object, entity, known, lit, obj, slug};
+use crate::model::{Batch, Confidence, EntityRef, Extraction, Object, entity, known, lit, obj, slug};
 use crate::vocab::{RDF_TYPE, evt, inc, ops};
 use oxrdf::NamedNode;
 use std::collections::HashMap;
@@ -22,13 +22,14 @@ fn rule(name: &str) -> Extraction {
 /// last record that states it, in file path order and then record order, so a later export of
 /// an incident updates it rather than conflicting with it. The fields are merged before the
 /// gateway checks the incident, so one harvest sees all of them. A file that cannot be read
-/// fails the whole batch, which keeps its last good facts.
-pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>) -> Batch {
+/// fails the whole batch, which keeps its last good facts. Titles from a file marked to be
+/// classified get a fault class from the model.
+pub fn incidents(files: &[(PathBuf, String, bool)], mut degraded: Vec<String>, ctx: &Ctx<'_>) -> Batch {
     let mut b = Batch::new("incidents", "all", "incidents-v1");
     let mut parsed = Vec::with_capacity(files.len());
-    for (path, key) in files {
+    for (path, key, classify) in files {
         match json_records(path) {
-            Ok(records) => parsed.push((key, records)),
+            Ok(records) => parsed.push((key, *classify, records)),
             Err(e) => degraded.push(format!("{key}: {e:#}")),
         }
     }
@@ -36,18 +37,19 @@ pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>) -> Batc
         b.degraded = degraded;
         return b;
     }
-    let records: Vec<(String, IncidentRecord)> = parsed.iter().flat_map(|(key, rs)| rs.iter().enumerate().map(move |(i, r)| (format!("{key}#{}", i + 1), incident_fields(r)))).collect();
+    let records: Vec<(String, bool, IncidentRecord)> = parsed.iter().flat_map(|(key, classify, rs)| rs.iter().enumerate().map(move |(i, r)| (format!("{key}#{}", i + 1), *classify, incident_fields(r)))).collect();
     // Keyed by the node's name, so ids that differ only in case or punctuation are one incident.
-    let keys: Vec<String> = records.iter().map(|(_, (id, _))| crate::model::slug(id)).collect();
+    let keys: Vec<String> = records.iter().map(|(_, _, (id, _))| crate::model::slug(id)).collect();
     let mut last: HashMap<(&str, &str), usize> = HashMap::new();
-    for (n, (_, (_, values))) in records.iter().enumerate() {
+    for (n, (_, _, (_, values))) in records.iter().enumerate() {
         last.insert((keys[n].as_str(), "id"), n);
         for (p, _) in values {
             last.insert((keys[n].as_str(), *p), n);
         }
     }
     let m = rule("incident-export");
-    for (n, (record, (id, values))) in records.iter().enumerate() {
+    let mut titles = Vec::new();
+    for (n, (record, classify, (id, values))) in records.iter().enumerate() {
         if id.is_empty() {
             continue;
         }
@@ -59,12 +61,67 @@ pub fn incidents(files: &[(PathBuf, String)], mut degraded: Vec<String>) -> Batc
         }
         for (p, o) in values {
             if last[&(keys[n].as_str(), *p)] == n {
+                if let (true, &inc::TITLE, Object::Literal(l)) = (classify, p, o) {
+                    titles.push((s.clone(), ev.clone(), l.value().to_owned()));
+                }
                 b.add(s.clone(), p, o.clone(), &ev, &m);
             }
         }
         b.add(s, evt::SIGNAL, lit("INCIDENT"), &ev, &m);
     }
+    fault_classes(&mut b, ctx, titles);
     b
+}
+
+fn fault_prompt(ont: &crate::ontology::Ontology) -> String {
+    let mut p = String::from(
+        "You classify the fault an incident title states. Reply with one JSON object and nothing else:\n\
+         {\"fault_class\": <one value>, \"quote\": <the words of the title that state the fault, copied exactly, or null>, \"confidence\": <0 to 1>}\n\nAllowed fault_class values:\n",
+    );
+    for t in ont.vocabulary(inc::FAULT_CLASS).unwrap_or_default() {
+        match &t.definition {
+            Some(d) => p.push_str(&format!("- {}: {d}\n", t.value)),
+            None => p.push_str(&format!("- {}\n", t.value)),
+        }
+    }
+    p.push_str("\nUse only these values. When the title names only a symptom (errors, slow, down) and not the kind of fault, answer UNKNOWN with quote null; do not guess. The title:\n");
+    p
+}
+
+/// `inc:faultClass` for each title, from the model. A class the model cannot quote from the
+/// title is not stated there, so it becomes UNKNOWN; a value outside the vocabulary still goes
+/// to the gateway, which quarantines it.
+fn fault_classes(b: &mut Batch, ctx: &Ctx<'_>, titles: Vec<(EntityRef, EvidenceRef, String)>) {
+    if titles.is_empty() {
+        return;
+    }
+    let Some(llm) = ctx.llm else {
+        b.degraded.push(format!("classify = true needs an [llm.extract] model; {} incident titles have no fault class", titles.len()));
+        return;
+    };
+    let p = fault_prompt(ctx.ontology);
+    let prompt_hash = crate::llm::hash(&p);
+    let texts: Vec<String> = titles.iter().map(|t| t.2.clone()).collect();
+    let valid = ctx.ontology.vocabulary(inc::FAULT_CLASS).unwrap_or_default();
+    for ((node, ev, title), answer) in titles.into_iter().zip(llm.ask_all(&p, &texts)) {
+        let v = match answer.map(|a| crate::llm::first_json(&a).ok_or(a)) {
+            Ok(Ok(v)) => v,
+            Ok(Err(a)) => {
+                b.degraded.push(format!("model answer was not JSON: {}", a.chars().take(80).collect::<String>()));
+                continue;
+            }
+            Err(e) => {
+                b.degraded.push(format!("model call failed for incident title {title:?}: {e:#}"));
+                continue;
+            }
+        };
+        let Some(c) = str_field(&v, &["fault_class"]) else { continue };
+        let confidence = v.get("confidence").and_then(|c| c.as_f64()).and_then(Confidence::new).unwrap_or(Confidence::new(0.0).unwrap());
+        let m = Extraction::Llm { model: llm.config.model.clone(), prompt_hash: prompt_hash.clone(), confidence };
+        let stated = str_field(&v, &["quote"]).is_some_and(|q| crate::llm::quoted(&title, q));
+        let known = valid.iter().any(|t| t.value == c);
+        b.add(node, inc::FAULT_CLASS, lit(if stated || !known { c } else { "UNKNOWN" }), &ev, &m);
+    }
 }
 
 /// The id of an incident record (empty when it has none) and the fields it states.
