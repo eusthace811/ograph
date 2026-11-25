@@ -22,9 +22,9 @@ python3 scripts/eval/ambiguous_census.py --bin $B/ograph --demo examples/demo --
 python3 scripts/eval/hook_eval.py --bin $B/ograph --demo examples/demo --case data/rcaeval-cases/c-011f3b9bc3 --work target/hook-eval > $E/hook.txt
 # $E/cite-check.txt keeps the first, failing run of set "first" above these two
 for s in first fresh; do python3 scripts/eval/cite_eval.py --bin $B/ograph --demo examples/demo --work target/cite-eval --set $s > target/cite-$s.txt; done
-python3 scripts/eval/rcaeval_score.py --bin $B/ograph --cases data/rcaeval-cases --out data/rcaeval-final.json > $E/rcaeval-final.txt
+python3 scripts/eval/rcaeval_score.py --bin $B/ograph --cases data/rcaeval-cases --out target/rcaeval-final.json > $E/rcaeval-final.txt
 $B/confirm_eval data/rcaeval-cases > $E/confirm.txt
-python3 scripts/eval/similar_eval.py --bin $B/ograph --cases data/rcaeval-cases --out data/rcaeval-merged > $E/similar-eval.txt
+python3 scripts/eval/similar_eval.py --bin $B/ograph --cases data/rcaeval-cases --out target/rcaeval-merged > $E/similar-eval.txt
 C=data/rcaeval-cases/c-97bf1c72d2
 $B/purekg_bench $C "$(python3 -c "import json;print(json.load(open('$C/incidents.json'))[0]['opened'])")" > $E/purekg.txt
 # The code gates need a clone of a repository with services, code and history, for example
@@ -46,9 +46,16 @@ python3 scripts/eval/rcaeval_score.py --bin $B/ograph --cases $M --out target/rc
 python3 scripts/eval/chain_scores_gate.py --bin $B/ograph --cases $M --reuse --also examples/demo > target/chain-scores-gate.txt
 python3 scripts/eval/precedent_eval.py --bin $B/ograph --cases $M --out target/precedent > $E/precedent.txt
 python3 scripts/eval/incident_conflicts_eval.py --bin $B/ograph --demo examples/demo --cases $M --work target/incident-conflicts > $E/incident-conflicts.txt
-python3 scripts/eval/uses_gate.py --bin $B/ograph --demo examples/demo --cases data/rcaeval-cases --work target/uses-gate --merged data/rcaeval-merged > $E/uses.txt
+python3 scripts/eval/uses_gate.py --bin $B/ograph --demo examples/demo --cases data/rcaeval-cases --work target/uses-gate --merged target/rcaeval-merged > $E/uses.txt
 # $E/lab-check.txt and $E/lab-browser.txt keep the lane's notes above these outputs. The browser gate needs Chrome.
-for w in examples/demo data/rcaeval-merged; do n=$(basename $w); python3 scripts/eval/lab_check.py --bin $B/ograph --root $w --out target/lab-$n.html > target/lab-check-$n.txt; node scripts/eval/lab_browser.mjs target/lab-$n.html target/lab-$n > target/lab-browser-$n.txt; done
+for w in examples/demo target/rcaeval-merged; do n=$(basename $w); python3 scripts/eval/lab_check.py --bin $B/ograph --root $w --out target/lab-$n.html > target/lab-check-$n.txt; node scripts/eval/lab_browser.mjs target/lab-$n.html target/lab-$n > target/lab-browser-$n.txt; done
+# Phase 13. skill_coverage.py runs every ograph example of the skill on a fresh demo copy.
+python3 scripts/eval/skill_coverage.py --bin $B/ograph > $E/skill-coverage.txt
+# Dated dependencies (lane O) need an ogrep release after 0.3.0 (or ogrep's edge-dates branch) and
+# the build of integrate-phase-12 as the base:
+# python3 scripts/eval/edge_dates_gate.py --bin $B/ograph --base-bin OLD/ograph --ogrep NEW_OGREP --old-ogrep "$(which ogrep)" --work target/edge-dates-gate > $E/edge-dates-gate.txt
+# Against an earlier build, the demo, RCAEval and similar byte for byte (writes stores only under target/):
+# python3 scripts/eval/mirror_cases.py --cases data/rcaeval-cases --out target/rcaeval-cases && OGRAPH_DATA=target scripts/eval/ab_compare.sh OLD/ograph $B/ograph target/ab > target/ab.txt
 # Ontology tooling, on a copy of the demo with no model and no source that asks for one.
 rm -rf target/demo-nomodel && cp -R examples/demo target/demo-nomodel && rm -f target/demo-nomodel/.ograph/store.redb
 python3 -c "import sys; p=sys.argv[1]; t=open(p).read(); t=t[:t.index('[llm.extract]')].replace('[[source]]\nkind = \"discussions\"\npath = \"chat-actions\"\nactions = true\n',''); open(p,'w').write(t)" target/demo-nomodel/.ograph/config.toml
@@ -65,6 +72,7 @@ python3 scripts/eval/ontology_lint_eval.py --bin $B/ograph --demo target/demo-no
 # answers in WORK/llm.jsonl; --modes base,plain,telemetry-base,telemetry asks nothing.
 # [ -d data/opentelemetry-demo ] && python3 scripts/eval/similar_writeups_eval.py --bin $B/ograph --base OLD/ograph --repo data/opentelemetry-demo --work target/similar-writeups > $E/similar-writeups.txt
 # python3 scripts/eval/action_gate.py --bin $B/ograph --demo examples/demo > $E/action-gate.txt
+# python3 scripts/eval/catalog_slice_gate.py: known_apps on the demo's discussions; see its usage.
 # scripts/eval/coverage_decline_eval.py and scripts/eval/agent_rca_eval.py: see the usage in each file.
 # Not rerunnable: ruled_out_eval.py is the evidence of a setting that was dropped (ruled_out_weight).
 tail -n 3 $E/*.txt

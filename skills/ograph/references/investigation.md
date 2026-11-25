@@ -59,10 +59,10 @@ ograph chains INC-5377
   state the edge the link crosses.
 - `--json` gives per application its `score` and, when it has one, `precedent`; per chain its
   `id`, `confidence`, `scores` (one per link: `from`, `to`, `time`, `severity`, `known_pair`,
-  `edge`, `score`) and `weakest`. `edge` is where the dependency a link crosses comes from:
-  `same_app`, `catalog` (declared, or inferred by ogrep from configuration), `trace` (only
-  parent spans state it), `other`, or `indirect` (the link closes at the incident from more
-  than one hop away).
+  `edge`, `score`) and `weakest`. `edge` is `same_app`, `catalog`, `trace`, `other` or `indirect`:
+  where the dependency a link crosses comes from. `catalog` is declared, or inferred by ogrep
+  from configuration; `trace` means only parent spans state it; `indirect` means the link
+  closes at the incident from more than one hop away.
 - `--window 60m` and `--set KEY=VALUE` (any `[correlation]` key, references/verdicts.md) rank
   again under other settings without storing anything.
 - `--rank propagation` ranks by how an anomaly spread to callers. When both rankings agree,

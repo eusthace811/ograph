@@ -13,7 +13,7 @@ snap() {  # snap BIN OUT
   (cd "$2/demo" && rm -f .ograph/store.redb && "$1" harvest | sed -E 's/ \([0-9.]+ s\)//; s/in [0-9.]+ s/in X s/' > ../harvest.txt
    for q in "${QUERIES[@]}"; do "$1" $q --json 2>&1 | sed -E 's/"harvested_at":"[^"]*"//g' > "../$(echo "$q" | tr ' ' '_').json" || true; done)
   python3 scripts/eval/rcaeval_score.py --bin "$1" --cases "$D/rcaeval-cases" --out "$2/rcaeval.json" | grep -v "cases in\|harvest per case" > "$2/rcaeval.txt"
-  python3 scripts/eval/similar_eval.py --bin "$1" --cases "$D/rcaeval-cases" --out "$D/rcaeval-merged" | grep -v "merged harvest" > "$2/similar.txt"
+  python3 scripts/eval/similar_eval.py --bin "$1" --cases "$D/rcaeval-cases" --out "$2/rcaeval-merged" | grep -v "merged harvest" > "$2/similar.txt"
   python3 -c "import json,sys; d=json.load(open(sys.argv[1]))['results']; json.dump({k:{m:r for m,r in v.items() if m!='harvest_s'} for k,v in d.items()}, open(sys.argv[1],'w'), sort_keys=True)" "$2/rcaeval.json"
 }
 (cd examples/demo && python3 generate.py > /dev/null)

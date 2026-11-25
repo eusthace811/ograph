@@ -60,7 +60,7 @@ record in its own system for the raw detail.
 When a log export, an incident file or a runbook turns out to be wrong, ask what rests on it:
 
 ```bash
-ograph uses logs/2026-11-22.jsonl          # a file, or a directory of them
+ograph uses alerts.json                    # a file, or a directory of them
 ograph uses incidents.json#4               # one record, as evt:sourceRecord names it
 ```
 
