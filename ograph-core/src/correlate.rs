@@ -446,11 +446,24 @@ fn edge(s: &Snapshot, ids: &Ids, callee: Id, caller: Id) -> anyhow::Result<Edge>
     Ok(found)
 }
 
+/// The signal of what a person did (`evt:OperatorAction`). `before` lists these events, but
+/// they are no root-cause candidates: an action in the lead-up to an incident is mostly a
+/// response to symptoms that came before it opened, and a rollback or a deploy that changed the
+/// code already has its own record from the deployments source.
+pub const ACTION_SIGNAL: &str = "OPERATOR_ACTION";
+
+/// [`candidates`] without operator actions: what correlation and signatures compare.
+pub fn causes(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::Result<(Id, i64, Vec<Signal>)> {
+    let (app, t, mut cands) = candidates(s, ids, incident, st)?;
+    cands.retain(|c| c.kind != ACTION_SIGNAL);
+    Ok((app, t, cands))
+}
+
 /// Builds chains and ranks root-cause applications. `past` holds the accepted causes of similar
 /// incidents, most similar first: a root with the application and signal of one is marked with
 /// it, and gains `precedent_weight` times its similarity.
 pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[PastRoot]) -> anyhow::Result<Analysis> {
-    let (app, t, cands) = candidates(s, ids, incident, st)?;
+    let (app, t, cands) = causes(s, ids, incident, st)?;
     let incident_iri = literal(s, incident).unwrap_or_default();
     // Which application calls which, inside the scope: a link may go from an event on X to an
     // event on X or on a caller of X.

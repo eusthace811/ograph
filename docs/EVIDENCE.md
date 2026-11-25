@@ -615,3 +615,34 @@ The gate was written before the model was run. `scripts/eval/similar_writeups_ev
 The first stated signature also held the applications of an incident's accepted causes. On `similar_eval.py` it raised top-1 from 0.92 to 0.94 (84 of 89), but that gain was a leak. The eval accepts every incident's true chain before it queries, so the query's own verdict picked the past incidents that share its answer. Accepted causes are no longer part of the signature, and the score is 0.92 again.
 
 Not measured: titles that word a fault more vaguely than code_eval's do, a fault outside the vocabulary, a model other than pi's default, and classifying the text of a write-up rather than a title.
+
+## Phase 12, lane C1: incident field conflicts (`incident-conflicts.txt`, `lane-c1-rcaeval.txt`)
+
+Incident records used to merge silently, the last record winning. The open time anchors the correlation window, so two exports 40 minutes apart changed the candidates and nothing said so. Now a disagreement on the open time, the resolved time, the severity or the service quarantines each value not kept, with its record and the record kept. `[incidents] merge` chooses the record per field, and `last` stays the default. The idea comes from semantica's conflict resolver, which names a strategy per property (`semantica/conflicts/conflict_resolver.py:102-111` lists most-recent and first-seen among them, `:621-648` sets a rule per property).
+
+`scripts/eval/incident_conflicts_eval.py` builds a fixture: INC-1 on checkout opened at T with SEV1 in `incidents/a.json`, and `incidents/b.json` says T+40m and SEV3. The true cause is an alert on ledger-db 10 minutes before T. A decoy alert on payments-api falls inside the window of the later time only.
+
+| Policy | `ograph why INC-1` | Top chain |
+|---|---|---|
+| `last` (default) | open T+40m and SEV3 kept; T and SEV1 quarantined as `incidents/a.json#1 disagrees with incidents/b.json#1 (kept by policy last)` | payments-api (the decoy) |
+| `at = "earliest", severity = "max"` | open T and SEV1 kept; the others quarantined, naming `b.json#1` | ledger-db (the true cause) |
+
+The demo and the 90 RCAEval cases hold one record per incident, so they have 0 conflict entries. The 90 RCAEval rankings are identical to the binary before this lane (`lane-c1-rcaeval.txt`), at chain AC@1 0.93.
+
+The status is not a conflict field. Five behavior tests in `ograph-core/tests/harvest.rs` encode a later export moving an incident from open to resolved, and quarantining that would flag every normal lifecycle. A severity that escalates across exports is flagged, and `severity = "max"` keeps the escalated value.
+
+## Phase 12, lane C1: operator actions from chat (`action-gate.txt`)
+
+Netflix's TIMELINE namespace, what people did, had no class. `evt:OperatorAction` with a closed `evt:actionKind` (ROLLBACK, RESTART, SCALE, FAILOVER, FLAG, CONFIG, DEPLOY) now holds it. A `discussions` source with `actions = true` sends each thread with numbered messages, and the model reports each action with its kind, application, message number and quote. The time is that message's time and the evidence is that message's record; the model never gives a time. Code refuses an action whose message is not in the thread, whose quote is not in that message, whose application the thread does not name, whose clause is a question or holds a proposal, plan or condition word before the action or a negation right before it, or whose quote has no word that states the kind. The gateway then checks the kind and the catalog.
+
+Actions are no root-cause candidates. `before` lists them, and `similar` lists them as mitigations of the incidents they were taken in. An action before an incident opens is mostly a response to its first symptoms, and a rollback or deploy that changed code already has a deployment record. The 90 RCAEval rankings are identical to the binary before this lane (`lane-c1-rcaeval.txt`), and so are the similar-incident scores (0.92).
+
+`scripts/eval/action_gate.py` scores 31 labeled threads in `examples/demo/chat-actions/actions.json` (25 actions; 8 threads only ask, propose or plan). The pass conditions, fixed before any model run: precision at least 0.9 and recall at least 0.8 on (kind, application, time), no action on a proposal-only thread, every time equal to its message's, and no committed action from `bad_model.py`.
+
+| Check | Result |
+|---|---|
+| Broken model, which reports only invented actions | 0 committed; refusals cover every rule: words not in the message, kind outside the vocabulary, unnamed application, missing message, question, proposal, symptom quoted as a restart, low confidence. Audit 0 violations |
+| Existing model gate (`llm_gate.py`) | PASS: 16/16 categories, from the cache, since the prompt without `actions` is byte-identical to the one before |
+| Real model accuracy | Not measured. Every call failed with "the ChatGPT user has reached their Subscription Sharing usage limit" during this lane, so `action-gate.txt` reports 0 committed and FAIL |
+
+Until the accuracy run passes, `actions` is off by default. Rerun `action_gate.py` after a demo harvest once the model answers, and turn it on only if it passes. The labels and the refusal rules were written by the same author, so the rules' recall on real chat is unmeasured even then. One rule changed after a broken-model run, before any real-model run: a kind's cue must start a word, because `kill` matched `OOMKilled`.

@@ -163,7 +163,7 @@ pub struct RuledOut {
 /// alike; the sum keeps how much of the onset each application carries.
 pub fn signature(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<FxHashMap<(String, String), f64>> {
     let st = Settings { window_s: st.signature_window_s, ..st.clone() };
-    let (_, _, cands) = correlate::candidates(s, ids, i, &st)?;
+    let (_, _, cands) = correlate::causes(s, ids, i, &st)?;
     let mut sig: FxHashMap<(String, String), f64> = FxHashMap::default();
     for c in cands {
         *sig.entry((c.app_name, c.kind)).or_default() += 0.3 + 0.7 * c.severity;
@@ -236,6 +236,31 @@ fn cause_app(s: &Snapshot, ids: &Ids, e: Id) -> anyhow::Result<Option<Id>> {
         }
     }
     Ok(None)
+}
+
+/// What people did in an incident, by time: the actions whose thread names it, and the actions
+/// on its application from when it opened until it was resolved, or for the correlation window
+/// when it has no resolved time. Each reads `KIND app at TIME: words`.
+fn actions_in(s: &Snapshot, ids: &Ids, incident: Id, app: Id, at: i64, st: &Settings) -> anyhow::Result<Vec<String>> {
+    let (Some(class), Some(kind_p)) = (s.iri(evt::OPERATOR_ACTION)?, s.iri(evt::ACTION_KIND)?) else { return Ok(vec![]) };
+    let until = s.iri(inc::RESOLVED_AT)?.and_then(|p| s.object(incident, p).ok().flatten()).and_then(term::millis).unwrap_or(at + st.window_s * 1000);
+    let mut found: Vec<Id> = s.events_on(app, term::time_id(at), term::time_id(until))?.into_iter().map(|(_, e)| e).collect();
+    if let Some(p) = s.iri(evt::DURING)? {
+        found.extend(s.subjects(p, incident)?);
+    }
+    let summary = s.iri(evt::SUMMARY)?;
+    let mut out = Vec::new();
+    for e in found {
+        if !s.contains([e, ids.ty, class])? {
+            continue;
+        }
+        let (Some(t), Some(on)) = (s.object(e, ids.at)?.and_then(term::millis), s.object(e, ids.on)?) else { continue };
+        let get = |p: Option<Id>| p.and_then(|p| s.object(e, p).ok().flatten()).and_then(|v| literal(s, v)).unwrap_or_default();
+        out.push((t, format!("{} {} at {}: {}", get(Some(kind_p)), app_name(s, ids, on), term::format_millis(t), get(summary))));
+    }
+    out.sort();
+    out.dedup();
+    Ok(out.into_iter().map(|(_, m)| m).collect())
 }
 
 /// A root a verdict judged: its application and signal as the verdict kept them, so they
@@ -317,7 +342,7 @@ pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> any
             at: term::format_millis(at),
             cause_apps: causes.iter().map(|&e| cause_app(s, &ids, e)).collect::<anyhow::Result<Vec<_>>>()?.into_iter().flatten().map(|a| app_name(s, &ids, a)).collect(),
             causes: causes.iter().filter_map(|&e| literal(s, e)).map(|x| vocab::compact(&x)).collect(),
-            mitigations: mit_p.map(|p| s.objects(other, p)).transpose()?.unwrap_or_default().into_iter().filter_map(|v| literal(s, v)).collect(),
+            mitigations: mit_p.map(|p| s.objects(other, p)).transpose()?.unwrap_or_default().into_iter().filter_map(|v| literal(s, v)).chain(actions_in(s, &ids, other, app, at, st)?).collect(),
             title: title_p.and_then(|p| s.object(other, p).ok().flatten()).and_then(|v| literal(s, v)),
             ruled_out,
         });

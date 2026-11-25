@@ -48,6 +48,7 @@ evt:E2EFailure a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A synthet
 evt:NewsItem a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An external news development about a vendor or a technology we run." .
 evt:Commit a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A commit to an application's code or configuration in its repository." .
 evt:Exception a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "An error report with a stack trace from an error tracker." .
+evt:OperatorAction a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "Something a person did to a running application, such as a rollback or a restart, as a chat message reports it. Its evt:at is the time of that message: the action happened then or shortly before." .
 
 evt:at a owl:DatatypeProperty, owl:FunctionalProperty ; rdfs:domain evt:Event ; rdfs:range xsd:dateTime ; rdfs:comment "When the event happened." .
 evt:on a owl:ObjectProperty ; rdfs:domain evt:Event ; rdfs:range ops:Application ; rdfs:comment "The application the event happened on." .
@@ -65,6 +66,8 @@ evt:mentions a owl:ObjectProperty ; rdfs:domain evt:NewsItem ; rdfs:range og:Thi
 evt:revision a owl:DatatypeProperty ; rdfs:domain evt:Commit ; rdfs:range xsd:string ; rdfs:comment "The full commit id." .
 evt:changedFile a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:string ; rdfs:comment "A file a commit changed, or a deployment changed since the version before it, relative to the workspace root." .
 evt:codeLocation a owl:DatatypeProperty ; rdfs:domain evt:Event ; rdfs:range xsd:string ; rdfs:comment "The path:line of the code behind the event, with the path relative to the workspace root." .
+evt:actionKind a owl:DatatypeProperty, owl:FunctionalProperty ; rdfs:domain evt:OperatorAction ; rdfs:range xsd:string ; rdfs:comment "What kind of action a person took, from a closed vocabulary." .
+evt:during a owl:ObjectProperty ; rdfs:domain evt:OperatorAction ; rdfs:range inc:Incident ; rdfs:comment "The incident an action was taken in: the one incident its thread names." .
 
 # ---------- INCIDENT ----------
 inc:Incident a owl:Class ; rdfs:subClassOf evt:Event ; rdfs:comment "A declared incident: a disruption people tracked, with an id such as INC-4120." .
@@ -147,7 +150,17 @@ evt:signal og:vocabulary
   [ og:value "NEWS" ; rdfs:comment "An external news development." ],
   [ og:value "DEPENDENCY_CHANGE" ; rdfs:comment "A library, base image or upstream API version changed." ],
   [ og:value "COMMIT" ; rdfs:comment "A commit changed an application's code or configuration." ],
-  [ og:value "EXCEPTION" ; rdfs:comment "An error tracker reported an exception with a stack trace." ] .
+  [ og:value "EXCEPTION" ; rdfs:comment "An error tracker reported an exception with a stack trace." ],
+  [ og:value "OPERATOR_ACTION" ; rdfs:comment "A person acted on a running application: a rollback, a restart, a scale change." ] .
+
+evt:actionKind og:vocabulary
+  [ og:value "ROLLBACK" ; rdfs:comment "Went back to an earlier version of the application's code, or reverted a release." ],
+  [ og:value "RESTART" ; rdfs:comment "Restarted, bounced or recycled the application's processes, pods or hosts." ],
+  [ og:value "SCALE" ; rdfs:comment "Changed how many instances, replicas or nodes run, or their size." ],
+  [ og:value "FAILOVER" ; rdfs:comment "Moved traffic or a primary role to another region, zone, replica or cluster." ],
+  [ og:value "FLAG" ; rdfs:comment "Turned a feature flag on or off, or changed its rollout." ],
+  [ og:value "CONFIG" ; rdfs:comment "Changed or reverted a setting, limit, pool size, timeout or secret, other than a feature flag." ],
+  [ og:value "DEPLOY" ; rdfs:comment "Rolled out a new version or a hotfix of the application's code." ] .
 
 evt:severity og:vocabulary
   [ og:value "SEV1" ; rdfs:comment "Critical: customers broadly affected." ],

@@ -23,6 +23,7 @@ pub struct Config {
     pub detect: Detect,
     pub correlation: Settings,
     pub verdict: VerdictPolicy,
+    pub incidents: IncidentsSection,
     pub llm: Option<LlmSection>,
     /// How many days of removed facts `ograph compact` keeps for `--known-at` and `changes`.
     pub history_days: Option<u32>,
@@ -62,6 +63,12 @@ impl VerdictPolicy {
         }
         Ok(if given.is_empty() { vec!["(none given)".to_owned()] } else { given })
     }
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct IncidentsSection {
+    pub merge: enrich::records::Merge,
 }
 
 #[derive(Debug, Deserialize)]
@@ -156,6 +163,7 @@ impl Workspace {
         let config: Config = toml::from_str(&std::fs::read_to_string(dir.join("config.toml"))?)?;
         config.correlation.check()?;
         config.verdict.patterns()?;
+        config.incidents.merge.check()?;
         let read = |n: &str, d: &str| std::fs::read_to_string(dir.join(n)).unwrap_or_else(|_| d.to_owned());
         let ontology = Ontology::load(&read("ontology.ttl", crate::ontology::DEFAULT_TTL), &read("shapes.ttl", crate::ontology::DEFAULT_SHAPES))?;
         let store = Store::open(&dir.join("store.redb"))?;
@@ -246,7 +254,7 @@ impl Workspace {
         let _write = self.store.write_lock()?;
         let llm = self.llm();
         let code = self.code_repos();
-        let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology, code: &code };
+        let ctx = Ctx { root: &self.root, detect: &self.config.detect, llm: llm.as_ref(), ontology: &self.ontology, code: &code, merge: &self.config.incidents.merge };
         let mut sources = self.config.sources.clone();
         sources.sort();
         let ran: Vec<&Source> = sources.iter().filter(|s| only.is_none_or(|o| o == s.name() || o == kind(s))).collect();
@@ -1099,5 +1107,131 @@ pub(crate) mod tests {
         let mut order = [Source::Traces { path: "t".into() }, Source::Errors { path: "e".into() }, Source::Alerts { path: "a".into() }, Source::Code { path: "c".into(), since: "30d".into() }, Source::ConfigChanges { path: "g".into() }];
         order.sort();
         assert_eq!(order.iter().map(Source::name).collect::<Vec<_>>(), ["config", "code", "alerts", "traces", "errors"]);
+    }
+
+    /// INC-1 opened at `T` with SEV1 in incidents.json; a later export says 40 minutes later and
+    /// SEV3. The cause is an alert on ledger-db 10 minutes before `T`; a decoy alert on
+    /// payments-api falls inside the window of the later time only.
+    fn disagreeing_exports(name: &str, merge: &str) -> (PathBuf, Vec<crate::gateway::Rejection>, String) {
+        let alerts = format!("[{},{}]", alert("ledger-db", "PoolSaturated", T - 600), alert("payments-api", "ErrorRate", T + 1500));
+        let later = format!(r#"[{{"id":"INC-1","service":"checkout","opened":{},"severity":"SEV3","status":"open"}}]"#, T + 2400);
+        let root = fixture(name, &[("alerts", "alerts.json", &alerts), ("incidents", "later.json", &later)]);
+        let cfg = root.join(".ograph/config.toml");
+        std::fs::write(&cfg, std::fs::read_to_string(&cfg).unwrap() + merge).unwrap();
+        let out = harvest(&root, None);
+        let quarantined = out.iter().find(|o| o.graph.contains("/incidents/")).unwrap().quarantined.clone();
+        let ws = Workspace::open(&root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let ids = crate::correlate::Ids::new(&snap).unwrap();
+        let top = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation, &[]).unwrap().apps[0].app.clone();
+        (root, quarantined, top)
+    }
+
+    fn reasons(q: &[crate::gateway::Rejection]) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = q.iter().map(|r| (r.fact.clone(), r.reason.clone())).collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn disagreeing_exports_keep_the_last_value_and_quarantine_the_other() {
+        let (root, q, top) = disagreeing_exports("conflict-last", "");
+        assert_eq!(
+            reasons(&q),
+            [
+                ("id:inc/inc-1 evt:at \"2026-11-22T22:26:40Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime>".to_owned(), "incidents.json#1 disagrees with later.json#1 (kept by policy last)".to_owned()),
+                ("id:inc/inc-1 evt:severity \"SEV1\"".to_owned(), "incidents.json#1 disagrees with later.json#1 (kept by policy last)".to_owned()),
+            ]
+        );
+        assert_eq!(top, "payments-api");
+        let ws = Workspace::open(&root).unwrap();
+        let why = crate::query::why(&ws.store.snapshot().unwrap(), "INC-1").unwrap();
+        let at: Vec<&str> = why.facts.iter().filter(|f| f.predicate == "evt:at").map(|f| f.object.as_str()).collect();
+        assert_eq!(at, ["2026-11-22T23:06:40Z"]);
+        assert_eq!(why.quarantined.len(), 2);
+    }
+
+    #[test]
+    fn the_earliest_open_time_recovers_the_cause_the_later_export_hides() {
+        let (_, q, top) = disagreeing_exports("conflict-earliest", "[incidents]\nmerge = { at = \"earliest\", severity = \"max\" }\n");
+        assert_eq!(
+            reasons(&q),
+            [
+                ("id:inc/inc-1 evt:at \"2026-11-22T23:06:40Z\"^^<http://www.w3.org/2001/XMLSchema#dateTime>".to_owned(), "later.json#1 disagrees with incidents.json#1 (kept by policy earliest)".to_owned()),
+                ("id:inc/inc-1 evt:severity \"SEV3\"".to_owned(), "later.json#1 disagrees with incidents.json#1 (kept by policy max)".to_owned()),
+            ]
+        );
+        assert_eq!(top, "ledger-db");
+    }
+
+    #[test]
+    fn records_that_agree_are_no_conflict() {
+        let same = format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T},"severity":"SEV1","title":"Checkout down"}}]"#);
+        let root = fixture("conflict-none", &[("incidents", "later.json", &same)]);
+        let out = harvest(&root, None);
+        assert_eq!(out.iter().find(|o| o.graph.contains("/incidents/")).unwrap().quarantined.len(), 0);
+    }
+
+    #[test]
+    fn a_pick_that_does_not_fit_its_field_is_refused() {
+        let root = fixture("conflict-badpick", &[]);
+        let cfg = root.join(".ograph/config.toml");
+        std::fs::write(&cfg, std::fs::read_to_string(&cfg).unwrap() + "[incidents]\nmerge = { service = \"earliest\" }\n").unwrap();
+        assert_eq!(Workspace::open(&root).err().unwrap().to_string(), "[incidents] merge: service = \"earliest\" does not apply to service");
+    }
+
+    #[test]
+    fn a_done_action_takes_its_message_time_and_the_rest_is_quarantined() {
+        let msg = |at: i64, text: &str| format!(r#"{{"ts":"{at}.000100","thread_ts":"{}.000100","channel":"ops","text":"{text}"}}"#, T - 400);
+        let thread = format!("[{},{},{}]", msg(T - 400, "checkout errors spiking INC-10, should we roll back checkout?"), msg(T - 100, "rolled back checkout to 4.0.9"), msg(T + 60, "errors gone"));
+        let alerts = format!("[{},{}]", alert("checkout", "Latency", T - 300), alert("checkout", "Latency", T + 86_100));
+        let root = fixture("actions", &[("discussions", "ops.json", &thread), ("alerts", "alerts.json", &alerts)]);
+        std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-10","service":"checkout","opened":{T},"resolved":{}}},{{"id":"INC-11","service":"checkout","opened":{}}}]"#, T + 600, T + 86_400)).unwrap();
+        let action = |kind: &str, app: &str, n: u32, quote: &str| format!(r#"{{"kind":"{kind}","app":"{app}","message":{n},"quote":"{quote}"}}"#);
+        let actions = [
+            action("ROLLBACK", "checkout", 2, "rolled back checkout"),
+            action("ROLLBACK", "checkout", 1, "roll back checkout"),
+            action("RESTART", "checkout", 3, "restarted checkout"),
+            action("SCALE", "checkout", 7, "scaled checkout"),
+            action("FAILOVER", "made-up", 2, "rolled back checkout"),
+            action("REBOOT", "checkout", 2, "rolled back checkout"),
+            action("RESTART", "checkout", 3, "errors gone"),
+        ];
+        let answer = format!(r#"{{"category":"UNKNOWN","sentiment":"urgent","apps":[],"calls":[],"actions":[{}],"confidence":0.9}}"#, actions.join(","));
+        std::fs::write(root.join("answer.json"), answer).unwrap();
+        let cfg = root.join(".ograph/config.toml");
+        let model = format!("[llm.extract]\ncommand = [\"sh\", \"-c\", \"cat >/dev/null; cat '{}'\"]\nmodel = \"fixture\"\n", root.join("answer.json").display());
+        let config = std::fs::read_to_string(&cfg).unwrap().replace("path = \"ops.json\"\n", "path = \"ops.json\"\nactions = true\n");
+        std::fs::write(&cfg, config + &model).unwrap();
+        let out = harvest(&root, None);
+        let mut reasons: Vec<String> = out.iter().find(|o| o.graph.contains("/discussions/")).unwrap().quarantined.iter().map(|r| r.reason.clone()).collect();
+        reasons.sort();
+        assert_eq!(
+            reasons,
+            [
+                "\"REBOOT\" is not in the closed vocabulary of evt:actionKind",
+                "\"errors gone\" does not say what a RESTART does",
+                "\"restarted checkout\" is not in message 3",
+                "\"roll back checkout\" is a question, not a done action",
+            ]
+            .into_iter()
+            .chain(["SHACL MinCountConstraintComponent: an action needs its kind"; 8])
+            .chain(["message 7 is not in the thread", "the thread does not name \"made-up\""])
+            .collect::<Vec<_>>()
+        );
+        assert_eq!(violations(&root), 0);
+        assert_eq!(
+            sparql(&root, "SELECT ?k ?app ?at ?i WHERE { ?a a evt:OperatorAction ; evt:actionKind ?k ; evt:on ?app ; evt:at ?at ; evt:during ?i }"),
+            [["ROLLBACK", "id:app/checkout", "2026-11-22T22:25:00Z", "id:inc/inc-10"]]
+        );
+        let ws = Workspace::open(&root).unwrap();
+        let snap = ws.store.snapshot().unwrap();
+        let before = crate::query::before(&snap, "INC-10", 1800, 4).unwrap();
+        assert_eq!(before.events.iter().map(|e| e.signal.as_str()).collect::<Vec<_>>(), ["OPERATOR_ACTION", "ALERT"]);
+        let ids = crate::correlate::Ids::new(&snap).unwrap();
+        let chains = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-10").unwrap(), &ws.config.correlation, &[]).unwrap();
+        assert_eq!(chains.apps.iter().map(|a| a.chain.as_ref().unwrap().root.kind.as_str()).collect::<Vec<_>>(), ["ALERT"]);
+        let similar = crate::query::similar(&snap, "INC-11", &ws.config.correlation, 5).unwrap();
+        assert_eq!(similar[0].mitigations, ["ROLLBACK checkout at 2026-11-22T22:25:00Z: rolled back checkout"]);
     }
 }

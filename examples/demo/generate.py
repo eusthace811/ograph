@@ -122,6 +122,52 @@ for i, (text, _) in enumerate(THREADS):
 pathlib.Path("discussions").mkdir(exist_ok=True)
 pathlib.Path("discussions/ops.json").write_text(json.dumps(msgs, indent=1))
 pathlib.Path("threads-labels.json").write_text(json.dumps({f"{T0 - (len(THREADS) - i) * 3600}.000100": lab for i, (_, lab) in enumerate(THREADS)}, indent=1))
+# Multi-message threads with operator actions, labeled (kind, app, message number) in
+# actions-labels.json, read only by the eval. Some threads only propose, ask or plan: they
+# have no action. The last two follow past incidents, so `similar` lists what was done.
+ACTION_THREADS = [
+    (["checkout 5xx after the 4.2.0 deploy", "should we roll back checkout?", "rolled back checkout to 4.1.9, errors dropping"], [("ROLLBACK", "checkout", 3)]),
+    (["payments-api pods stuck in a crash loop", "restarted payments-api pods, they came back healthy"], [("RESTART", "payments-api", 2)]),
+    (["orders-api queue is growing", "let's scale orders-api to 20 replicas", "nah, it drained on its own"], []),
+    (["ledger-db primary is unresponsive in us-east-1a", "failed over ledger-db to the replica in us-east-1b", "writes are flowing again"], [("FAILOVER", "ledger-db", 2)]),
+    (["auth-service p99 jumped after enabling new_token_cache", "turned off the new_token_cache flag on auth-service", "latency back to normal"], [("FLAG", "auth-service", 2)]),
+    (["search-api timing out on long queries", "raised the search-api request timeout from 2s to 5s in its config"], [("CONFIG", "search-api", 2)]),
+    (["inventory has a fix for the stock bug ready", "deployed inventory 3.4.1 with the fix", "stock numbers look right now"], [("DEPLOY", "inventory", 2)]),
+    (["notifications are failing to send", "can someone restart notifications?", "I'll do it after the standup"], []),
+    (["checkout memory keeps climbing", "bounced checkout on all hosts", "memory flat again, will keep an eye on it"], [("RESTART", "checkout", 2)]),
+    (["web-frontend is slow from europe", "maybe we should fail over web-frontend to eu-west?", "no, it's the CDN, not us"], []),
+    (["elasticsearch cluster yellow", "added two data nodes to elasticsearch", "cluster green"], [("SCALE", "elasticsearch", 2)]),
+    (["payments-api error rate up after config push", "reverted the payments-api retry setting to 3", "errors gone"], [("CONFIG", "payments-api", 2)]),
+    (["orders-api 4.0 broke the export job", "we did not roll back orders-api, the job owners patched it instead"], []),
+    (["ledger-db connections maxed", "raised max_connections on ledger-db to 400", "ok", "also restarted payments-api to drop the stale pool"], [("CONFIG", "ledger-db", 2), ("RESTART", "payments-api", 4)]),
+    (["planning: next week we will fail over ledger-db to test the runbook"], []),
+    (["checkout canary looks bad", "rolled back the checkout canary", "full fleet was never touched"], [("ROLLBACK", "checkout", 2)]),
+    (["auth-service login errors", "flipped fast_login off for auth-service", "still errors", "rolled back auth-service to 2.8.0", "fixed"], [("FLAG", "auth-service", 2), ("ROLLBACK", "auth-service", 4)]),
+    (["search-api is at 90% cpu", "scaled search-api from 6 to 12 instances"], [("SCALE", "search-api", 2)]),
+    (["inventory sync is stuck", "if it doesn't recover in 10 min we restart inventory", "it recovered"], []),
+    (["notifications backlog", "scaled notifications workers to 30", "backlog cleared in 15 min"], [("SCALE", "notifications", 2)]),
+    (["web-frontend shows a blank page for some users", "deployed web-frontend 9.1.2 hotfix", "blank pages gone"], [("DEPLOY", "web-frontend", 2)]),
+    (["checkout and payments-api both erroring", "should we restart checkout or payments-api first?", "restarted payments-api first", "checkout recovered by itself"], [("RESTART", "payments-api", 3)]),
+    (["ledger-db replication lag at 20 minutes", "we could fail over ledger-db but the replica is behind too", "waiting it out"], []),
+    (["orders-api throwing NPEs after 5.2.0", "rolled back orders-api to 5.1.3", "NPEs gone"], [("ROLLBACK", "orders-api", 2)]),
+    (["auth-service rate limit too low for the sale", "bumped the auth-service rate limit to 2000 rps in config"], [("CONFIG", "auth-service", 2)]),
+    (["elasticsearch master node down", "restarted the elasticsearch master", "cluster rejoined"], [("RESTART", "elasticsearch", 2)]),
+    (["payments-api latency high", "is it worth scaling payments-api?", "not yet, let's watch it"], []),
+    (["web-frontend us-east is down", "moved web-frontend traffic to us-west", "users are back"], [("FAILOVER", "web-frontend", 2)]),
+    (["inventory feature flag reserve_v2 causing double reservations", "disabled reserve_v2 for inventory", "no more doubles"], [("FLAG", "inventory", 2)]),
+    (["INC-4388 checkout 500s after v4.1.0", "rolled back checkout to 4.0.9", "errors gone, closing"], [("ROLLBACK", "checkout", 2)]),
+    (["INC-4120 payments failing, ledger-db pool exhausted", "raised the ledger-db connection pool to 200", "payments recovering"], [("CONFIG", "ledger-db", 2)]),
+]
+TA = T0 - 30 * 86400
+roots = [TA + i * 7200 for i in range(len(ACTION_THREADS) - 2)] + [T0 - 12 * 86400 + 300, T0 - 20 * 86400 + 300]
+amsgs, alabels = [], {}
+for root, (texts, acts) in zip(roots, ACTION_THREADS):
+    ts = [f"{root + k * 120}.000200" for k in range(len(texts))]
+    amsgs += [{"ts": t, "thread_ts": ts[0], "channel": "incidents", "user": f"U{k + 2}", "text": x} for k, (t, x) in enumerate(zip(ts, texts))]
+    alabels[ts[0]] = [{"kind": k, "app": a, "ts": ts[m - 1]} for k, a, m in acts]
+pathlib.Path("chat-actions").mkdir(exist_ok=True)
+pathlib.Path("chat-actions/actions.json").write_text(json.dumps(amsgs, indent=1))
+pathlib.Path("actions-labels.json").write_text(json.dumps(alabels, indent=1))
 news = [
     {"at": NOW - 7200, "title": "CardRail reports elevated authorization latency", "summary": "CardRail says authorizations are slow for some merchants in North America", "mentions": ["CardRail"]},
     {"at": NOW - 86400, "title": "MailRelay deprecates v1 send API", "summary": "MailRelay will turn off the v1 send API in 60 days", "mentions": ["MailRelay"]},

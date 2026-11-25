@@ -1,0 +1,35 @@
+1. accuracy on 31 threads (25 labeled actions, 8 threads with none): committed 0, correct 0; precision 0.00, recall 0.00
+   missed: ('CONFIG', 'auth-service', 1792880920)
+   missed: ('CONFIG', 'ledger-db', 1792801720)
+   missed: ('CONFIG', 'ledger-db', 1793572420)
+   missed: ('CONFIG', 'payments-api', 1792787320)
+   missed: ('CONFIG', 'search-api', 1792744120)
+   missed: ('DEPLOY', 'inventory', 1792751320)
+   missed: ('DEPLOY', 'web-frontend', 1792852120)
+   missed: ('FAILOVER', 'ledger-db', 1792729720)
+   missed: ('FAILOVER', 'web-frontend', 1792902520)
+   missed: ('FLAG', 'auth-service', 1792736920)
+   missed: ('FLAG', 'auth-service', 1792823320)
+   missed: ('FLAG', 'inventory', 1792909720)
+   missed: ('RESTART', 'checkout', 1792765720)
+   missed: ('RESTART', 'elasticsearch', 1792888120)
+   missed: ('RESTART', 'payments-api', 1792715320)
+   missed: ('RESTART', 'payments-api', 1792801960)
+   missed: ('RESTART', 'payments-api', 1792859440)
+   missed: ('ROLLBACK', 'auth-service', 1792823560)
+   missed: ('ROLLBACK', 'checkout', 1792708240)
+   missed: ('ROLLBACK', 'checkout', 1792816120)
+   missed: ('ROLLBACK', 'checkout', 1794263620)
+   missed: ('ROLLBACK', 'orders-api', 1792873720)
+   missed: ('SCALE', 'elasticsearch', 1792780120)
+   missed: ('SCALE', 'notifications', 1792844920)
+   missed: ('SCALE', 'search-api', 1792830520)
+   actions committed on threads that only ask, propose or plan: 0 []
+   committed actions breaking a rule: 0 []
+   actions from the 16 unlabeled category threads (ops.json), not scored: 0
+   actions the model proposed and the checks refused, by reason: {}
+2. replay: cache lines 185 -> 185 (new model calls: 0)
+3. broken model (every action it reports is invented): committed 0, breaking a rule 0 []
+   refused, by reason: {'SHACL MinCountConstraintComponent': 149, 'does not say what a RESTART does': 25, 'is a proposal or a plan, not a done action': 2, 'is a question, not a done action': 3, 'is not in message 1': 26, 'is not in the closed vocabulary of evt:actionKind': 21, 'message 99 is not in the thread': 10, 'model confidence 0.20 is below 0.5': 32, 'the thread does not name "made-up-service"': 26}
+   audit: 0 violations (0.0 s)
+ACTION GATE: FAIL
