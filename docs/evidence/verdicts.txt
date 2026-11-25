@@ -1,0 +1,244 @@
+# Lane A2 verdict gates. Contract tests: cargo test -p ograph-core --lib -- judging_a_chain_again similar_reports_only without_a_policy the_evidence_policy replay_lists
+test workspace::tests::without_a_policy_a_verdict_needs_no_evidence ... ok
+test workspace::tests::similar_reports_only_the_current_verdict ... ok
+test workspace::tests::replay_lists_the_verdicts_other_settings_would_contradict ... ok
+test workspace::tests::the_evidence_policy_refuses_a_verdict_and_says_why ... ok
+test workspace::tests::judging_a_chain_again_keeps_every_verdict_and_the_latest_decides ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 39 filtered out; finished in 0.70s
+
+# No regression: rcaeval_score.py and similar_eval.py with target/ograph-baseline (before) and target/release/ograph (after), cases mirrored by mirror_cases.py
+## rcaeval_score.py before
+90 cases in 9 s; 0 errors []
+harvest per case: median 0.22 s, max 0.66 s
+
+All RE2-OB (90 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 0.99 | 0.98 |
+| propagation | 0.83 | 0.94 | 0.94 |
+| zmax | 0.84 | 0.97 | 0.94 |
+| sparql_meanshift | 0.63 | 0.94 | 0.89 |
+
+Tuning split (rep 1) (30 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 1.00 | 0.99 |
+| propagation | 0.77 | 0.90 | 0.90 |
+| zmax | 0.90 | 0.97 | 0.95 |
+| sparql_meanshift | 0.53 | 0.90 | 0.85 |
+
+Held-out split (reps 2-3) (60 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 0.98 | 0.98 |
+| propagation | 0.87 | 0.97 | 0.96 |
+| zmax | 0.82 | 0.97 | 0.94 |
+| sparql_meanshift | 0.68 | 0.97 | 0.90 |
+
+Fault cpu (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 1.00 | 1.00 | 1.00 |
+| propagation | 1.00 | 1.00 | 1.00 |
+| zmax | 0.93 | 1.00 | 0.99 |
+| sparql_meanshift | 0.87 | 0.93 | 0.95 |
+
+Fault delay (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.87 | 1.00 | 0.97 |
+| propagation | 0.73 | 0.93 | 0.89 |
+| zmax | 0.80 | 0.80 | 0.88 |
+| sparql_meanshift | 0.27 | 0.80 | 0.72 |
+
+Fault disk (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 1.00 | 0.99 |
+| propagation | 0.80 | 1.00 | 0.96 |
+| zmax | 1.00 | 1.00 | 1.00 |
+| sparql_meanshift | 0.93 | 1.00 | 0.99 |
+
+Fault loss (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.80 | 0.93 | 0.92 |
+| propagation | 0.67 | 0.87 | 0.88 |
+| zmax | 0.60 | 1.00 | 0.88 |
+| sparql_meanshift | 0.33 | 0.93 | 0.80 |
+
+Fault mem (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 1.00 | 1.00 | 1.00 |
+| propagation | 0.80 | 0.87 | 0.89 |
+| zmax | 0.80 | 1.00 | 0.95 |
+| sparql_meanshift | 0.53 | 1.00 | 0.89 |
+
+Fault socket (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 1.00 | 1.00 | 1.00 |
+| propagation | 1.00 | 1.00 | 1.00 |
+| zmax | 0.93 | 1.00 | 0.97 |
+| sparql_meanshift | 0.87 | 1.00 | 0.97 |
+
+Cases with traces (30 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 1.00 | 0.99 |
+| propagation | 0.77 | 0.90 | 0.90 |
+| zmax | 0.90 | 0.97 | 0.95 |
+| sparql_meanshift | 0.53 | 0.90 | 0.85 |
+## rcaeval_score.py after
+90 cases in 12 s; 0 errors []
+harvest per case: median 0.26 s, max 0.76 s
+
+All RE2-OB (90 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 0.99 | 0.98 |
+| propagation | 0.83 | 0.94 | 0.94 |
+| zmax | 0.84 | 0.97 | 0.94 |
+| sparql_meanshift | 0.63 | 0.94 | 0.89 |
+
+Tuning split (rep 1) (30 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 1.00 | 0.99 |
+| propagation | 0.77 | 0.90 | 0.90 |
+| zmax | 0.90 | 0.97 | 0.95 |
+| sparql_meanshift | 0.53 | 0.90 | 0.85 |
+
+Held-out split (reps 2-3) (60 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 0.98 | 0.98 |
+| propagation | 0.87 | 0.97 | 0.96 |
+| zmax | 0.82 | 0.97 | 0.94 |
+| sparql_meanshift | 0.68 | 0.97 | 0.90 |
+
+Fault cpu (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 1.00 | 1.00 | 1.00 |
+| propagation | 1.00 | 1.00 | 1.00 |
+| zmax | 0.93 | 1.00 | 0.99 |
+| sparql_meanshift | 0.87 | 0.93 | 0.95 |
+
+Fault delay (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.87 | 1.00 | 0.97 |
+| propagation | 0.73 | 0.93 | 0.89 |
+| zmax | 0.80 | 0.80 | 0.88 |
+| sparql_meanshift | 0.27 | 0.80 | 0.72 |
+
+Fault disk (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 1.00 | 0.99 |
+| propagation | 0.80 | 1.00 | 0.96 |
+| zmax | 1.00 | 1.00 | 1.00 |
+| sparql_meanshift | 0.93 | 1.00 | 0.99 |
+
+Fault loss (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.80 | 0.93 | 0.92 |
+| propagation | 0.67 | 0.87 | 0.88 |
+| zmax | 0.60 | 1.00 | 0.88 |
+| sparql_meanshift | 0.33 | 0.93 | 0.80 |
+
+Fault mem (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 1.00 | 1.00 | 1.00 |
+| propagation | 0.80 | 0.87 | 0.89 |
+| zmax | 0.80 | 1.00 | 0.95 |
+| sparql_meanshift | 0.53 | 1.00 | 0.89 |
+
+Fault socket (15 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 1.00 | 1.00 | 1.00 |
+| propagation | 1.00 | 1.00 | 1.00 |
+| zmax | 0.93 | 1.00 | 0.97 |
+| sparql_meanshift | 0.87 | 1.00 | 0.97 |
+
+Cases with traces (30 cases)
+
+| method | AC@1 | AC@3 | Avg@5 |
+|---|---|---|---|
+| chain | 0.93 | 1.00 | 0.99 |
+| propagation | 0.77 | 0.90 | 0.90 |
+| zmax | 0.90 | 0.97 | 0.95 |
+| sparql_meanshift | 0.53 | 0.90 | 0.85 |
+## top-5 rankings compared case by case (chain and propagation modes): cases that differ: 0 of 90
+## similar_eval.py before
+merged harvest: 9.8 s, rc 0; harvested 273 batches in 9.8 s; 666 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+accepted a true chain for 90/90 incidents (the others had no chain rooted at the true service)
+incidents with an earlier accepted incident to compare: 89
+top-1 similar past incident shares the root cause: 82/89 = 0.92; any of top 3: 0.94; chance about 0.20
+per fault (top-1 hits): {'cpu': 11, 'delay': 13, 'disk': 14, 'loss': 14, 'mem': 15, 'socket': 15}
+tune (rep 1): top-1 23/29 = 0.79; top 3 0.83
+held out (reps 2-3): top-1 59/60 = 0.98; top 3 1.00
+## similar_eval.py after (final binary)
+merged harvest: 27.3 s, rc 0; harvested 273 batches in 27.1 s; 666 facts quarantined (see `ograph sparql` on graph g:quarantine/...)
+accepted a true chain for 90/90 incidents (the others had no chain rooted at the true service)
+incidents with an earlier accepted incident to compare: 89
+top-1 similar past incident shares the root cause: 82/89 = 0.92; any of top 3: 0.94; chance about 0.20
+per fault (top-1 hits): {'cpu': 11, 'delay': 13, 'disk': 14, 'loss': 14, 'mem': 15, 'socket': 15}
+tune (rep 1): top-1 23/29 = 0.79; top 3 0.83
+held out (reps 2-3): top-1 59/60 = 0.98; top 3 1.00
+## merged harvest wall time, alternating binaries on a shared machine: baseline 25.15 s, after 29.84 s, baseline 25.21 s, after 15.53 s
+
+# ograph replay over the merged 90-verdict store (similar_eval.py output), configured settings
+replayed 90 verdicts on 90 incidents, settings b678625c23e59077 (config.toml) against b678625c23e59077: 0 would flip, 0 would be fixed; 6 contradicted by the replayed settings
+  still below rank 1   accepted INC-1D3896 currencyservice        app rank 2 -> 2, chain rank 2 -> 2  id:chain/inc-1d3896-c4b1fc8f87a4b1af
+  still below rank 1   accepted INC-3A0809 currencyservice        app rank 5 -> 5, chain rank 5 -> 5  id:chain/inc-3a0809-3f9718ef2d7e4458
+  still below rank 1   accepted INC-B0F876 checkoutservice        app rank 2 -> 2, chain rank 2 -> 2  id:chain/inc-b0f876-57d2fe99d39f1173
+  still below rank 1   accepted INC-D1059A currencyservice        app rank 2 -> 2, chain rank 2 -> 2  id:chain/inc-d1059a-97079ba833eb48c3
+  still below rank 1   accepted INC-D7FC5D currencyservice        app rank 2 -> 2, chain rank 2 -> 2  id:chain/inc-d7fc5d-3f8a7c801627dd6e
+  still below rank 1   accepted INC-E425DE checkoutservice        app rank 2 -> 2, chain rank 2 -> 2  id:chain/inc-e425de-12a9e2c340861503
+exit 0
+real 0.09
+real 0.08
+real 0.08
+# ograph replay --set rank=propagation over the same store
+replayed 90 verdicts on 90 incidents, settings b678625c23e59077 (config.toml) against ccb2353b0200a3e5: 9 would flip, 1 would be fixed; 14 contradicted by the replayed settings
+  FLIP lost rank 1     accepted INC-011F3B emailservice           app rank 1 -> 2, chain rank 1 -> -  id:chain/inc-011f3b-d6bf46791b91d533
+  fixed                accepted INC-1D3896 currencyservice        app rank 2 -> 1, chain rank 2 -> -  id:chain/inc-1d3896-c4b1fc8f87a4b1af
+  FLIP lost rank 1     accepted INC-295188 productcatalogservice  app rank 1 -> 5, chain rank 1 -> -  id:chain/inc-295188-5aa95b340fa13cc0
+  still below rank 1   accepted INC-3A0809 currencyservice        app rank 5 -> 4, chain rank 5 -> -  id:chain/inc-3a0809-3f9718ef2d7e4458
+  FLIP lost rank 1     accepted INC-3BB38F productcatalogservice  app rank 1 -> 4, chain rank 1 -> -  id:chain/inc-3bb38f-ebe1a0723de2fdc9
+  FLIP lost rank 1     accepted INC-6775D6 productcatalogservice  app rank 1 -> 2, chain rank 1 -> -  id:chain/inc-6775d6-8dc50b6b128d8b0b
+  FLIP lost rank 1     accepted INC-870814 recommendationservice  app rank 1 -> 2, chain rank 1 -> -  id:chain/inc-870814-feab54ca95e588fd
+  FLIP lost rank 1     accepted INC-AAE861 checkoutservice        app rank 1 -> 2, chain rank 1 -> -  id:chain/inc-aae861-19adcc75a84e11ce
+  still below rank 1   accepted INC-B0F876 checkoutservice        app rank 2 -> 2, chain rank 2 -> 2  id:chain/inc-b0f876-57d2fe99d39f1173
+  FLIP lost rank 1     accepted INC-BDF8AA productcatalogservice  app rank 1 -> 2, chain rank 1 -> -  id:chain/inc-bdf8aa-0968d2e22b68c26c
+  FLIP lost rank 1     accepted INC-CE14E3 checkoutservice        app rank 1 -> 2, chain rank 1 -> 2  id:chain/inc-ce14e3-b97fc1a523474aa8
+  still below rank 1   accepted INC-D1059A currencyservice        app rank 2 -> 2, chain rank 2 -> -  id:chain/inc-d1059a-97079ba833eb48c3
+  still below rank 1   accepted INC-D7FC5D currencyservice        app rank 2 -> 4, chain rank 2 -> -  id:chain/inc-d7fc5d-3f8a7c801627dd6e
+  FLIP lost rank 1     accepted INC-E39C7B currencyservice        app rank 1 -> 2, chain rank 1 -> -  id:chain/inc-e39c7b-11a1aeec2e385dbd
+  still below rank 1   accepted INC-E425DE checkoutservice        app rank 2 -> 5, chain rank 2 -> 5  id:chain/inc-e425de-12a9e2c340861503
+exit 1

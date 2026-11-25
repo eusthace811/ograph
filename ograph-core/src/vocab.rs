@@ -88,6 +88,7 @@ ns!(corr, "https://ograph.dev/corr#", {
     CONFIDENCE = "confidence",
     RANK = "rank",
     CANDIDATE_APP = "candidateApp",
+    SETTINGS = "settings",
 });
 
 ns!(rca, "https://ograph.dev/rca#", {
@@ -101,6 +102,9 @@ ns!(rca, "https://ograph.dev/rca#", {
     ROOT_ON = "rootOn",
     ROOT_AT = "rootAt",
     ROOT_SIGNAL = "rootSignal",
+    SUPERSEDED_BY = "supersededBy",
+    RANK = "rank",
+    SETTINGS = "settings",
 });
 
 ns!(harv, "https://ograph.dev/harv#", {

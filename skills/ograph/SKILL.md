@@ -59,6 +59,7 @@ and the history still keeps; standard error says how far back that goes.
 # accept or reject a chain; use the chain id that `chains` printed
 ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept --evidence PM-5377 --by oncall
 ograph verdict id:chain/inc-5377-f1ece3ced5be33c7 reject --evidence "deploy was a no-op" --by oncall
+ograph replay --set window_s=600       # before a settings change: which past verdicts would flip (exit 1)
 ```
 
 ### Query anything else
