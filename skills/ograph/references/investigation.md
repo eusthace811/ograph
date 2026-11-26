@@ -70,6 +70,11 @@ ograph chains INC-5377
 - `chronic ...` lines (`chronic` on `root` and `links` in `--json`) mark chain events whose
   series fired again and again before the incident: a chain rooted on one is rooted on
   background. The ranking does not change.
+- `explains APP, ...` under an application (`explains` in `--json`) means its anomaly came
+  first and was still under way when those applications' began: it ranks above them even with
+  a lower score, because their chains are the later part of its cascade. A known pair (0.9)
+  links events of one application only: a deployment scores as a root only as strongly as its
+  own application then degraded.
 - `--window 60m` and `--set KEY=VALUE` (any `[correlation]` key, references/verdicts.md) rank
   again under other settings without storing anything.
 - `--rank propagation` ranks by how an anomaly spread to callers. When both rankings agree,

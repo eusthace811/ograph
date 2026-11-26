@@ -44,6 +44,12 @@ pub struct Settings {
     /// Evaluation: incidents that opened later count as past ones too, so a labeled set can be
     /// scored leave-one-out.
     pub past_any_time: bool,
+    /// A root is credited only with what its own application shows. A known pair holds within
+    /// one application (and for pairs that close at the incident): a deployment on a callee
+    /// links to its caller's errors on time and severity, not on the pair's prior. And in chain
+    /// ranking an application ranks below another whose chain [explains](Ranked::explains) it.
+    /// false ranks as before (docs/evidence/deploy-ranking.txt).
+    pub own_degradation: bool,
 }
 
 impl Settings {
@@ -101,6 +107,7 @@ impl Default for Settings {
             signature_window_s: 900,
             precedent_weight: 0.0,
             past_any_time: false,
+            own_degradation: true,
         }
     }
 }
@@ -188,6 +195,13 @@ pub struct Ranked {
     /// The most similar past incident whose accepted cause has this root's application and signal.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub precedent: Option<PastRoot>,
+    /// Applications this one's chain explains, so they rank below it whatever their score: the
+    /// chain reaches an event of theirs no later than the root of their own best chain, through
+    /// links that each leave an anomaly still under way, from a root of at least
+    /// [`EXPLAINING_SEVERITY`]. Their own chain is a later part of the same cascade, and scores
+    /// higher only because the geometric mean drops this root's link.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub explains: Vec<String>,
 }
 
 /// A root people accepted as the cause of a past incident that resembles the one under analysis.
@@ -550,7 +564,7 @@ impl Settings {
     /// when the next event (or the incident) arrives is adjacent to it. Measuring from the start
     /// made a cause that began five minutes before the incident and never stopped score below a
     /// one-point blip seconds before it.
-    fn link(&self, a: &Signal, to_kind: &str, to_ms: i64) -> Parts {
+    fn link(&self, a: &Signal, to_kind: &str, to_app: Option<Id>, to_ms: i64) -> Parts {
         let w = (self.window_s * 1000) as f64;
         let gap = (to_ms - a.until_ms.min(to_ms)) as f64;
         let severity = a.severity.min(1.0);
@@ -558,7 +572,7 @@ impl Settings {
             return Parts { time: 0.0, severity, known_pair: false, score: 0.0 };
         }
         let time = (1.0 - gap.max(0.0) / w).clamp(0.0, 1.0);
-        let known_pair = self.known(&a.kind, to_kind);
+        let known_pair = self.known(&a.kind, to_kind) && !(self.own_degradation && to_app.is_some_and(|b| b != a.app));
         let score = if known_pair { self.known_pair_prior } else { self.w_time * time + self.w_severity * severity };
         Parts { time, severity, known_pair, score }
     }
@@ -642,7 +656,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
             }
             let last = &cands[*path.last().unwrap()];
             // An event inside `after_s` closes as if it happened at the incident.
-            let close = st.link(last, "INCIDENT", t.max(last.at_ms)).score.max(1e-9);
+            let close = st.link(last, "INCIDENT", None, t.max(last.at_ms)).score.max(1e-9);
             let conf = ((logsum + close.ln()) / path.len() as f64).exp();
             let gated = close >= st.min_confidence && conf >= st.min_confidence;
             // Equal confidence prefers the longer path: it explains more of the cascade.
@@ -659,7 +673,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
                 if !can_follow(last, next) {
                     continue;
                 }
-                let l = st.link(last, &next.kind, next.at_ms).score;
+                let l = st.link(last, &next.kind, Some(next.app), next.at_ms).score;
                 if l >= st.min_confidence {
                     let mut p = path.clone();
                     p.push(ni);
@@ -688,7 +702,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
         RankMode::Chain => {
             for c in &chains {
                 let first = cands.iter().filter(|x| x.app == c.root.app).map(|x| x.at_ms).min().unwrap_or(c.root.at_ms);
-                let e = per_app.entry(c.root.app).or_insert_with(|| Ranked { app: c.root.app_name.clone(), score: f64::MIN, first_ms: first, chain: None, precedent: None });
+                let e = per_app.entry(c.root.app).or_insert_with(|| Ranked { app: c.root.app_name.clone(), score: f64::MIN, first_ms: first, chain: None, precedent: None, explains: vec![] });
                 if c.confidence > e.score {
                     e.score = c.confidence;
                     e.chain = Some(c.clone());
@@ -710,7 +724,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
                 });
                 let onset = ((t - peak_at) as f64 / w_ms).clamp(0.0, 1.0);
                 let score = ws * strength + wc * chain.as_ref().map_or(0.0, |c| c.confidence) + wp * spread + we * onset;
-                per_app.insert(x, Ranked { app: cands[strongest].app_name.clone(), score, first_ms: cands[mine[0]].at_ms, chain, precedent: None });
+                per_app.insert(x, Ranked { app: cands[strongest].app_name.clone(), score, first_ms: cands[mine[0]].at_ms, chain, precedent: None, explains: vec![] });
             }
         }
     }
@@ -729,8 +743,56 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
         }),
         RankMode::Propagation => apps.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.first_ms.cmp(&b.first_ms)).then(a.app.cmp(&b.app))),
     }
+    if st.own_degradation && st.rank == RankMode::Chain {
+        explain(&mut apps);
+    }
     let withheld = if st.ignore_dependencies { vec![] } else { withheld(s, ids, app, st.depth, t)? };
     Ok(Analysis { incident: incident_iri, app: app_name(s, ids, app), at_ms: t, candidates: cands.len(), apps, withheld })
+}
+
+/// The least strength of a root that explains its callers: SEV2, the class the detectors give an
+/// anomaly from 0.5 (crate::enrich::signals). A weaker anomaly still under way on a callee is as
+/// likely background as cause, and on RCAEval such anomalies would take rank 1 from the root.
+pub const EXPLAINING_SEVERITY: f64 = 0.5;
+
+/// Fills [`Ranked::explains`] and moves each application above every one it explains, keeping
+/// the order otherwise. A change explains nothing: it is a point in time, never under way.
+fn explain(apps: &mut Vec<Ranked>) {
+    let first: FxHashMap<Id, i64> = apps.iter().filter_map(|r| r.chain.as_ref()).map(|c| (c.root.app, c.root.at_ms)).collect();
+    for r in apps.iter_mut() {
+        let Some(c) = &r.chain else { continue };
+        if c.root.severity < EXPLAINING_SEVERITY {
+            continue;
+        }
+        let path: Vec<&Signal> = std::iter::once(&c.root).chain(&c.links).collect();
+        for k in 1..path.len() {
+            let (from, to) = (path[k - 1], path[k]);
+            if to.app == from.app {
+                continue;
+            }
+            if c.scores[k - 1].time < 1.0 {
+                break;
+            }
+            if to.app != c.root.app && first.get(&to.app).is_some_and(|&at| to.at_ms <= at) && !r.explains.contains(&to.app_name) {
+                r.explains.push(to.app_name.clone());
+            }
+        }
+    }
+    // Each move puts an explaining application right above one it explains; a cycle of
+    // explanations stops after a bounded number of passes.
+    for _ in 0..apps.len() * 2 {
+        let mut moved = false;
+        for x in 0..apps.len() {
+            let Some(y) = (0..x).find(|&y| apps[x].explains.contains(&apps[y].app)) else { continue };
+            let r = apps.remove(x);
+            apps.insert(y, r);
+            moved = true;
+            break;
+        }
+        if !moved {
+            break;
+        }
+    }
 }
 
 /// The score of every link along `path`, then of the link that closes it at the incident, with
@@ -743,8 +805,8 @@ fn link_scores(s: &Snapshot, ids: &Ids, st: &Settings, cands: &[Signal], path: &
     for (k, &i) in path.iter().enumerate() {
         let a = &cands[i];
         let (to, parts, edge) = match path.get(k + 1).map(|&n| &cands[n]) {
-            Some(next) => (label(next), st.link(a, &next.kind, next.at_ms), edge(s, ids, a.app, next.app)?),
-            None => ("incident".to_owned(), st.link(a, "INCIDENT", t.max(a.at_ms)), edge(s, ids, a.app, incident_app)?),
+            Some(next) => (label(next), st.link(a, &next.kind, Some(next.app), next.at_ms), edge(s, ids, a.app, next.app)?),
+            None => ("incident".to_owned(), st.link(a, "INCIDENT", None, t.max(a.at_ms)), edge(s, ids, a.app, incident_app)?),
         };
         out.push(LinkScore { from: label(a), to, time: parts.time, severity: parts.severity, known_pair: parts.known_pair, edge, score: parts.score });
     }
@@ -799,6 +861,59 @@ mod tests {
         );
         let alerted = ("checkout 0.9000".to_owned(), vec!["checkout:ALERT -> incident 0.9000 time 0.9667 severity 1.00 known true SameApp".to_owned()], "checkout:ALERT -> incident 0.9000".to_owned());
         assert_eq!(links(&root), [alerted, deployed]);
+    }
+
+    fn sig(app: u64, name: &str, kind: &str, at_s: i64, until_s: i64, severity: f64) -> super::Signal {
+        super::Signal { id: app * 100 + at_s as u64, iri: format!("ev/{name}-{at_s}"), app, app_iri: String::new(), app_name: name.into(), at_ms: at_s * 1000, until_ms: until_s * 1000, kind: kind.into(), severity, distance: 0, chronic: None }
+    }
+
+    /// A ranked application whose best chain is `path`, closing at the incident at 1000 s.
+    fn ranked(path: Vec<super::Signal>) -> super::Ranked {
+        let st = super::Settings::default();
+        let mut scores = Vec::new();
+        for (k, a) in path.iter().enumerate() {
+            let (to, to_app, to_ms) = path.get(k + 1).map_or(("INCIDENT", None, 1_000_000), |b| (b.kind.as_str(), Some(b.app), b.at_ms));
+            let p = st.link(a, to, to_app, to_ms);
+            scores.push(super::LinkScore { from: a.app_name.clone(), to: to.into(), time: p.time, severity: p.severity, known_pair: p.known_pair, edge: super::Edge::Catalog, score: p.score });
+        }
+        let confidence = (scores.iter().map(|l| l.score.ln()).sum::<f64>() / scores.len() as f64).exp();
+        let weakest = super::Weakest { from: String::new(), to: String::new(), score: 0.0 };
+        let chain = super::Chain { id: path[0].iri.clone(), root: path[0].clone(), links: path[1..].to_vec(), confidence, scores, weakest };
+        super::Ranked { app: path[0].app_name.clone(), score: confidence, first_ms: path[0].at_ms, chain: Some(chain), precedent: None, explains: vec![] }
+    }
+
+    #[test]
+    fn a_known_pair_holds_within_one_application() {
+        let st = super::Settings::default();
+        let deploy = sig(1, "payments-api", "DEPLOYMENT", 700, 700, 0.25);
+        assert_eq!(st.link(&deploy, "LOG_ERROR", Some(1), 760_000).score, 0.9);
+        // On a caller the pair's prior does not hold: 0.6 * (1 - 60 s / 1800 s) + 0.4 * 0.25.
+        let across = st.link(&deploy, "LOG_ERROR", Some(2), 760_000);
+        assert!(!across.known_pair);
+        assert!((across.score - 0.68).abs() < 1e-9);
+        let old = super::Settings { own_degradation: false, ..st };
+        assert_eq!(old.link(&deploy, "LOG_ERROR", Some(2), 760_000).score, 0.9);
+    }
+
+    #[test]
+    fn an_application_ranks_below_the_one_whose_chain_explains_it() {
+        // ledger-db degrades first and is still degraded when payments-api, its caller, does;
+        // payments-api's own chain scores higher only because it leaves out ledger-db's link.
+        let ledger = sig(3, "ledger-db", "METRIC_ANOMALY", 600, 1000, 0.8);
+        let payments = sig(2, "payments-api", "METRIC_ANOMALY", 650, 1000, 1.0);
+        let deploy = sig(4, "fx-api", "DEPLOYMENT", 500, 500, 0.25);
+        let mut apps = vec![ranked(vec![payments.clone()]), ranked(vec![ledger.clone(), payments.clone()]), ranked(vec![deploy, payments.clone()])];
+        assert!(apps[0].score > apps[1].score);
+        super::explain(&mut apps);
+        let order: Vec<(&str, Vec<String>)> = apps.iter().map(|r| (r.app.as_str(), r.explains.clone())).collect();
+        // The deployment is a point in time, never under way when payments-api degrades.
+        assert_eq!(order, [("ledger-db", vec!["payments-api".to_owned()]), ("payments-api", vec![]), ("fx-api", vec![])]);
+        // An anomaly weaker than SEV2 explains nothing, and neither does one that ended first.
+        for weak in [sig(3, "ledger-db", "METRIC_ANOMALY", 600, 1000, 0.3), sig(3, "ledger-db", "METRIC_ANOMALY", 600, 610, 0.8)] {
+            let mut apps = vec![ranked(vec![payments.clone()]), ranked(vec![weak, payments.clone()])];
+            super::explain(&mut apps);
+            assert_eq!((apps[0].app.as_str(), apps[1].explains.len()), ("payments-api", 0));
+        }
     }
 
     #[test]
