@@ -263,7 +263,7 @@ const CUES: &[(&str, &[&str])] = &[
 
 /// Words that make a clause a question, a proposal, a plan or a condition when they come before
 /// the action in it.
-const NOT_YET: &[&str] = &["should", "shall", "let's", "lets", "could", "would", "can", "will", "i'll", "we'll", "gonna", "going to", "plan", "planning", "want to", "need to", "needs to", "might", "maybe", "about to", "considering", "consider", "suggest", "propose", "if", "unless", "before we", "whether", "have to", "has to", "got to", "gotta", "i'd", "we'd better", "had better", "please", "pls"];
+const NOT_YET: &[&str] = &["should", "shall", "let's", "lets", "could", "would", "can", "will", "i'll", "we'll", "gonna", "going to", "plan", "planning", "want to", "need to", "needs to", "might", "maybe", "about to", "considering", "consider", "suggest", "propose", "if", "unless", "before we", "whether", "have to", "has to", "we've got to", "i've got to", "gotta", "i'd", "we'd better", "had better", "please", "pls"];
 /// Words that open a question about what follows them.
 const ASKS: &[&str] = &["did", "do", "does", "has", "have", "had", "is", "are", "was", "were", "should", "shall", "can", "could", "will", "would", "anyone", "someone", "who"];
 /// Who an asking word asks about.
@@ -272,6 +272,12 @@ const SUBJECTS: &[&str] = &["we", "you", "i", "they", "he", "she", "it", "anyone
 const LINKS: &[&str] = &["so", "because", "until", "and", "then", "but", "while", "since", "once"];
 /// Negations besides any `n't` contraction, with the contractions chat leaves unapostrophised.
 const NEGATIONS: &[&str] = &["not", "never", "no", "without", "cannot", "dont", "didnt", "doesnt", "wont", "cant", "couldnt", "wouldnt", "shouldnt", "isnt", "arent", "wasnt", "werent", "hasnt", "havent", "hadnt"];
+
+/// Whether a lowercase word is a past verb: it ends in "ed" or is an irregular past unlike its
+/// present.
+fn is_past(w: &str) -> bool {
+    w.ends_with("ed") || matches!(w, "spun" | "took" | "brought" | "made" | "gave" | "ran" | "moved")
+}
 
 /// Whether `words[i]` is the `that` of "now that", which gives a reason as `because` does.
 fn now_that(words: &[String], i: usize) -> bool {
@@ -332,7 +338,7 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         // "have to restart X" is still to come.
         let past = verb.is_some_and(|i| match quoted[i].as_str() {
             "have" | "has" | "had" | "we've" => quoted.get(i + 1).is_none_or(|w| w != "to"),
-            w => w.ends_with("ed") || matches!(w, "spun" | "took" | "brought" | "made" | "gave" | "ran" | "moved"),
+            w => is_past(w),
         });
         let follows = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "after" | "since" | "when") || now_that(&before, i)).map_or(0, |i| i + 1);
         let reports = past && follows > 0 && !before[follows..].iter().any(|w| ASKS.contains(&w.as_str()));
@@ -360,7 +366,17 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
     // should check logs and restart X", "I suggest that we restart X" and "I'll post when we
     // roll back X" still plan.
     let cause = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "so" | "because" | "since" | "but") || now_that(&before, i)).map_or(0, |i| i + 1);
-    let lead = format!(" {} {} ", before[cause..].join(" "), said.join(" ")).replace(" can confirm ", " confirm ").replace(" can see ", " see ");
+    // "please note" announces, and "I'd" before a past verb is "I had" ("I'd already restarted X").
+    let lead: Vec<&str> = before[cause..].iter().chain(&said).map(String::as_str).collect();
+    let lead = lead.iter().enumerate().filter(|&(i, w)| {
+        let next = lead[i + 1..].iter().find(|w| !matches!(**w, "just" | "already" | "also"));
+        match *w {
+            "please" | "pls" => !next.is_some_and(|n| matches!(*n, "note" | "be" | "see" | "fyi")),
+            "i'd" | "we'd" => !next.is_some_and(|n| is_past(&n.to_lowercase())),
+            _ => true,
+        }
+    }).map(|(_, w)| *w).collect::<Vec<_>>();
+    let lead = format!(" {} ", lead.join(" ")).replace(" can confirm ", " confirm ").replace(" can see ", " see ");
     if NOT_YET.iter().any(|w| lead.contains(&format!(" {w} "))) {
         return Some("is a proposal or a plan");
     }
@@ -459,6 +475,12 @@ mod tests {
             ("please restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
             ("we'd better restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
             ("it got better after we restarted payments-api", "restarted payments-api", None),
+            ("please note we rolled back checkout to 4.0.9", "rolled back checkout", None),
+            ("Please note: we have rolled back checkout", "rolled back checkout", None),
+            ("FYI please be aware we restarted payments-api", "restarted payments-api", None),
+            ("I'd already restarted payments-api by then", "restarted payments-api", None),
+            ("I'd roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
+            ("got to the box and restarted payments-api", "restarted payments-api", None),
             ("ok but did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("hey did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
