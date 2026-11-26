@@ -322,12 +322,12 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         // A question about what followed a past action reports the action ("did latency recover
         // after we rolled back X?"); "is it true that we rolled back X?" and "will it recover
         // after we restart X?" still ask.
-        // The tense is the action's own, not a name's ("restart shared-cache") or an adjective's
-        // ("restart the failed pods").
+        // The tense is the verb's, which comes by the action's first cue word, not a later name's
+        // ("restart shared-cache") or adjective's ("restart the failed pods").
         let quoted: Vec<String> = words(&q).iter().map(|w| w.to_lowercase()).collect();
         let cues = CUES.iter().find(|(k, _)| *k == kind).map_or(&[][..], |(_, c)| c);
-        let cued: Vec<&String> = quoted.iter().filter(|w| cues.iter().any(|c| c.split(' ').next().is_some_and(|stem| w.starts_with(stem)))).collect();
-        let past = if cued.is_empty() { quoted.iter().any(|w| w.ends_with("ed")) } else { cued.iter().any(|w| w.ends_with("ed")) };
+        let first = quoted.iter().position(|w| cues.iter().any(|c| c.split(' ').next().is_some_and(|stem| w.starts_with(stem))));
+        let past = quoted[..first.map_or(quoted.len(), |i| i + 1)].iter().any(|w| w.ends_with("ed"));
         let follows = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "after" | "since" | "when") || now_that(&before, i)).map_or(0, |i| i + 1);
         let reports = past && follows > 0 && !before[follows..].iter().any(|w| ASKS.contains(&w.as_str()));
         if q.ends_with('?') || !reports && (!aside || before.iter().any(|w| ASKS.contains(&w.as_str()))) {
@@ -435,6 +435,10 @@ mod tests {
             ("I suggest that we restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
             ("what happens when we restart shared-cache?", "restart shared-cache", Some("is a question")),
             ("what happens when we restart the failed pods?", "restart the failed pods", Some("is a question")),
+            ("did errors stop after we added two replicas to orders-api?", "added two replicas to orders-api", None),
+            ("did latency drop after we increased the timeout on checkout?", "increased the timeout on checkout", None),
+            ("what happens when we restart the killed workers?", "restart the killed workers", Some("is a question")),
+            ("what happens when we deploy the released build of checkout?", "deploy the released build of checkout", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
             ("Had to restart payments-api, anyone know why it leaked?", "restart payments-api", None),
             ("Have restarted payments-api, errors gone?", "restarted payments-api", None),
@@ -456,7 +460,7 @@ mod tests {
             ("should we wait\nrolled back checkout", "rolled back checkout", None),
             ("we rolled back\n  checkout to 4.0.9", "rolled back checkout", None),
         ];
-        let kind = |q: &str| ["roll", "restart", "scale", "failed over"].iter().zip(["ROLLBACK", "RESTART", "SCALE", "FAILOVER"]).find(|(c, _)| q.to_lowercase().contains(*c)).map_or("CONFIG", |x| x.1);
+        let kind = |q: &str| ["roll", "restart", "scale", "failed over", "deploy"].iter().zip(["ROLLBACK", "RESTART", "SCALE", "FAILOVER", "DEPLOY"]).find(|(c, _)| q.to_lowercase().contains(*c)).map_or("CONFIG", |x| x.1);
         let got: Vec<Option<&str>> = cases.iter().map(|(m, q, _)| not_done(m, q, kind(q))).collect();
         assert_eq!(got, cases.iter().map(|c| c.2).collect::<Vec<_>>());
     }
