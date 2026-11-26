@@ -8,13 +8,18 @@ use std::path::{Path, PathBuf};
 /// file not hidden.
 fn workspace(name: &str, sources: &str, files: &[(&str, &str)]) -> PathBuf {
     let tmp = std::env::temp_dir();
-    let ogrep = tmp.join(format!("ograph-harvest-test-ogrep-{}.sh", std::process::id()));
-    let entity = r#"{"data":{"entity":{"id":"pay","kind":"service","locations":[{"file":"x","line":1}]}}}"#;
-    let list = "find . -path '*/.*' -prune -o -type f -print";
-    std::fs::write(&ogrep, format!("#!/bin/sh\nif [ \"$1\" = --files ]; then {list}; else echo '{entity}'; fi\n")).unwrap();
-    std::fs::set_permissions(&ogrep, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    // SAFETY: every test sets the same value.
-    unsafe { std::env::set_var("OGRAPH_OGREP", &ogrep) };
+    // Written once: rewriting the script while another test runs it fails with ETXTBSY on Linux.
+    static OGREP: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    OGREP.get_or_init(|| {
+        let ogrep = tmp.join(format!("ograph-harvest-test-ogrep-{}.sh", std::process::id()));
+        let entity = r#"{"data":{"entity":{"id":"pay","kind":"service","locations":[{"file":"x","line":1}]}}}"#;
+        let list = "find . -path '*/.*' -prune -o -type f -print";
+        std::fs::write(&ogrep, format!("#!/bin/sh\nif [ \"$1\" = --files ]; then {list}; else echo '{entity}'; fi\n")).unwrap();
+        std::fs::set_permissions(&ogrep, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        // SAFETY: set once, before any harvest reads it.
+        unsafe { std::env::set_var("OGRAPH_OGREP", &ogrep) };
+        ogrep
+    });
     let root = tmp.join(format!("ograph-harvest-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("catalog")).unwrap();

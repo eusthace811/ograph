@@ -1,0 +1,3 @@
+# Markdown is compiled into the binary (include_str!) and parsed by its line structure, so it
+# must have LF line endings on every platform, including a Windows checkout.
+*.md text eol=lf
