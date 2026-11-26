@@ -1,0 +1,25 @@
+Phase 13 lane X, power extension: own_degradation on a larger fresh suite, written and committed
+before the suite is generated (2026-11-26).
+
+Why. Lane X's held-out test (docs/evidence/deploy-ranking.txt) gave chains rank 1 29/35 -> 32/35 on
+distractor seed 9001: 3 better, 0 worse, p = 0.25, so criterion 1 failed and own_degradation shipped
+off (KEEP-OFF). Parent missed only 6 of 35 there, so no outcome on that set could reach p < 0.05
+without nearly every miss turning right. This is a second, independent, larger test of the same
+code, fixed before any of its cases exist. It does not replace the failed test; both are reported.
+
+Suite: examples/distractors/generate.py --seed 31415 --per-type 30 (150 cases), a seed never
+generated before (used so far: 2026, 7331, 9001). Same generator as the dev suite: it guards
+against overfitting to cases, not to the generator. Nothing in the code, the generator, the
+labels or the scoring changes after this file is committed.
+
+Binary: integrate-phase-13 at c0aae9a (lane X merged, own_degradation off by default).
+Parent = `ograph chains INC` as configured; Candidate = the same with own_degradation = true set
+in each staged case's [correlation]. chains is deterministic: one run, no model, no cost.
+
+Pass, all of:
+  1. chains rank 1 AC@1 Candidate > Parent, per case, exact two-sided sign test p < 0.05.
+  2. No distractor type worse by more than 1 case (of 30).
+If both pass, own_degradation turns on by default, after which the real-data gates (RCAEval chain
+AC@1 0.93 with no case flipped, similar 0.92, demo rank 1, replay) are rerun on the on-by-default
+build and must be unchanged. If either fails, own_degradation stays off.
+Agent arms are not rerun here: lane X measured them on seed 9001 (mcp equal, skill 5 better, 0 worse).
