@@ -1,0 +1,9 @@
+| type | cases | chains rank 1 right | distractor in chains top 5 | distractor ranked above the root | distractor in before | quarantined facts | leak hits |
+|---|---|---|---|---|---|---|---|
+| a chronic | 7 | 7 | 7 | 0 | 6 | 0 | 0 |
+| b deploy | 7 | 6 | 6 | 0 | 7 | 0 | 0 |
+| c alert | 7 | 6 | 7 | 1 | 7 | 0 | 0 |
+| d sparse | 7 | 7 | 5 | 0 | 7 | 0 | 0 |
+| e precedent | 7 | 6 | 0 | 0 | 0 | 0 | 0 |
+degraded on 35 cases: catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0
+wrote /private/tmp/claude-501/lane-x-work/check9001-candidate-4433a48/check.json

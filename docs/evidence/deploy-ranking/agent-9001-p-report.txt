@@ -1,0 +1,16 @@
+AC@1 over scored runs (fooled: runs that answered the planted distractor's application)
+
+| arm | all | a chronic | b deploy | c alert | d sparse | e precedent | voided |
+|---|---|---|---|---|---|---|---|
+| mcp@p | 85/105 (0.81), fooled 20 | 21/21 (1.00), fooled 0 | 20/21 (0.95), fooled 1 | 21/21 (1.00), fooled 0 | 2/21 (0.10), fooled 19 | 21/21 (1.00), fooled 0 | 0 |
+| skill@p | 92/104 (0.88), fooled 12 | 19/20 (0.95), fooled 1 | 21/21 (1.00), fooled 0 | 21/21 (1.00), fooled 0 | 10/21 (0.48), fooled 11 | 21/21 (1.00), fooled 0 | 1 |
+
+| type | fooled, agent arms | fooled share | max share of one arm |
+|---|---|---|---|
+| a chronic | 1/41 | 0.02 | 0.05 |
+| b deploy | 1/42 | 0.02 | 0.05 |
+| c alert | 0/42 | 0.00 | 0.00 |
+| d sparse | 30/42 | 0.71 | 0.90 |
+| e precedent | 0/42 | 0.00 | 0.00 |
+
+cost by the runner's report: $1.17 over 210 rows

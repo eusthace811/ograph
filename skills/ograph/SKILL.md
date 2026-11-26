@@ -132,7 +132,8 @@ Inside SPARQL, escape a `/` in a prefixed name, and the dots of a version (`id:a
    something a person said in chat they did (a rollback, a restart); chains never start from
    one, and its time is when the message was posted. An event marked `chronic` belongs to a
    series that kept firing before the incident: background, not the start of the fault. An
-   application that `explains` others in `chains` ranks above them: their anomalies followed its own.
+   application that `explains` others in `chains` (when `own_degradation` is on) ranks above
+   them: their anomalies followed its own.
 2. A chain is a hypothesis. Say "the strongest candidate is" with its score and evidence, never
    "the cause is", unless a verdict accepted it.
 3. Check `similar` before proposing a fix: a mitigation that worked before is the best lead.

@@ -83,3 +83,71 @@ Verdict
 
 Budget: $15 by claude's total_cost_usd. A usage-limit refusal backs off once; a second stops the
 run and what did not finish is NOT MEASURED. Transcripts are packed as .tar.gz.
+
+RESULTS (2026-11-26). Parent target/lane-x/ograph-parent (734703e), Candidate
+target/lane-x/ograph-candidate-4433a48 (07603aa, then 4433a48 before any held-out data existed:
+the precedent gate showed the explains order overriding a precedent lift, so an application whose
+precedent gains more is no longer moved below its explainer; no effect at precedent_weight 0).
+Seed 9001 was generated after 4433a48 was committed. Nothing was changed after held-out numbers
+were seen except the default, as the verdict below requires.
+==========================================================================================
+Cause, refined on dev data. The planted deployment never outranks the root at seed 2026 (ranks
+3-5, 4th or 5th in the misses); what makes chains miss the deploy cases is suffix bias, and the
+deploy only sits close behind because of the cross-application known pair (0.957-0.964 against
+roots at 0.973-0.979).
+
+Design as built, `[correlation] own_degradation`:
+  - A known pair holds only between two events of one application, or for a pair closing at the
+    incident. The deploy chains of seed 2026 drop from 0.96 to 0.89 (for example shadow-kv
+    0.958 -> 0.893); no rank 1 changes from this part alone.
+  - In chain ranking, X explains Y when X's best chain reaches an event of Y no later than the
+    root of Y's own best chain, through cross-application links that each leave an anomaly
+    still under way (time part 1), from a root of severity >= 0.5 (SEV2, the detectors' class).
+    X is moved above every Y it explains; otherwise the order is kept. `explains` is shown in
+    text and JSON. A change is a point event, so it explains nothing.
+  The severity floor and the "no later than Y's own root" condition were chosen on dev data:
+  without them the rule broke 8 RCAEval rank-1 cases (callees with weak anomalies under way, and
+  explained events that came after the explained app's own root). sim.py replays the variants
+  from chain JSON; with both conditions every variant from SEV2 to SEV1 kept RCAEval intact.
+  Dev, seed 2026: chains rank 1 24/35 -> 31/35 (better 7, worse 0); per type a 6->7, b 4->5,
+  c 5->6, d 4->7, e 5->6.
+
+1. Seed 9001, chains rank 1: Parent 29/35, Candidate 32/35; better 3 (x-13b72671f4 deploy,
+   x-cc64003c48 alert, x-e4d34034b9 precedent), worse 0; exact two-sided sign test p = 0.25.
+   NOT SIGNIFICANT. (Seed 9001 is easier for chains than seed 2026: the Parent misses only 6.)
+                                                                                         FAIL
+2. Per type, Parent -> Candidate: chronic 7 -> 7, deploy 5 -> 6, alert 5 -> 6, sparse 7 -> 7,
+   precedent 5 -> 6. No type worse.                                                      PASS
+   The deploy distractor ranks above the root in 0 of 7 deploy cases under both binaries.
+3. Real data:
+   a. rcaeval_score.py: chain AC@1 0.93 (AC@3 0.99, Avg@5 0.98) for both; rank 1 identical on
+      90/90, full top-5 identical on 84 (6 differ below rank 1); 0 right -> wrong.      PASS
+   b. similar_eval.py 82/89 = 0.92.                                                      PASS
+   c. demo chains rank 1 identical: ledger-db, checkout, search-api, ledger-db.          PASS
+   d. replay: 90 true chains accepted; `replay --set own_degradation=false` under the
+      Candidate: 0 flips, 0 fixed, so 0 disagreements; verdicts agreeing with rank 1 84/90 for
+      both; replay_gate.py 207/207 points, 0 of 18630 cases disagree, PASS.              PASS
+   e. shacl_suite 98/98; SPARQL suite 22/22 identical non-empty rows; lab_check 0 failures on
+      the demo and the 90-case merged store, lab_browser no JS errors; uses_gate PASS;
+      chain_delta_gate PASSED; chain_scores_gate PASS; precedent_eval identical to
+      docs/evidence/precedent.txt apart from timings (at 07603aa it fixed 4 not 6 at weight
+      0.01, which 4433a48 corrected); skill_coverage PASS (it first flagged own_degradation
+      unmentioned, fixed in 4433a48).                                                     PASS
+   f. cargo test 105 + 23 + 14 pass; clippy clean.                                        PASS
+4. Haiku claude-haiku-5-5, seed 9001, 3 runs, 210 rows per binary, each with its own --out
+   (target/lane-x/agent-p, agent-c) and its own guidance revision (--guidance p=734703e,
+   c=4433a48); 0 errors, 0 limit refusals; voided (agent's own `..` or scratch) 1 Parent,
+   3 Candidate.
+      mcp    Parent 85/105 (0.81)  Candidate 85/105 (0.81)  better 2, worse 2 cases   PASS (>=)
+      skill  Parent 92/104 (0.88)  Candidate 95/102 (0.93)  better 5, worse 0, p 0.06 PASS
+   Per type (chronic, deploy, alert, sparse, precedent):
+      mcp@p   21/21 20/21 21/21  2/21 21/21     mcp@c   21/21 20/21 21/21  2/21 21/21
+      skill@p 19/20 21/21 21/21 10/21 21/21     skill@c 20/20 20/20 21/21 14/21 20/20
+   The sparse distractor still fools mcp on 19 of 21 runs under both: this lane does not touch
+   it. Cost by claude's total_cost_usd: Parent $1.17, Candidate $1.15; lane total $2.32.
+
+VERDICT: KEEP-OFF. Criterion 3 passes in full and 2 and 4 pass, but the held-out gain (3 cases
+better, 0 worse) is not significant. own_degradation ships off by default; `--set
+own_degradation=true` on `chains` and `replay` turns it on, and reproduces the Candidate's
+ranking on all 35 held-out cases (checked; the default reproduces the Parent's on all 35).
+Files: docs/evidence/deploy-ranking/.

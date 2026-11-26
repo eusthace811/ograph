@@ -1,0 +1,380 @@
+{
+ "x-06cb8f3df9": {
+  "rank1": "notify-hub",
+  "right": true,
+  "apps": [
+   "notify-hub",
+   "patient-portal"
+  ],
+  "type": "e"
+ },
+ "x-1031f16451": {
+  "rank1": "player-db",
+  "right": true,
+  "apps": [
+   "player-db",
+   "matchmaker",
+   "lobby-edge"
+  ],
+  "type": "c"
+ },
+ "x-1875c965b9": {
+  "rank1": "account-api",
+  "right": true,
+  "apps": [
+   "account-api",
+   "fx-quote",
+   "teller-gateway",
+   "fraud-score"
+  ],
+  "type": "b"
+ },
+ "x-1d71e6308b": {
+  "rank1": "license-check",
+  "right": true,
+  "apps": [
+   "license-check",
+   "title-index",
+   "watch-web"
+  ],
+  "type": "c"
+ },
+ "x-23220825ed": {
+  "rank1": "firmware-api",
+  "right": true,
+  "apps": [
+   "firmware-api",
+   "alarm-api",
+   "ingest-api",
+   "device-hub",
+   "shadow-kv"
+  ],
+  "type": "b"
+ },
+ "x-249a98cd21": {
+  "rank1": "series-db",
+  "right": true,
+  "apps": [
+   "series-db",
+   "alarm-api",
+   "rules-engine",
+   "device-hub"
+  ],
+  "type": "e"
+ },
+ "x-25bf48d25b": {
+  "rank1": "accounts-pg",
+  "right": true,
+  "apps": [
+   "accounts-pg",
+   "statement-gen",
+   "teller-gateway"
+  ],
+  "type": "c"
+ },
+ "x-2f1b8c9e5b": {
+  "rank1": "session-kv",
+  "right": true,
+  "apps": [
+   "session-kv",
+   "subtitle-svc",
+   "license-check",
+   "watch-web",
+   "media-meta-db"
+  ],
+  "type": "d"
+ },
+ "x-3f7fc080f1": {
+  "rank1": "dispatch-portal",
+  "right": false,
+  "apps": [
+   "dispatch-portal",
+   "parcel-tracker",
+   "label-maker",
+   "scan-stream"
+  ],
+  "type": "b"
+ },
+ "x-40fcb71db2": {
+  "rank1": "event-stream",
+  "right": true,
+  "apps": [
+   "event-stream",
+   "item-vault",
+   "lobby-edge"
+  ],
+  "type": "e"
+ },
+ "x-54589c712f": {
+  "rank1": "chat-relay",
+  "right": true,
+  "apps": [
+   "chat-relay",
+   "lobby-edge",
+   "cheat-guard"
+  ],
+  "type": "a"
+ },
+ "x-5f7f600832": {
+  "rank1": "firmware-api",
+  "right": true,
+  "apps": [
+   "firmware-api",
+   "rules-engine",
+   "device-hub",
+   "series-db"
+  ],
+  "type": "a"
+ },
+ "x-617d11bc10": {
+  "rank1": "fare-engine",
+  "right": false,
+  "apps": [
+   "fare-engine",
+   "seat-map",
+   "fares-db",
+   "booking-web"
+  ],
+  "type": "c"
+ },
+ "x-6cea1d4b54": {
+  "rank1": "records-api",
+  "right": true,
+  "apps": [
+   "records-api",
+   "patient-portal",
+   "appointment-api"
+  ],
+  "type": "b"
+ },
+ "x-7023622d73": {
+  "rank1": "depot-sync",
+  "right": true,
+  "apps": [
+   "depot-sync",
+   "parcel-tracker",
+   "dispatch-portal",
+   "label-maker"
+  ],
+  "type": "c"
+ },
+ "x-7225901111": {
+  "rank1": "rate-kv",
+  "right": true,
+  "apps": [
+   "rate-kv",
+   "limits-api",
+   "fraud-score",
+   "teller-gateway",
+   "audit-journal"
+  ],
+  "type": "a"
+ },
+ "x-72289808f2": {
+  "rank1": "avail-kv",
+  "right": true,
+  "apps": [
+   "avail-kv",
+   "pnr-api",
+   "fare-engine",
+   "booking-web"
+  ],
+  "type": "e"
+ },
+ "x-761ce7104d": {
+  "rank1": "fleet-api",
+  "right": true,
+  "apps": [
+   "fleet-api",
+   "label-maker",
+   "route-planner",
+   "dispatch-portal",
+   "scan-stream"
+  ],
+  "type": "a"
+ },
+ "x-7d49a0334a": {
+  "rank1": "audit-journal",
+  "right": true,
+  "apps": [
+   "audit-journal",
+   "statement-gen",
+   "teller-gateway"
+  ],
+  "type": "e"
+ },
+ "x-83380af210": {
+  "rank1": "match-kv",
+  "right": true,
+  "apps": [
+   "match-kv",
+   "cheat-guard",
+   "chat-relay",
+   "matchmaker",
+   "lobby-edge"
+  ],
+  "type": "d"
+ },
+ "x-85f91bb85c": {
+  "rank1": "chat-relay",
+  "right": true,
+  "apps": [
+   "chat-relay",
+   "lobby-edge"
+  ],
+  "type": "b"
+ },
+ "x-8aa1cee0a3": {
+  "rank1": "media-meta-db",
+  "right": true,
+  "apps": [
+   "media-meta-db",
+   "watch-web",
+   "license-check",
+   "playback-api",
+   "session-kv"
+  ],
+  "type": "b"
+ },
+ "x-a360d81053": {
+  "rank1": "statement-gen",
+  "right": true,
+  "apps": [
+   "statement-gen",
+   "teller-gateway",
+   "rate-kv"
+  ],
+  "type": "d"
+ },
+ "x-b0d3bf3af6": {
+  "rank1": "pnr-api",
+  "right": true,
+  "apps": [
+   "pnr-api",
+   "booking-web",
+   "gds-bridge"
+  ],
+  "type": "d"
+ },
+ "x-c6646cafa4": {
+  "rank1": "rules-engine",
+  "right": true,
+  "apps": [
+   "rules-engine",
+   "device-hub",
+   "mqtt-core"
+  ],
+  "type": "d"
+ },
+ "x-c720471363": {
+  "rank1": "depot-sync",
+  "right": true,
+  "apps": [
+   "depot-sync",
+   "shipments-pg",
+   "route-planner",
+   "parcel-tracker",
+   "dispatch-portal"
+  ],
+  "type": "d"
+ },
+ "x-cb536946d6": {
+  "rank1": "notify-hub",
+  "right": true,
+  "apps": [
+   "notify-hub",
+   "patient-portal",
+   "hl7-bus"
+  ],
+  "type": "d"
+ },
+ "x-ce02d32b58": {
+  "rank1": "slots-kv",
+  "right": true,
+  "apps": [
+   "slots-kv",
+   "notify-hub",
+   "appointment-api",
+   "patient-portal",
+   "coverage-check"
+  ],
+  "type": "a"
+ },
+ "x-d24697ab21": {
+  "rank1": "title-index",
+  "right": true,
+  "apps": [
+   "title-index",
+   "watch-web",
+   "origin-store"
+  ],
+  "type": "a"
+ },
+ "x-d5b42a6d5e": {
+  "rank1": "fares-db",
+  "right": true,
+  "apps": [
+   "fares-db",
+   "loyalty-api",
+   "voucher-api",
+   "booking-web"
+  ],
+  "type": "a"
+ },
+ "x-d8b0571df1": {
+  "rank1": "mqtt-core",
+  "right": true,
+  "apps": [
+   "mqtt-core",
+   "alarm-api",
+   "device-hub",
+   "firmware-api"
+  ],
+  "type": "c"
+ },
+ "x-d9b1001ce7": {
+  "rank1": "route-planner",
+  "right": true,
+  "apps": [
+   "route-planner",
+   "depot-sync",
+   "dispatch-portal",
+   "parcel-tracker"
+  ],
+  "type": "e"
+ },
+ "x-daeb5e1dd1": {
+  "rank1": "emr-db",
+  "right": true,
+  "apps": [
+   "emr-db",
+   "appointment-api",
+   "patient-portal",
+   "records-api"
+  ],
+  "type": "c"
+ },
+ "x-dd5daaccde": {
+  "rank1": "license-check",
+  "right": false,
+  "apps": [
+   "license-check",
+   "origin-store",
+   "subtitle-svc",
+   "watch-web"
+  ],
+  "type": "e"
+ },
+ "x-e872422f60": {
+  "rank1": "fare-engine",
+  "right": false,
+  "apps": [
+   "fare-engine",
+   "seat-map",
+   "booking-web",
+   "gds-bridge",
+   "pnr-api"
+  ],
+  "type": "b"
+ }
+}

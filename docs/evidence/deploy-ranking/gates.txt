@@ -1,0 +1,30 @@
+== shacl
+total=98 pass=98 fail=0 err=0
+== similar
+per fault (top-1 hits): {'cpu': 11, 'delay': 13, 'disk': 14, 'loss': 14, 'mem': 15, 'socket': 15}
+tune (rep 1): top-1 23/29 = 0.79; top 3 0.83
+held out (reps 2-3): top-1 59/60 = 0.98; top 3 1.00
+== chain_scores
+stored corr:confidence checked on 585 chains; largest |round(confidence, 4) - stored|: 0.000e+00
+structural failures (labels, severity, weakest, stored ids): 0
+PASS
+== uses
+  0.14 s  c-d7fc5dfaee/incidents.json: 9 facts, 1 events, 10 chains gone or relinked, 1 verdicts
+  0.00 s  c-e425dee775/logs.jsonl: 0 facts, 0 events, 0 chains gone or relinked, 0 verdicts
+merged store, 12 files: median 0.14 s, max 0.14 s
+== chain_delta
+| INC-073E22 | 90 | 88 | yes | g:harvest/metrics/c-073e220e96/metrics.csv | 11 (11 to 12) | 707 (706 to 708) |
+
+GATE PASSED
+== lab demo-c
+checked 13 before events, 8 top-chain links and 16 blast and before applications
+0 failures
+ "js_errors": []
+}
+== lab rcaeval-merged
+checked 2308 before events, 130 top-chain links and 760 blast and before applications
+0 failures
+ "js_errors": []
+}
+done
+GATE 0 unmentioned items, 0 uncovered ogrep behaviors, 0 failing examples: PASS (0 unmentioned, 0 uncovered, 0 failing)

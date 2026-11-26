@@ -1,0 +1,873 @@
+{
+ "x-022ee08d5d": {
+  "type": "d",
+  "root": "geo-kv",
+  "distractor_app": "shipments-pg",
+  "chains": [
+   "geo-kv",
+   "route-planner",
+   "dispatch-portal",
+   "parcel-tracker",
+   "label-maker"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 6,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 1.0"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-0be7b29053": {
+  "type": "b",
+  "root": "rank-board",
+  "distractor_app": "chat-relay",
+  "chains": [
+   "rank-board",
+   "lobby-edge"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": null,
+  "distractor_in_before": [
+   "DEPLOYMENT 0.25"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-13b72671f4": {
+  "type": "b",
+  "root": "subtitle-svc",
+  "distractor_app": "session-kv",
+  "chains": [
+   "title-index",
+   "watch-web",
+   "subtitle-svc",
+   "session-kv"
+  ],
+  "rank1_right": false,
+  "root_rank": 3,
+  "distractor_rank": 4,
+  "distractor_in_before": [
+   "DEPLOYMENT 0.25"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-1e183a194a": {
+  "type": "c",
+  "root": "origin-store",
+  "distractor_app": "title-index",
+  "chains": [
+   "origin-store",
+   "subtitle-svc",
+   "title-index",
+   "watch-web"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 3,
+  "distractor_in_before": [
+   "ALERT 1.0",
+   "METRIC_ANOMALY 0.83",
+   "METRIC_ANOMALY 0.93",
+   "LOG_ERROR 0.87"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-2c7a42c33b": {
+  "type": "a",
+  "root": "scan-stream",
+  "distractor_app": "depot-sync",
+  "chains": [
+   "scan-stream",
+   "dispatch-portal",
+   "fleet-api",
+   "parcel-tracker",
+   "depot-sync"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 5,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 0.06"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-327c17d5ae": {
+  "type": "e",
+  "root": "twin-registry",
+  "distractor_app": "alarm-api",
+  "chains": [
+   "twin-registry",
+   "device-hub"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": null,
+  "distractor_in_before": [],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-3b6c313dee": {
+  "type": "a",
+  "root": "limits-api",
+  "distractor_app": "account-api",
+  "chains": [
+   "limits-api",
+   "teller-gateway",
+   "account-api"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 3,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 0.05",
+   "METRIC_ANOMALY 0.05",
+   "METRIC_ANOMALY 0.9"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-454a3a0c03": {
+  "type": "b",
+  "root": "mqtt-core",
+  "distractor_app": "alarm-api",
+  "chains": [
+   "mqtt-core",
+   "twin-registry",
+   "device-hub",
+   "alarm-api"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 4,
+  "distractor_in_before": [
+   "DEPLOYMENT 0.25"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-4acd84ac3e": {
+  "type": "a",
+  "root": "session-kv",
+  "distractor_app": "subtitle-svc",
+  "chains": [
+   "session-kv",
+   "watch-web",
+   "title-index",
+   "playback-api",
+   "subtitle-svc"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 5,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 0.05"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-53a05add99": {
+  "type": "d",
+  "root": "playback-api",
+  "distractor_app": "media-meta-db",
+  "chains": [
+   "playback-api",
+   "watch-web",
+   "media-meta-db"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 3,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 1.0"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-599923afc7": {
+  "type": "e",
+  "root": "ad-picker",
+  "distractor_app": "title-index",
+  "chains": [
+   "ad-picker",
+   "watch-web"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": null,
+  "distractor_in_before": [],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-5a2892c4de": {
+  "type": "b",
+  "root": "hl7-bus",
+  "distractor_app": "appointment-api",
+  "chains": [
+   "hl7-bus",
+   "coverage-check",
+   "patient-portal",
+   "notify-hub",
+   "appointment-api"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 5,
+  "distractor_in_before": [
+   "DEPLOYMENT 0.25"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-5e4f49931c": {
+  "type": "a",
+  "root": "matchmaker",
+  "distractor_app": "item-vault",
+  "chains": [
+   "matchmaker",
+   "lobby-edge",
+   "item-vault"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 3,
+  "distractor_in_before": [],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-697b0a7a8d": {
+  "type": "b",
+  "root": "account-api",
+  "distractor_app": "statement-gen",
+  "chains": [
+   "account-api",
+   "fraud-score",
+   "teller-gateway",
+   "statement-gen"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 4,
+  "distractor_in_before": [
+   "DEPLOYMENT 0.25"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-6f7c65ef02": {
+  "type": "c",
+  "root": "player-db",
+  "distractor_app": "chat-relay",
+  "chains": [
+   "player-db",
+   "chat-relay",
+   "lobby-edge"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 2,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 0.88",
+   "METRIC_ANOMALY 0.89",
+   "LOG_ERROR 0.81",
+   "ALERT 1.0"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-70c9a00970": {
+  "type": "c",
+  "root": "fleet-api",
+  "distractor_app": "label-maker",
+  "chains": [
+   "label-maker",
+   "fleet-api",
+   "dispatch-portal"
+  ],
+  "rank1_right": false,
+  "root_rank": 2,
+  "distractor_rank": 1,
+  "distractor_in_before": [
+   "LOG_ERROR 1.0",
+   "ALERT 1.0",
+   "METRIC_ANOMALY 0.91",
+   "METRIC_ANOMALY 0.97"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-87b8a5c7f4": {
+  "type": "d",
+  "root": "fraud-score",
+  "distractor_app": "audit-journal",
+  "chains": [
+   "fraud-score",
+   "audit-journal",
+   "teller-gateway"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 2,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 1.0"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-95cf15c942": {
+  "type": "b",
+  "root": "geo-kv",
+  "distractor_app": "route-planner",
+  "chains": [
+   "geo-kv",
+   "dispatch-portal",
+   "parcel-tracker",
+   "route-planner"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 4,
+  "distractor_in_before": [
+   "DEPLOYMENT 0.25"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-977a5e014f": {
+  "type": "e",
+  "root": "fx-quote",
+  "distractor_app": "audit-journal",
+  "chains": [
+   "teller-gateway",
+   "statement-gen",
+   "fraud-score",
+   "fx-quote"
+  ],
+  "rank1_right": false,
+  "root_rank": 4,
+  "distractor_rank": null,
+  "distractor_in_before": [],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-9f779c4a37": {
+  "type": "d",
+  "root": "player-db",
+  "distractor_app": "match-kv",
+  "chains": [
+   "player-db",
+   "item-vault",
+   "matchmaker",
+   "lobby-edge",
+   "chat-relay"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 6,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 1.0"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-a0a31e9f32": {
+  "type": "c",
+  "root": "shadow-kv",
+  "distractor_app": "alarm-api",
+  "chains": [
+   "shadow-kv",
+   "alarm-api",
+   "device-hub",
+   "ingest-api"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 2,
+  "distractor_in_before": [
+   "ALERT 1.0",
+   "LOG_ERROR 0.81",
+   "METRIC_ANOMALY 0.92",
+   "METRIC_ANOMALY 0.86"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-a18671dfe4": {
+  "type": "d",
+  "root": "appointment-api",
+  "distractor_app": "hl7-bus",
+  "chains": [
+   "appointment-api",
+   "notify-hub",
+   "hl7-bus",
+   "patient-portal"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 3,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 1.0"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-ad14a91fe3": {
+  "type": "c",
+  "root": "emr-db",
+  "distractor_app": "rx-router",
+  "chains": [
+   "emr-db",
+   "patient-portal",
+   "rx-router",
+   "appointment-api"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 3,
+  "distractor_in_before": [
+   "LOG_ERROR 1.0",
+   "ALERT 1.0",
+   "METRIC_ANOMALY 0.76",
+   "METRIC_ANOMALY 0.84"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-b0e22df421": {
+  "type": "e",
+  "root": "voucher-api",
+  "distractor_app": "pnr-api",
+  "chains": [
+   "voucher-api",
+   "booking-web"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": null,
+  "distractor_in_before": [],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-b373c31bd0": {
+  "type": "d",
+  "root": "pnr-api",
+  "distractor_app": "fares-db",
+  "chains": [
+   "pnr-api",
+   "booking-web",
+   "fares-db"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 3,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 1.0"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-b9c26ff625": {
+  "type": "c",
+  "root": "rate-kv",
+  "distractor_app": "fraud-score",
+  "chains": [
+   "rate-kv",
+   "fraud-score",
+   "teller-gateway"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 2,
+  "distractor_in_before": [
+   "ALERT 1.0",
+   "LOG_ERROR 0.87",
+   "METRIC_ANOMALY 0.98",
+   "METRIC_ANOMALY 0.92"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-bcce0dbcb4": {
+  "type": "d",
+  "root": "alarm-api",
+  "distractor_app": "shadow-kv",
+  "chains": [
+   "alarm-api",
+   "device-hub",
+   "shadow-kv"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 3,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 1.0"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-c80c799685": {
+  "type": "e",
+  "root": "player-db",
+  "distractor_app": "matchmaker",
+  "chains": [
+   "player-db",
+   "lobby-edge",
+   "rank-board"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": null,
+  "distractor_in_before": [],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-ca5027ee6b": {
+  "type": "e",
+  "root": "slots-kv",
+  "distractor_app": "hl7-bus",
+  "chains": [
+   "slots-kv",
+   "records-api",
+   "patient-portal",
+   "appointment-api"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": null,
+  "distractor_in_before": [],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-cb458fea65": {
+  "type": "b",
+  "root": "avail-kv",
+  "distractor_app": "seat-map",
+  "chains": [
+   "booking-web",
+   "fare-engine",
+   "avail-kv",
+   "seat-map"
+  ],
+  "rank1_right": false,
+  "root_rank": 3,
+  "distractor_rank": 4,
+  "distractor_in_before": [
+   "DEPLOYMENT 0.25"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-cc64003c48": {
+  "type": "c",
+  "root": "loyalty-api",
+  "distractor_app": "seat-map",
+  "chains": [
+   "seat-map",
+   "loyalty-api",
+   "booking-web"
+  ],
+  "rank1_right": false,
+  "root_rank": 2,
+  "distractor_rank": 1,
+  "distractor_in_before": [
+   "ALERT 1.0",
+   "METRIC_ANOMALY 0.83",
+   "METRIC_ANOMALY 0.97",
+   "LOG_ERROR 1.0"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-d9a20b5649": {
+  "type": "a",
+  "root": "slots-kv",
+  "distractor_app": "records-api",
+  "chains": [
+   "slots-kv",
+   "appointment-api",
+   "rx-router",
+   "records-api",
+   "patient-portal"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 4,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 1.0",
+   "METRIC_ANOMALY 1.0"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-e4d34034b9": {
+  "type": "e",
+  "root": "fleet-api",
+  "distractor_app": "label-maker",
+  "chains": [
+   "route-planner",
+   "dispatch-portal",
+   "fleet-api"
+  ],
+  "rank1_right": false,
+  "root_rank": 3,
+  "distractor_rank": null,
+  "distractor_in_before": [],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-f8f7812f23": {
+  "type": "a",
+  "root": "ingest-api",
+  "distractor_app": "mqtt-core",
+  "chains": [
+   "ingest-api",
+   "firmware-api",
+   "device-hub",
+   "twin-registry",
+   "mqtt-core"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 5,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 0.09"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ },
+ "x-ff236e3475": {
+  "type": "a",
+  "root": "fare-engine",
+  "distractor_app": "loyalty-api",
+  "chains": [
+   "fare-engine",
+   "booking-web",
+   "loyalty-api"
+  ],
+  "rank1_right": true,
+  "root_rank": 1,
+  "distractor_rank": 3,
+  "distractor_in_before": [
+   "METRIC_ANOMALY 0.06",
+   "METRIC_ANOMALY 0.07",
+   "METRIC_ANOMALY 0.94"
+  ],
+  "quarantine": [],
+  "degraded": [
+   "catalog: dependencies carry no date, so each holds at every time; dating them needs an ogrep release after 0.3.0"
+  ],
+  "leaks": {
+   "mcp": [],
+   "raw": []
+  }
+ }
+}
