@@ -263,7 +263,7 @@ const CUES: &[(&str, &[&str])] = &[
 
 /// Words that make a clause a question, a proposal, a plan or a condition when they come before
 /// the action in it.
-const NOT_YET: &[&str] = &["should", "shall", "let's", "lets", "could", "would", "can", "will", "i'll", "we'll", "gonna", "going to", "plan", "planning", "want to", "need to", "needs to", "might", "maybe", "about to", "considering", "consider", "suggest", "propose", "if", "unless", "before we", "whether", "have to", "has to", "we've got to", "i've got to", "gotta", "i'd", "we'd better", "had better", "please", "pls"];
+const NOT_YET: &[&str] = &["should", "shall", "let's", "lets", "could", "would", "can", "will", "i'll", "we'll", "gonna", "going to", "plan", "planning", "want to", "need to", "needs to", "might", "maybe", "about to", "considering", "consider", "suggest", "propose", "if", "unless", "before we", "whether", "have to", "has to", "we've got to", "i've got to", "gotta", "i'd", "we'd", "had better", "please", "pls"];
 /// Words that open a question about what follows them.
 const ASKS: &[&str] = &["did", "do", "does", "has", "have", "had", "is", "are", "was", "were", "should", "shall", "can", "could", "will", "would", "anyone", "someone", "who"];
 /// Who an asking word asks about.
@@ -333,7 +333,7 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         // The tense is the verb's, which opens the action ("rolled back X", "we just added
         // replicas"), not a later name's ("restart shared-cache") or adjective's ("apply the
         // updated config"). Of irregular pasts only those unlike their present are read.
-        let quoted: Vec<String> = words(&q).into_iter().map(|w| w.to_lowercase()).collect();
+        let quoted = words(&q);
         let verb = quoted.iter().position(|w| !SUBJECTS.contains(&w.as_str()) && !matches!(w.as_str(), "just" | "already" | "also" | "then"));
         // "have to restart X" is still to come.
         let past = verb.is_some_and(|i| match quoted[i].as_str() {
@@ -350,10 +350,9 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
     // The quote's words before its action, which a negation may be among.
     let mut lead_in = 0;
     if let Some((_, cues)) = CUES.iter().find(|(k, _)| *k == kind) {
-        let lower: Vec<String> = said.iter().map(|w| w.to_lowercase()).collect();
-        let cue_at = |i: usize| cues.iter().any(|c| c.split(' ').enumerate().all(|(k, stem)| lower.get(i + k).is_some_and(|w| w.starts_with(stem))));
-        if let Some(first) = (0..lower.len()).find(|&i| cue_at(i)) {
-            let link = (first + 1..lower.len()).find(|&i| LINKS.contains(&lower[i].as_str())).unwrap_or(lower.len());
+        let cue_at = |i: usize| cues.iter().any(|c| c.split(' ').enumerate().all(|(k, stem)| said.get(i + k).is_some_and(|w| w.starts_with(stem))));
+        if let Some(first) = (0..said.len()).find(|&i| cue_at(i)) {
+            let link = (first + 1..said.len()).find(|&i| LINKS.contains(&said[i].as_str())).unwrap_or(said.len());
             let last = (first..link).rev().find(|&i| cue_at(i)).unwrap_or(first);
             said.truncate(last + 1);
             lead_in = first;
@@ -367,16 +366,15 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
     // roll back X" still plan.
     let cause = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "so" | "because" | "since" | "but") || now_that(&before, i)).map_or(0, |i| i + 1);
     // "please note" announces, and "I'd" before a past verb is "I had" ("I'd already restarted X").
-    let lower: Vec<String> = before[cause..].iter().chain(&said).map(|w| w.to_lowercase()).collect();
-    let lead: Vec<&str> = lower.iter().map(String::as_str).collect();
-    // "I'd planned to" and "please be ready to" still plan.
+    let lead: Vec<&str> = before[cause..].iter().chain(&said).map(String::as_str).collect();
+    // "I'd planned to" and "please be ready to" still plan; "I'd scaled to 10" reports.
     let lead = lead.iter().enumerate().filter(|&(i, w)| {
         let rest = &lead[i + 1..];
         let at = rest.iter().position(|w| !matches!(*w, "just" | "already" | "also")).unwrap_or(rest.len());
         let (next, then) = (rest.get(at).copied(), rest.get(at + 1).copied());
         match *w {
             "please" | "pls" => !(matches!(next, Some("note" | "fyi")) || next == Some("be") && matches!(then, Some("aware" | "advised"))),
-            "i'd" | "we'd" => !(next.is_some_and(is_past) && then != Some("to")),
+            "i'd" | "we'd" => !(next.is_some_and(is_past) && !(then == Some("to") && matches!(next, Some("planned" | "wanted" | "hoped" | "decided" | "agreed" | "meant" | "intended" | "needed")))),
             _ => true,
         }
     }).map(|(_, w)| *w).collect::<Vec<_>>();
@@ -489,6 +487,10 @@ mod tests {
             ("please see that we roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
             ("I'd planned to roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
             ("I'd proceed with rolling back checkout", "rolling back checkout", Some("is a proposal or a plan")),
+            ("we'd like to restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("we'd planned to roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
+            ("we'd rolled back checkout", "rolled back checkout", None),
+            ("I'd already scaled to 6 pods", "scaled to 6 pods", None),
             ("ok but did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("hey did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
