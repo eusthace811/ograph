@@ -266,7 +266,7 @@ const CUES: &[(&str, &[&str])] = &[
 const NOT_YET: &[&str] = &["should", "shall", "let's", "lets", "could", "would", "can", "will", "i'll", "we'll", "gonna", "going to", "plan", "planning", "want to", "need to", "needs to", "might", "maybe", "about to", "considering", "consider", "suggest", "propose", "if", "unless", "before we", "whether", "have to", "has to", "we've got to", "i've got to", "gotta", "had better", "please", "pls", "waiting on", "waiting for"];
 
 /// Words that plan an action unless its own verb is past, when they tell only what came first.
-const PAST_OR_PLAN: &[&str] = &["i'd", "we'd", "planned to", "wanted to", "suggested", "proposed", "considered"];
+const PAST_OR_PLAN: &[&str] = &["i'd", "we'd", "planned to", "wanted to", "suggested", "proposed", "considered", "asked to"];
 /// Words that open a question about what follows them.
 const ASKS: &[&str] = &["did", "do", "does", "has", "have", "had", "is", "are", "was", "were", "should", "shall", "can", "could", "will", "would", "anyone", "someone", "who"];
 /// Who an asking word asks about.
@@ -326,10 +326,15 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
     // config"). Of irregular pasts only those unlike their present are read.
     let quoted = words(&q);
     let verb = quoted.iter().position(|w| !SUBJECTS.contains(&w.as_str()) && !matches!(w.as_str(), "i'd" | "we'd" | "just" | "already" | "also" | "then"));
-    // "have to restart X" is still to come.
-    let past = verb.is_some_and(|i| match quoted[i].as_str() {
-        "have" | "has" | "had" | "we've" => quoted.get(i + 1).is_none_or(|w| w != "to"),
-        w => is_past(w),
+    // "have to restart X" is still to come, and so is an action a plan word opens ("planned to
+    // roll back X", "suggested rolling back X").
+    let past = verb.is_some_and(|i| {
+        let opens = format!("{} ", quoted[i..].join(" "));
+        !PAST_OR_PLAN.iter().any(|p| opens.starts_with(&format!("{p} ")))
+            && match quoted[i].as_str() {
+                "have" | "has" | "had" | "we've" => quoted.get(i + 1).is_none_or(|w| w != "to"),
+                w => is_past(w),
+            }
     });
     if opens_question && sentence_end.is_some_and(|i| msg[i..].starts_with('?')) {
         return Some("is a question");
@@ -502,6 +507,10 @@ mod tests {
             ("just wanted to let you know we rolled back checkout", "rolled back checkout", None),
             ("as dana suggested we rolled back checkout", "rolled back checkout", None),
             ("we'd switched to the backup and rolled back checkout", "rolled back checkout", None),
+            ("we wanted to roll back checkout but the pipeline was locked", "wanted to roll back checkout", Some("is a proposal or a plan")),
+            ("I'd planned to roll back checkout", "I'd planned to roll back checkout", Some("is a proposal or a plan")),
+            ("dana suggested rolling back checkout", "suggested rolling back checkout", Some("is a proposal or a plan")),
+            ("I'd asked to roll back checkout", "asked to roll back checkout", Some("is a proposal or a plan")),
             ("ok but did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("hey did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
