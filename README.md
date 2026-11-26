@@ -68,7 +68,7 @@ ograph lab                         # one HTML page over the whole graph
 
 | Check | Result |
 |---|---|
-| Root cause on RCAEval RE2-OB (90 labeled failures), held-out reps | AC@1 0.93, AC@3 0.98, Avg@5 0.98 (network loss 0.80, delay 0.87). The published numbers are TORAI 0.83/0.95/0.93, CIRCA 0.67/0.89/0.85 and BARO 0.67/0.82/0.80 |
+| Root cause on RCAEval RE2-OB (90 labeled failures), held-out reps | AC@1 0.93, AC@3 0.98, Avg@5 0.97 (network loss 0.80, delay 0.87). The published numbers are TORAI 0.83/0.95/0.93, CIRCA 0.67/0.89/0.85 and BARO 0.67/0.82/0.80 |
 | Chain rank 1 on a fresh 150-case distractor suite (`examples/distractors`) | 143/150 with `own_degradation`, against 114/150 without: 29 better and 0 worse (p = 3.7e-09). RCAEval rank 1 identical on 90 of 90 |
 | An agent with ograph's MCP tools on Haiku, 55 held-out RCAEval cases, 3 runs each | 127/165 (0.77) with `chronic` marking, against 56/165 (0.34) without; better on 36 cases, worse on 2 |
 | Similar past incident shares the root cause | 0.92 top-1 (82 of 89) and 0.98 on the held-out reps (59 of 60), 0.94 top-3, against about 0.20 by chance |

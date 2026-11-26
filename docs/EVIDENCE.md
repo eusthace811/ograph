@@ -1191,3 +1191,25 @@ On the distractor suite (seed 2026) chains rank 1 scored 4 of 7 deploy cases. Th
 Dev (seed 2026): 24/35 -> 31/35. Cost $2.32. Verdict: KEEP-OFF. The setting defaults to `false`. `--set own_degradation=true` on `chains` or `replay` turns it on.
 
 Lane X power extension (docs/evidence/deploy-ranking-power.txt, gate committed before the suite was generated): own_degradation on a fresh 150-case distractor suite (seed 31415) turns chains rank 1 from 114/150 to 143/150, 29 better and 0 worse (p = 3.7e-09), no type worse; sparse 17 -> 29. RCAEval rank 1 identical on 90/90, similar 0.92, replay 0 of 18630 disagree, demo unchanged. own_degradation is now on by default; the seed-9001 test (3-0, p = 0.25) stands beside it.
+
+## Phase 13, lane W: sparse signals (`sparse-signals.txt`, `sparse-signals/`)
+
+A series that is zero at almost every baseline point has no spread, so the detector's scale falls to its floor and any change scores strength 1.0. That is the distractor suite's type (d), which fooled the mcp arm on 19 of 21 runs after lane T, and redis's disk series on RCAEval. The detector now writes `evt:sparseBaseline` (the nonzero points) on an episode whose baseline has median zero and fewer than 12 nonzero points. Such events carry `sparse` in `before`, `chains`, `why`, the lab and the MCP tools, for example `media-meta-db snapshot-io was zero at every point of its baseline: any change scores full strength, so its strength is unreliable; without other events on media-meta-db, this one is not evidence of a fault`. Scores and ranks do not change. The gate was committed before the code (e5b6def). The held-out sets were a new distractor suite at `--seed 7331` (same generator, new cases) and RCAEval held-out plus misses.
+
+| Gate | Result |
+|---|---|
+| RCAEval chain AC@1 | 0.93, per-case rankings identical to Parent on 90/90 |
+| `similar_eval.py` | 82/89 = 0.92 |
+| `replay_gate.py` | 0 of 18630 cases disagree |
+| Demo chains rank 1 | identical; no demo event is sparse |
+| SHACL, SPARQL, lab, uses, `chains --since`, skill coverage, tests, clippy | all pass |
+| A1 mcp, seed 7331 (35 cases x 3, Haiku) | 100/105 (0.95) against 78/105 (0.74); better 9, worse 1, p = 0.02; sparse type 20/21 against 0/21 |
+| A2 skill, seed 7331 | 104/104 against 95/104; no type worse |
+| A3 RCAEval held-out + misses, mcp | 143/180 (0.79) against 128/180 (0.71) |
+| A3 RCAEval held-out + misses, skill | **153/172 (0.89) against 162/169 (0.96); better 2, worse 13, p = 0.007: FAIL** |
+
+Verdict: DROP. The mark fixes the planted sparse distractor for both arms, but the skill arm loses on real data. Its 19 misses all first saw the wrong application in `before`, 13 on a severity-1.0 metric anomaly; the root was marked sparse in none of them. The lane spent $8.91. The H1 rows of the Candidate were rebuilt from its run log after a shared `--out` was overwritten (see the harness note in `sparse-signals.txt`); give each `agent_rca_eval.py` invocation its own `--out`.
+
+The code stays on branch `lane-w-sparse` (4057f0a); only its evidence is on main.
+
+Lane X power extension, a cost the gate did not measure: with own_degradation on, rank 1 is unchanged on all 90 RCAEval cases, but on c-3a0809d8d0 (loss, rep 3, rank 1 already wrong) the true root falls from rank 5 to outside the top 5. Held-out (reps 2-3) Avg@5 goes from 0.98 to 0.97 and loss-fault Avg@5 from 0.92 to 0.91; AC@1 and AC@3 do not change (docs/evidence/rcaeval-final.txt, regenerated on this build).

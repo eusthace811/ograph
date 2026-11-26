@@ -67,7 +67,7 @@ path = "exports/news.jsonl"
   git history (`ops:validFrom`). `before`, `chains` and `blast --at INC` follow it only for an
   incident that opened after that date, and list the ones they left out as `withheld` ("not
   followed" in text). So a dependency added last week does not change last month's ranking.
-  Needs an ogrep release after 0.3.0; with an older one the harvest says "dependencies carry no
+  Needs ogrep 0.4 or newer; with an older one the harvest says "dependencies carry no
   date" and every dependency counts at every time.
 - A `code` source turns each service's commits into `COMMIT` events with their changed files.
   It also lets ogrep locate log bursts and stack traces, so `LOG_ERROR` and `EXCEPTION` events

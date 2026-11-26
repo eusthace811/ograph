@@ -87,19 +87,23 @@ ograph chains INC-5377
 When rank 1 is not what it was earlier, such as at the last update or before a harvest, ask why:
 
 ```bash
-ograph chains INC-5377 --top 3 --since 2026-11-25T11:53:57.945Z
+ograph chains INC-5377 --top 3 --since 2026-11-26T10:08:38Z
 ```
 
 ```
-since 2026-11-25T11:53:57.945Z: the ranking moved; source files changed: 1
+since 2026-11-26T10:08:38Z: the ranking moved; source files changed: 2
   then  1. ledger-db 0.944  2. payments-api 0.930  3. checkout 0.900
-  now   1. payments-api 0.930  2. ledger-db 0.909  3. checkout 0.900
-  g:harvest/alerts/alerts.json [alerts]: taking it back alone changes the ranking now, and it alone changes the ranking then
+  now   1. payments-api 0.930  2. checkout 0.900  3. ledger-db 0.867
+  g:harvest/alerts/alerts.json [alerts]: taking it back alone changes the ranking now
+  g:harvest/metrics/metrics.csv [metrics]: taking it back alone changes the ranking now
 ```
 
 - Each named file was tested by ranking again, so report it as the reason: "rank 1 moved from
-  ledger-db to payments-api after alerts.json changed". Read what changed in it with
-  `ograph changes --since T`; here it lost the LedgerPoolSaturated alert before the incident.
+  ledger-db to payments-api after alerts.json and metrics.csv changed; restoring either one alone
+  moves it back". Read what changed in them with `ograph changes --since T`; here the
+  LedgerPoolSaturated alert and ledger-db's metric columns went missing, as in an exporter gap.
+- Losing only the alert would not have moved it: ledger-db's metric anomaly still `explains`
+  payments-api, so ledger-db keeps rank 1.
 - A file that changed but is not named did not move the ranking on its own. Do not cite it.
 - `the changes move it together` means no single file explains the move. Say so; do not pick one.
 

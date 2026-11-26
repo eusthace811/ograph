@@ -4,9 +4,9 @@
 #   curl -fsSL https://raw.githubusercontent.com/eusthace811/ograph/main/install.sh | sh
 #
 # Linux and macOS (x86_64, arm64) and Windows in Git Bash (x86_64). Settings:
-#   OGRAPH_VERSION=v0.2.0       a release tag (default: the latest release)
+#   OGRAPH_VERSION=v0.3.0       a release tag (default: the latest release)
 #   OGRAPH_INSTALL_DIR=DIR      where to put it (default ~/.local/bin; ~/bin in Git Bash)
-#   OGREP_VERSION=v0.3.0        the ogrep release to install when ogrep is missing
+#   OGREP_VERSION=v0.4.0        the ogrep release to install when ogrep is missing or older than 0.4
 # Where downloaded executables are not allowed, build from source instead: ./x install.
 set -eu
 
@@ -84,11 +84,11 @@ install_release() {
 
 install_release "$REPO" "$BIN" "$VERSION"
 
-# ograph reads the service catalog with ogrep, and needs 0.3 or newer.
+# ograph reads the service catalog with ogrep: it needs 0.3 or newer, and 0.4 or newer to date dependencies.
 if [ -z "${OGRAPH_OGREP:-}" ]; then
   have="$(PATH="$DIR:$PATH" ogrep --version 2>/dev/null || true)"
   case "$have" in
-    ""|"ogrep 0.0."*|"ogrep 0.1."*|"ogrep 0.2."*) install_release eusthace811/ogrep ogrep "${OGREP_VERSION:-latest}" ;;
+    ""|"ogrep 0.0."*|"ogrep 0.1."*|"ogrep 0.2."*|"ogrep 0.3."*) install_release eusthace811/ogrep ogrep "${OGREP_VERSION:-latest}" ;;
     *) say "found $have" ;;
   esac
 fi

@@ -311,7 +311,7 @@ ograph ontology diff new.ttl    # before changing the ontology: BREAKING lines a
 | `the ontology declares no X (did you mean Y?)` | A misspelled name in a SPARQL query |
 | `verdict not recorded: the ontology refuses ...` | `.ograph/ontology.ttl` is older than the binary. Run `ograph ontology check` and update it |
 | `DEGRADED: ogrep ...` on a `code`, `logs` or `errors` line | ogrep could not answer for a code repository. The events are kept without code locations. Check that the path is a git repository and that `ogrep` runs there, then harvest again |
-| `DEGRADED: catalog: dependencies carry no date` | ogrep 0.3.0 or older cannot date dependencies, so each holds at every time. Everything else works. An ogrep release after 0.3.0 dates them |
+| `DEGRADED: catalog: dependencies carry no date` | ogrep 0.3.0 or older cannot date dependencies, so each holds at every time. Everything else works. ogrep 0.4 or newer dates them |
 | `DEGRADED: ogrep not runnable` on the catalog line, and almost everything quarantined | `ogrep` is not on `PATH`; install it (section 1) or set `OGRAPH_OGREP`, then harvest again |
 | Windows: `running pi` fails in a harvest with `[llm.extract]` | npm installs pi as `pi.cmd`, which Windows starts only through `cmd`. Begin the command with `"cmd", "/C", "pi", ...` |
 | Windows: `./x install` says ograph.exe is still running | Stop `ograph serve` (Ctrl-C), or `taskkill //IM ograph.exe //F` |

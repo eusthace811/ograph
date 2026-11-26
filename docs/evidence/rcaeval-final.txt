@@ -1,5 +1,5 @@
-90 cases in 14 s; 0 errors []
-harvest per case: median 0.43 s, max 2.42 s
+90 cases in 8 s; 0 errors []
+harvest per case: median 0.27 s, max 0.78 s
 
 All RE2-OB (90 cases)
 
@@ -23,7 +23,7 @@ Held-out split (reps 2-3) (60 cases)
 
 | method | AC@1 | AC@3 | Avg@5 |
 |---|---|---|---|
-| chain | 0.93 | 0.98 | 0.98 |
+| chain | 0.93 | 0.98 | 0.97 |
 | propagation | 0.87 | 0.97 | 0.96 |
 | zmax | 0.82 | 0.97 | 0.94 |
 | sparql_meanshift | 0.68 | 0.97 | 0.90 |
@@ -59,7 +59,7 @@ Fault loss (15 cases)
 
 | method | AC@1 | AC@3 | Avg@5 |
 |---|---|---|---|
-| chain | 0.80 | 0.93 | 0.92 |
+| chain | 0.80 | 0.93 | 0.91 |
 | propagation | 0.67 | 0.87 | 0.88 |
 | zmax | 0.60 | 1.00 | 0.88 |
 | sparql_meanshift | 0.33 | 0.93 | 0.80 |

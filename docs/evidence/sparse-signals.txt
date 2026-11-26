@@ -1,0 +1,139 @@
+Lane W: sparse signals. Tell the agent, in ograph's own outputs, when an event's strength rests on
+a baseline too sparse to measure spread.
+
+GATE, written and committed before any code of this lane (2026-11-25)
+=====================================================================
+Problem (diagnosed on dev data only: the distractor suite at seed 2026, the RCAEval seen sample
+and the demo). The metric detector scores a point by robust z against a trailing baseline with a
+scale of max(1.4826 MAD, 1% of |median|, range/6, 1e-6). A series that is zero at almost every
+baseline point (a sparse series) has MAD 0, median 0 and a range of at most a few spikes, so the
+scale falls to the 1e-6 floor or to a spread set by a handful of points, and any change saturates
+strength at 1.0. On the seed-2026 suite every sparse distractor event has 29 baseline points, all
+zero, and severity 1.00; the mcp arm (lane T's build) answers it on 19 of 21 runs. On RCAEval the
+same shape is redis's disk series (51 of its strong events have an all-zero baseline). Lane T's
+`chronic` does not catch a sparse series that changes once.
+
+Change (planned): the metric detector records, on each episode whose baseline is sparse (median
+zero and fewer than 12 nonzero points, 12 being the points the detector already requires for a
+baseline), how many of its baseline points were nonzero, as a new event fact in the ontology.
+`before`, `chains` (root and links), `why`, the MCP tools and the lab mark such events `sparse`,
+with a sentence that says the strength is unreliable, as lane T's `chronic` is shown. No service
+name, nothing suite- or RCAEval-specific; the threshold is the detector's own baseline minimum.
+The first candidate leaves chain scoring unchanged. A variant whose scoring uses a corrected
+strength for sparse events may be tried on dev data only; it is kept only if D1 holds with no
+flip and chains rank 1 on the seed-2026 suite does not drop, and then agent check 4 applies.
+
+Binaries
+  Parent     target/lane-w/ograph-parent, `cargo build --release` at ae0d9d3 (integrate-phase-13).
+  Candidate  target/lane-w/ograph-candidate-<sha>, the lane's final code commit.
+
+Sets
+  Dev (iteration): the distractor suite at --seed 2026 (already seen by lane T's second check),
+  the RCAEval seen sample (--sample 30 --seed 12) and the demo.
+  Held-out (evaluated exactly once, after the code is final and committed):
+    H1 a NEW distractor suite, `python3 examples/distractors/generate.py --seed 7331`, generated
+       only after the code is final and committed; no case or transcript of it is looked at
+       before then. It comes from the same generator as the dev suite, so it guards against
+       overfitting to the dev cases, not against overfitting to the generator.
+    H2 RCAEval held-out: the 55 cases outside the seen sample (--holdout 55 --holdout-seed 13),
+       plus the misses (--misses against the Parent reference). This is the real-data guard.
+  examples/distractors/generate.py, the suite's labels and the harness's scoring are not edited.
+  Nothing is changed after held-out numbers are seen.
+
+Deterministic gate (all must hold)
+  D1 `rcaeval_score.py --modes chain` on the 90 cases (target/rcaeval-cases, mirror_cases.py over
+     /Volumes/External Disk/Github/graph-rag/data/rcaeval-cases, read only): chain AC@1 >= 0.93,
+     and no case whose rank 1 is right under Parent (target/lane-w/rcaeval-ref.json) turns wrong.
+  D2 similar_eval.py: 0.92, unchanged.
+  D3 replay_gate.py over the mirror: 0 disagreements.
+  D4 demo `ograph chains` rank 1 of the four incidents identical to Parent's, unless the change
+     is a deliberate ranking change, which is then justified here.
+  D5 shacl_suite.py as before; the SPARQL suite (reference queries of
+     examples/demo/sparql-questions.json give the same rows under Parent and Candidate); lab gates
+     (lab_check.py and lab_browser.mjs on the demo and the 90-case merged store); uses_gate.py;
+     chain_delta_gate.py (`chains --since`); skill_coverage.py; `cargo test --workspace` passes;
+     `cargo clippy --workspace --all-targets` clean. Paths are absolute (the worktree has no data/).
+
+Agent gate, on Haiku (claude-haiku-5-5, --runner claude, 3 runs, arms mcp, skill, chains)
+  Parent: --bin <Parent> --guidance p=ae0d9d3 --arms mcp@p,skill@p,chains
+  Candidate: --bin <Candidate> --guidance c=<sha> --arms mcp@c,skill@c,chains
+  The skill text is ae0d9d3's; the Candidate's revision adds only what describes the new mark.
+  H1 runs agent_rca_eval.py on the seed-7331 suite with --sample 35 (all cases); H2 with
+  --cases <data> --reference target/lane-w/rcaeval-ref.json --sample 30 --seed 12 --skip-sample
+  --holdout 55 --holdout-seed 13 --misses. --work under /private/tmp/claude-501/lane-w-work.
+  Paired per case on the mean pass rate over runs; exact two-sided sign test over the cases that
+  differ.
+  A1 H1: mcp AC@1 Candidate > Parent with p < 0.05 over the 35 cases; or, if the overall
+     difference is too small to reach significance, over the 7 sparse-type cases, p < 0.05. The
+     result says which applies.
+  A2 H1: skill AC@1 Candidate >= Parent, and for mcp and for skill no distractor type is worse by
+     more than 1 case (cases worse minus cases better, per type, <= 1).
+  A3 H2 (held-out + misses): mcp and skill AC@1 Candidate >= Parent (no regression; lane T's gain
+     must hold).
+  A4 only if ranking changed: chains AC@1 Candidate >= Parent on H1 and on H2.
+  Reported, not gated: AC@1 and fooled per distractor type; misled_by.py's top cause on the
+  Candidate's mcp misses; cost; tool calls.
+
+Verdict
+  KEEP      every deterministic and agent check passes.
+  KEEP-OFF  deterministic checks pass, A1 not significant: the mark goes behind a config flag,
+            off by default.
+  DROP      otherwise.
+
+Budget: $30 by claude's total_cost_usd for the lane, dev runs included. A usage-limit refusal backs
+off once; a second stops the run, and what did not finish is NOT MEASURED.
+
+RESULTS (2026-11-26). Parent target/lane-w/ograph-parent (ae0d9d3), Candidate
+target/lane-w/ograph-candidate-4057f0a (4057f0a). Nothing changed after the held-out runs.
+==========================================================================================
+Design as built: the detector writes evt:sparseBaseline N on an episode whose baseline had
+median zero and N < 12 nonzero points. Such an event carries `sparse`: "media-meta-db
+snapshot-io was zero at every point of its baseline: any change scores full strength, so its
+strength is unreliable; without other events on media-meta-db, this one is not evidence of a
+fault". Shown in `before`, on chain root and links in `chains`, in `why`, the lab, and the MCP
+tool descriptions; skills/ograph gets three sentences. Scores and ranks are not touched, so A4
+does not apply.
+
+Dev (1 run): seed-2026 sparse cases, mcp 5/7 with the first sentence, 7/7 after adding "without
+other events on APP, this one is not evidence of a fault"; RCAEval seen sample mcp 24/30, skill
+25/27 (lane T's dev: 25/30, 24/26); demo mcp 3/4, skill 4/4. Dev cost $0.62.
+
+Deterministic
+  D1 rcaeval_score.py --modes chain: AC@1 0.93 (84/90) for both; chain rankings identical on
+     90/90; no flip.                                                                       PASS
+  D2 similar_eval.py: 82/89 = 0.92.                                                        PASS
+  D3 replay_gate.py: 207/207 points agree, 0 of 18630 cases disagree (replay-grid.txt).    PASS
+  D4 demo chains rank 1 identical (ledger-db, checkout, search-api, ledger-db); no demo event is
+     sparse (sparql-chains-demo.txt).                                                      PASS
+  D5 shacl_suite 98/98; SPARQL suite 22/22 identical non-empty rows; lab_check 0 failures on the
+     demo and the 90-case merged store, lab_browser no JS errors; uses_gate PASS;
+     chain_delta_gate PASSED; skill_coverage PASS; cargo test 105 + 23 + 14 pass; clippy clean. PASS
+
+Agent gate on claude-haiku-5-5 (agent-gate.txt; scripts/eval/sparse_gate.py scores it)
+  H1, seed 7331, 315 runs per binary, 1 voided each, 0 errors.
+  A1 mcp: Candidate 100/105 (0.95) against Parent 78/105 (0.74); 35 paired cases, better 9,
+     worse 1, p = 0.0215. The overall test applies. (Sparse type: 20/21 against 0/21, better
+     7, worse 0, p = 0.0156.)                                                              PASS
+  A2 skill 104/104 (1.00) against 95/104 (0.91), better 7, worse 0; per type, net worse cases
+     at most 0 for mcp and for skill (skill sparse 13/21 -> 21/21).                        PASS
+  H2, RCAEval held-out 55 + misses 5, 540 rows per binary, voided 11 (Parent) and 8 (Candidate),
+  0 errors, 0 limit refusals; the chains arm reproduces rcaeval_score.py in both (60/60).
+  A3 mcp: 143/180 (0.79) against 128/180 (0.71), better 14, worse 4.                       PASS
+     skill: 153/172 (0.89) against 162/169 (0.96), better 2, worse 13, p = 0.0074
+     (held-out 145/158 against 149/154; misses 8/14 against 13/15).                        FAIL
+  A4 not applicable (ranking unchanged).
+  misled_by.py: Candidate mcp misses on H1 (5): before 3 (METRIC_ANOMALY 1.0 twice, a
+  DEPLOYMENT once), chains 2. Candidate skill misses on H2 (19): all first saw the wrong
+  application in `before`, 13 of them on a METRIC_ANOMALY of severity 1.0; the root was marked
+  sparse in none of them; the faults were delay 9, loss 5, socket 3, mem 1, cpu 1.
+  Cost: H1 Parent $1.14, Candidate $1.10; H2 Parent $2.97, Candidate $3.08; lane total $8.91.
+
+Harness note: the two H1 invocations shared one --out, and agent_rca_eval.py rewrites
+runs.jsonl from its own rows, so the Parent's final write dropped the Candidate's rows. They
+were rebuilt from the Candidate's per-run log lines (h1-cand.log: arm, case, run, status, answer,
+wall time; cost is the run's printed total), which match its printed summary exactly (mcp@c
+100/105, skill@c 104/104). No run was repeated. H2 used separate --out directories.
+
+VERDICT: DROP. Deterministic checks and A1, A2 pass, but A3 fails: the skill arm regresses on
+RCAEval held-out plus misses (0.96 -> 0.89, p = 0.007). The mark fixes the planted sparse
+distractor for both arms, but on real data it costs the skill arm what lane T gained.
