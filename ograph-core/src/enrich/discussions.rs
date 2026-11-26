@@ -333,7 +333,12 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         let opens = format!("{} ", quoted[i..].join(" "));
         if PAST_OR_PLAN.iter().any(|p| opens.starts_with(&format!("{p} "))) {
             let cues = CUES.iter().find(|(k, _)| *k == kind).map_or(&[][..], |(_, c)| c);
-            return quoted[i + 1..].iter().find(|w| cues.iter().any(|c| c.split(' ').next().is_some_and(|stem| w.starts_with(stem)))).is_some_and(|w| is_past(w));
+            // Only a cue that opens a clause is a verb, not "have X rolled back" or "the drained
+            // traffic".
+            return (i + 1..quoted.len()).find(|&j| cues.iter().any(|c| c.split(' ').next().is_some_and(|stem| quoted[j].starts_with(stem)))).is_some_and(|j| {
+                let p = quoted[j - 1].as_str();
+                is_past(&quoted[j]) && (SUBJECTS.contains(&p) || LINKS.contains(&p) || matches!(p, "just" | "already" | "also"))
+            });
         }
         match quoted[i].as_str() {
             "have" | "has" | "had" | "we've" => quoted.get(i + 1).is_none_or(|w| w != "to"),
@@ -517,6 +522,8 @@ mod tests {
             ("I'd asked to roll back checkout", "asked to roll back checkout", Some("is a proposal or a plan")),
             ("just wanted to let you know we rolled back checkout", "just wanted to let you know we rolled back checkout", None),
             ("wanted to give an update, we restarted payments-api", "wanted to give an update, we restarted payments-api", None),
+            ("I'd asked to have checkout rolled back", "asked to have checkout rolled back", Some("is a proposal or a plan")),
+            ("suggested getting payments-api restarted", "suggested getting payments-api restarted", Some("is a proposal or a plan")),
             ("ok but did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("hey did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
