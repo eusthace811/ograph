@@ -381,10 +381,10 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
     // confirm" reports; none makes the action a plan. Nothing else cuts it: "we
     // should check logs and restart X", "I suggest that we restart X" and "I'll post when we
     // roll back X" still plan.
-    // A condition before `but` still holds after it ("if errors climb but latency holds we roll
-    // back X"); a doubt ("not sure if related but") does not.
-    let condition = |i: usize| (0..i).any(|j| matches!(before[j].as_str(), "if" | "unless") && !j.checked_sub(1).is_some_and(|k| matches!(before[k].as_str(), "sure" | "know" | "idk" | "dunno" | "wonder" | "unsure" | "unclear" | "see" | "check")));
-    let cause = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "so" | "because" | "since") || w == "but" && !condition(i) || now_that(&before, i)).map_or(0, |i| i + 1);
+    // A clause that opens with a condition keeps it past `but` ("if errors climb but latency
+    // holds we roll back X"); a doubt before `but` ("not sure if related but") is an aside.
+    let condition = matches!(before.first().map(String::as_str), Some("if" | "unless"));
+    let cause = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "so" | "because" | "since") || w == "but" && !condition || now_that(&before, i)).map_or(0, |i| i + 1);
     // "please note" and "please be aware/advised" announce; "please be ready to" still plans.
     let lead: Vec<&str> = before[cause..].iter().chain(&said).map(String::as_str).collect();
     let lead = lead.iter().enumerate().filter(|&(i, w)| {
@@ -531,6 +531,9 @@ mod tests {
             ("unless it recovers but you see errors we restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
             ("dunno if related but we deployed checkout at 10", "deployed checkout", None),
             ("not sure if it helped but we restarted payments-api", "restarted payments-api", None),
+            ("no idea if related but we restarted payments-api", "restarted payments-api", None),
+            ("wondering if it's related but we restarted payments-api", "restarted payments-api", None),
+            ("checked if it was the db but we rolled back checkout anyway", "rolled back checkout", None),
             ("ok but did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("hey did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
