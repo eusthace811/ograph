@@ -263,7 +263,10 @@ const CUES: &[(&str, &[&str])] = &[
 
 /// Words that make a clause a question, a proposal, a plan or a condition when they come before
 /// the action in it.
-const NOT_YET: &[&str] = &["should", "shall", "let's", "lets", "could", "would", "can", "will", "i'll", "we'll", "gonna", "going to", "plan", "planning", "want to", "need to", "needs to", "might", "maybe", "about to", "considering", "consider", "suggest", "propose", "if", "unless", "before we", "whether", "have to", "has to", "we've got to", "i've got to", "gotta", "i'd", "we'd", "had better", "please", "pls", "planned to", "wanted to", "suggested", "proposed", "considered", "waiting on", "waiting for"];
+const NOT_YET: &[&str] = &["should", "shall", "let's", "lets", "could", "would", "can", "will", "i'll", "we'll", "gonna", "going to", "plan", "planning", "want to", "need to", "needs to", "might", "maybe", "about to", "considering", "consider", "suggest", "propose", "if", "unless", "before we", "whether", "have to", "has to", "we've got to", "i've got to", "gotta", "had better", "please", "pls", "waiting on", "waiting for"];
+
+/// Words that plan an action unless its own verb is past, when they tell only what came first.
+const PAST_OR_PLAN: &[&str] = &["i'd", "we'd", "planned to", "wanted to", "suggested", "proposed", "considered"];
 /// Words that open a question about what follows them.
 const ASKS: &[&str] = &["did", "do", "does", "has", "have", "had", "is", "are", "was", "were", "should", "shall", "can", "could", "will", "would", "anyone", "someone", "who"];
 /// Who an asking word asks about.
@@ -318,6 +321,16 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         (Some(w), Some(subject)) => ASKS.contains(&w) && SUBJECTS.contains(&subject),
         _ => false,
     };
+    // The action's tense is its verb's, which opens it ("rolled back X", "we just added
+    // replicas"), not a later name's ("restart shared-cache") or adjective's ("apply the updated
+    // config"). Of irregular pasts only those unlike their present are read.
+    let quoted = words(&q);
+    let verb = quoted.iter().position(|w| !SUBJECTS.contains(&w.as_str()) && !matches!(w.as_str(), "i'd" | "we'd" | "just" | "already" | "also" | "then"));
+    // "have to restart X" is still to come.
+    let past = verb.is_some_and(|i| match quoted[i].as_str() {
+        "have" | "has" | "had" | "we've" => quoted.get(i + 1).is_none_or(|w| w != "to"),
+        w => is_past(w),
+    });
     if opens_question && sentence_end.is_some_and(|i| msg[i..].starts_with('?')) {
         return Some("is a question");
     }
@@ -330,16 +343,6 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         // A question about what followed a past action reports the action ("did latency recover
         // after we rolled back X?"); "is it true that we rolled back X?" and "will it recover
         // after we restart X?" still ask.
-        // The tense is the verb's, which opens the action ("rolled back X", "we just added
-        // replicas"), not a later name's ("restart shared-cache") or adjective's ("apply the
-        // updated config"). Of irregular pasts only those unlike their present are read.
-        let quoted = words(&q);
-        let verb = quoted.iter().position(|w| !SUBJECTS.contains(&w.as_str()) && !matches!(w.as_str(), "just" | "already" | "also" | "then"));
-        // "have to restart X" is still to come.
-        let past = verb.is_some_and(|i| match quoted[i].as_str() {
-            "have" | "has" | "had" | "we've" => quoted.get(i + 1).is_none_or(|w| w != "to"),
-            w => is_past(w),
-        });
         let follows = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "after" | "since" | "when") || now_that(&before, i)).map_or(0, |i| i + 1);
         let reports = past && follows > 0 && !before[follows..].iter().any(|w| ASKS.contains(&w.as_str()));
         if q.ends_with('?') || !reports && (!aside || before.iter().any(|w| ASKS.contains(&w.as_str()))) {
@@ -365,24 +368,18 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
     // should check logs and restart X", "I suggest that we restart X" and "I'll post when we
     // roll back X" still plan.
     let cause = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "so" | "because" | "since" | "but") || now_that(&before, i)).map_or(0, |i| i + 1);
-    // "please note" announces, and "I'd" before a past verb is "I had" ("I'd already restarted X").
+    // "please note" and "please be aware/advised" announce; "please be ready to" still plans.
     let lead: Vec<&str> = before[cause..].iter().chain(&said).map(String::as_str).collect();
-    // "I'd planned to" and "please be ready to" still plan; "I'd scaled to 10" and "we'd been
-    // paging for an hour and restarted X" report.
     let lead = lead.iter().enumerate().filter(|&(i, w)| {
-        let rest = &lead[i + 1..];
-        let at = rest.iter().position(|w| !matches!(*w, "just" | "already" | "also")).unwrap_or(rest.len());
-        let (next, then) = (rest.get(at).copied(), rest.get(at + 1).copied());
-        match *w {
-            "please" | "pls" => !(matches!(next, Some("note" | "fyi")) || next == Some("be") && matches!(then, Some("aware" | "advised"))),
-            // A past verb then "to" plans ("I'd asked to roll back X") unless a number follows.
-            "i'd" | "we'd" => !(next.is_some_and(|n| is_past(n) || matches!(n, "been" | "had" | "seen" | "done" | "gone" | "got" | "gotten" | "taken" | "run"))
-                && (then != Some("to") || rest.get(at + 2).is_some_and(|w| w.starts_with(|c: char| c.is_ascii_digit())))),
-            _ => true,
-        }
+        let (next, then) = (lead.get(i + 1).copied(), lead.get(i + 2).copied());
+        !matches!(*w, "please" | "pls") || !(matches!(next, Some("note" | "fyi")) || next == Some("be") && matches!(then, Some("aware" | "advised")))
     }).map(|(_, w)| *w).collect::<Vec<_>>();
     let lead = format!(" {} ", lead.join(" ")).replace(" can confirm ", " confirm ").replace(" can see ", " see ");
-    if NOT_YET.iter().any(|w| lead.contains(&format!(" {w} "))) {
+    let has = |list: &[&str]| list.iter().any(|w| lead.contains(&format!(" {w} ")));
+    // A word that may only tell what came first ("I'd already restarted X", "just wanted to let
+    // you know we rolled back X", "as dana suggested we rolled back X") plans an action whose
+    // own verb is not past ("I'd roll back X", "we planned to roll back X").
+    if has(NOT_YET) || !past && has(PAST_OR_PLAN) {
         return Some("is a proposal or a plan");
     }
     // A negation before a linking word ("no change so restarted X") belongs to an earlier part.
@@ -500,6 +497,11 @@ mod tests {
             ("we planned to roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
             ("I suggested we roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
             ("waiting on approval to roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
+            ("we'd been asked to roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
+            ("I'd been meaning to restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("just wanted to let you know we rolled back checkout", "rolled back checkout", None),
+            ("as dana suggested we rolled back checkout", "rolled back checkout", None),
+            ("we'd switched to the backup and rolled back checkout", "rolled back checkout", None),
             ("ok but did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("hey did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
