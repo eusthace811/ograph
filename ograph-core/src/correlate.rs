@@ -785,7 +785,8 @@ pub const EXPLAINING_SEVERITY: f64 = 0.5;
 /// Fills [`Ranked::explains`] and moves each application above every one it explains, keeping
 /// the order otherwise. A change explains nothing: it is a point in time, never under way. An
 /// accepted cause outweighs the order of anomalies: an application whose precedent gains more
-/// (`precedent_weight` above 0) is not moved below one that explains it.
+/// (`precedent_weight` above 0) is not moved below one that explains it, though it can still end
+/// below one when an application ranked above it by score is explained by that one too.
 fn explain(apps: &mut Vec<Ranked>, precedent_weight: f64) {
     let gain = |r: &Ranked| precedent_weight * r.precedent.as_ref().map_or(0.0, |p| p.similarity);
     let first: FxHashMap<Id, i64> = apps.iter().filter_map(|r| r.chain.as_ref()).map(|c| (c.root.app, c.root.at_ms)).collect();

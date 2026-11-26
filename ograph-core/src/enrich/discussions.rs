@@ -273,6 +273,11 @@ const LINKS: &[&str] = &["so", "because", "until", "and", "then", "but", "while"
 /// Negations besides any `n't` contraction, with the contractions chat leaves unapostrophised.
 const NEGATIONS: &[&str] = &["not", "never", "no", "without", "cannot", "dont", "didnt", "doesnt", "wont", "cant", "couldnt", "wouldnt", "shouldnt", "isnt", "arent", "wasnt", "werent", "hasnt", "havent", "hadnt"];
 
+/// Whether `words[i]` is the `that` of "now that", which gives a reason as `because` does.
+fn now_that(words: &[String], i: usize) -> bool {
+    words[i] == "that" && i > 0 && words[i - 1] == "now"
+}
+
 /// Why the clause of `message` that holds `quote` does not report a done action of `kind`, if it
 /// does not: it is a question, a proposal word comes before the action in it, or a negation comes
 /// right before the action. The action runs from the quote's first cue of the kind to its last cue
@@ -314,7 +319,13 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         // restart X (the eu one)?").
         let tail = &msg[end..to.unwrap_or(msg.len())];
         let aside = tail.contains(['(', '\u{2013}', '\u{2014}']) || tail.contains(" - ");
-        if q.ends_with('?') || !aside || before.iter().any(|w| ASKS.contains(&w.as_str())) {
+        // A question about what followed a past action reports the action ("did latency recover
+        // after we rolled back X?"); "is it true that we rolled back X?" and "will it recover
+        // after we restart X?" still ask.
+        let past = words(&q).iter().any(|w| w.ends_with("ed"));
+        let follows = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "after" | "since" | "when") || now_that(&before, i)).map_or(0, |i| i + 1);
+        let reports = past && follows > 0 && !before[follows..].iter().any(|w| ASKS.contains(&w.as_str()));
+        if q.ends_with('?') || !reports && (!aside || before.iter().any(|w| ASKS.contains(&w.as_str()))) {
             return Some("is a question");
         }
     }
@@ -332,10 +343,11 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         }
     }
     // What comes before `so` or `because` is the reason ("it would not recover so we restarted
-    // X"), and "can confirm" reports; neither makes the action a plan. Nothing else cuts it: "we
+    // X"), as is what comes before "now that" ("should be fine now that we rolled back X"), and
+    // "can confirm" reports; none makes the action a plan. Nothing else cuts it: "we
     // should check logs and restart X", "I suggest that we restart X" and "I'll post when we
     // roll back X" still plan.
-    let cause = before.iter().rposition(|w| matches!(w.as_str(), "so" | "because" | "since")).map_or(0, |i| i + 1);
+    let cause = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "so" | "because" | "since") || now_that(&before, i)).map_or(0, |i| i + 1);
     let lead = format!(" {} {} ", before[cause..].join(" "), said.join(" ")).replace(" can confirm ", " confirm ").replace(" can see ", " see ");
     if NOT_YET.iter().any(|w| lead.contains(&format!(" {w} "))) {
         return Some("is a proposal or a plan");
@@ -407,6 +419,15 @@ mod tests {
             ("did someone roll back payments - the 2.3 deploy?", "roll back payments", Some("is a question")),
             ("did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("did we roll back checkout to 4.0.9, or just restart it?", "roll back checkout to 4.0.9", Some("is a question")),
+            ("should be fine now that we rolled back checkout", "rolled back checkout", None),
+            ("errors should drop now that we restarted payments-api", "restarted payments-api", None),
+            ("did latency recover after we rolled back checkout?", "rolled back checkout", None),
+            ("is it better now that we restarted payments-api?", "restarted payments-api", None),
+            ("any change since we restarted payments-api?", "restarted payments-api", None),
+            ("is it true that we rolled back checkout?", "rolled back checkout", Some("is a question")),
+            ("will it recover after we restart payments-api?", "restart payments-api", Some("is a question")),
+            ("when did we restart payments-api?", "restart payments-api", Some("is a question")),
+            ("I suggest that we restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
             ("Had to restart payments-api, anyone know why it leaked?", "restart payments-api", None),
             ("Have restarted payments-api, errors gone?", "restarted payments-api", None),
