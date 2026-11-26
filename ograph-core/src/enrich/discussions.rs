@@ -381,9 +381,10 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
     // confirm" reports; none makes the action a plan. Nothing else cuts it: "we
     // should check logs and restart X", "I suggest that we restart X" and "I'll post when we
     // roll back X" still plan.
-    // A clause that opens with a condition keeps it past `but` ("if errors climb but latency
-    // holds we roll back X"); a doubt before `but` ("not sure if related but") is an aside.
-    let condition = matches!(before.first().map(String::as_str), Some("if" | "unless"));
+    // A clause that opens with a condition keeps it past `but` when its action is still to come
+    // ("if errors climb but latency holds we roll back X"); a doubt before `but` ("not sure if
+    // related but", "if anything it got worse but we rolled back X") is an aside.
+    let condition = !past && matches!(before.first().map(String::as_str), Some("if" | "unless"));
     let cause = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "so" | "because" | "since") || w == "but" && !condition || now_that(&before, i)).map_or(0, |i| i + 1);
     // "please note" and "please be aware/advised" announce; "please be ready to" still plans.
     let lead: Vec<&str> = before[cause..].iter().chain(&said).map(String::as_str).collect();
@@ -534,6 +535,8 @@ mod tests {
             ("no idea if related but we restarted payments-api", "restarted payments-api", None),
             ("wondering if it's related but we restarted payments-api", "restarted payments-api", None),
             ("checked if it was the db but we rolled back checkout anyway", "rolled back checkout", None),
+            ("if anything it got worse but we rolled back checkout", "rolled back checkout", None),
+            ("if i recall it was fine but we restarted payments-api", "restarted payments-api", None),
             ("ok but did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("hey did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
