@@ -322,12 +322,11 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         // A question about what followed a past action reports the action ("did latency recover
         // after we rolled back X?"); "is it true that we rolled back X?" and "will it recover
         // after we restart X?" still ask.
-        // The tense is the verb's, which comes by the action's first cue word, not a later name's
-        // ("restart shared-cache") or adjective's ("restart the failed pods").
-        let quoted: Vec<String> = words(&q).iter().map(|w| w.to_lowercase()).collect();
-        let cues = CUES.iter().find(|(k, _)| *k == kind).map_or(&[][..], |(_, c)| c);
-        let first = quoted.iter().position(|w| cues.iter().any(|c| c.split(' ').next().is_some_and(|stem| w.starts_with(stem))));
-        let past = quoted[..first.map_or(quoted.len(), |i| i + 1)].iter().any(|w| w.ends_with("ed"));
+        // The tense is the verb's, which opens the action ("rolled back X", "we just added
+        // replicas"), not a later name's ("restart shared-cache") or adjective's ("apply the
+        // updated config"). Of irregular pasts only those unlike their present are read.
+        let verb = words(&q).into_iter().map(|w| w.to_lowercase()).find(|w| !SUBJECTS.contains(&w.as_str()) && !matches!(w.as_str(), "just" | "already" | "also" | "then"));
+        let past = verb.is_some_and(|w| w.ends_with("ed") || matches!(w.as_str(), "have" | "has" | "had" | "we've" | "spun" | "took" | "brought" | "made" | "gave" | "ran" | "moved"));
         let follows = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "after" | "since" | "when") || now_that(&before, i)).map_or(0, |i| i + 1);
         let reports = past && follows > 0 && !before[follows..].iter().any(|w| ASKS.contains(&w.as_str()));
         if q.ends_with('?') || !reports && (!aside || before.iter().any(|w| ASKS.contains(&w.as_str()))) {
@@ -439,6 +438,10 @@ mod tests {
             ("did latency drop after we increased the timeout on checkout?", "increased the timeout on checkout", None),
             ("what happens when we restart the killed workers?", "restart the killed workers", Some("is a question")),
             ("what happens when we deploy the released build of checkout?", "deploy the released build of checkout", Some("is a question")),
+            ("what happens when we apply the updated config to checkout?", "apply the updated config to checkout", Some("is a question")),
+            ("what happens when we add dedicated nodes to orders-api?", "add dedicated nodes to orders-api", Some("is a question")),
+            ("did it recover after we just restarted payments-api?", "we just restarted payments-api", None),
+            ("did latency drop after we spun up two more pods for orders-api?", "spun up two more pods for orders-api", None),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
             ("Had to restart payments-api, anyone know why it leaked?", "restart payments-api", None),
             ("Have restarted payments-api, errors gone?", "restarted payments-api", None),
