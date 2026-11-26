@@ -1,0 +1,7 @@
+90 cases and 4 incidents of examples/demo, 2 rank modes, 2 weight settings: 2454 chains, 3533 links (24 known pairs)
+dependency edge behind each link: {'catalog': 2194, 'indirect': 503, 'same_app': 836}
+largest |recomputed - reported| link score: 0.000e+00
+largest |geometric mean of link scores - reported chain confidence|: 1.110e-16
+stored corr:confidence checked on 585 chains; largest |round(confidence, 4) - stored|: 0.000e+00
+structural failures (labels, severity, weakest, stored ids): 0
+PASS

@@ -1190,3 +1190,4 @@ On the distractor suite (seed 2026) chains rank 1 scored 4 of 7 deploy cases. Th
 
 Dev (seed 2026): 24/35 -> 31/35. Cost $2.32. Verdict: KEEP-OFF. The setting defaults to `false`. `--set own_degradation=true` on `chains` or `replay` turns it on.
 
+Lane X power extension (docs/evidence/deploy-ranking-power.txt, gate committed before the suite was generated): own_degradation on a fresh 150-case distractor suite (seed 31415) turns chains rank 1 from 114/150 to 143/150, 29 better and 0 worse (p = 3.7e-09), no type worse; sparse 17 -> 29. RCAEval rank 1 identical on 90/90, similar 0.92, replay 0 of 18630 disagree, demo unchanged. own_degradation is now on by default; the seed-9001 test (3-0, p = 0.25) stands beside it.

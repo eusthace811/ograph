@@ -48,8 +48,9 @@ pub struct Settings {
     /// one application (and for pairs that close at the incident): a deployment on a callee
     /// links to its caller's errors on time and severity, not on the pair's prior. And in chain
     /// ranking an application ranks below another whose chain [explains](Ranked::explains) it.
-    /// Off by default: it passed every real-data check but its gain on the held-out distractor
-    /// suite was not significant (docs/evidence/deploy-ranking.txt).
+    /// On by default: it passed every real-data check, and on a 150-case distractor suite fixed
+    /// before it was generated it turned 29 cases right and none wrong
+    /// (docs/evidence/deploy-ranking.txt, docs/evidence/deploy-ranking-power.txt).
     pub own_degradation: bool,
 }
 
@@ -108,7 +109,7 @@ impl Default for Settings {
             signature_window_s: 900,
             precedent_weight: 0.0,
             past_any_time: false,
-            own_degradation: false,
+            own_degradation: true,
         }
     }
 }
@@ -888,14 +889,15 @@ mod tests {
 
     #[test]
     fn a_known_pair_holds_within_one_application() {
-        let st = super::Settings { own_degradation: true, ..super::Settings::default() };
+        let st = super::Settings::default();
+        assert!(st.own_degradation, "on by default");
         let deploy = sig(1, "payments-api", "DEPLOYMENT", 700, 700, 0.25);
         assert_eq!(st.link(&deploy, "LOG_ERROR", Some(1), 760_000).score, 0.9);
         // On a caller the pair's prior does not hold: 0.6 * (1 - 60 s / 1800 s) + 0.4 * 0.25.
         let across = st.link(&deploy, "LOG_ERROR", Some(2), 760_000);
         assert!(!across.known_pair);
         assert!((across.score - 0.68).abs() < 1e-9);
-        let old = super::Settings::default();
+        let old = super::Settings { own_degradation: false, ..super::Settings::default() };
         assert_eq!(old.link(&deploy, "LOG_ERROR", Some(2), 760_000).score, 0.9);
     }
 

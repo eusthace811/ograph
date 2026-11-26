@@ -70,7 +70,7 @@ ograph chains INC-5377
 - `chronic ...` lines (`chronic` on `root` and `links` in `--json`) mark chain events whose
   series fired again and again before the incident: a chain rooted on one is rooted on
   background. The ranking does not change.
-- With `own_degradation = true` (off by default), `explains APP, ...` under an application
+- `explains APP, ...` under an application
   (`explains` in `--json`) means its anomaly came
   first and was still under way when those applications' began: it ranks above them even with
   a lower score, because their chains are the later part of its cascade, and a known pair

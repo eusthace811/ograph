@@ -23,3 +23,30 @@ If both pass, own_degradation turns on by default, after which the real-data gat
 AC@1 0.93 with no case flipped, similar 0.92, demo rank 1, replay) are rerun on the on-by-default
 build and must be unchanged. If either fails, own_degradation stays off.
 Agent arms are not rerun here: lane X measured them on seed 9001 (mcp equal, skill 5 better, 0 worse).
+
+RESULT (2026-11-26): PASS; own_degradation is on by default.
+Suite: generate.py --seed 31415 --per-type 30, 150 cases. scripts/eval/deploy_power.py on
+target/release/ograph at c0aae9a; per-case rows in deploy-ranking-power/power.json.
+  | type        | cases | Parent | Candidate | better | worse |
+  | a chronic   | 30    | 28     | 30        | 2      | 0     |
+  | b deploy    | 30    | 25     | 30        | 5      | 0     |
+  | c alert     | 30    | 25     | 27        | 2      | 0     |
+  | d sparse    | 30    | 17     | 29        | 12     | 0     |
+  | e precedent | 30    | 19     | 27        | 8      | 0     |
+  | all         | 150   | 114    | 143       | 29     | 0     |
+  1. sign test: better 29, worse 0, p = 3.7e-09                                       PASS
+  2. no type worse (every type 0 worse)                                              PASS
+Both tests stand: on seed 9001 (35 cases) the gain was 3-0 and not significant; on this larger
+fresh suite it is 29-0.
+
+Real-data gates on the build with own_degradation on by default (outputs in deploy-ranking-power/):
+  RCAEval chain AC@1 0.93; rank 1 identical to the off build on 90/90 cases (6 cases reorder
+  below rank 1), no case right -> wrong                                              PASS
+  similar 82/89 = 0.92                                                               PASS
+  replay_gate 207/207 points agree, 0 of 18630 cases disagree                        PASS
+  chain_scores_gate 0 structural failures, precedent_eval as before, skill_coverage 0/0/0,
+  lab_check 0 failures on the demo                                                    PASS
+  demo chains rank 1 identical with own_degradation on and off (INC-4120, INC-4388, INC-4501,
+  INC-5377)                                                                           PASS
+  cargo test 105 + 23 + 14 pass (one unit test now states the default), clippy clean   PASS
+`own_degradation = false` (config or --set) restores the old ranking exactly.

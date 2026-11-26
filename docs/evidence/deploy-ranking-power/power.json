@@ -1,0 +1,752 @@
+{
+ "x-0420e02745": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-05d5009661": {
+  "type": "e",
+  "parent": false,
+  "candidate": true
+ },
+ "x-06ba45304e": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-082be9473d": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-08f111feb2": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-0c5f484679": {
+  "type": "b",
+  "parent": false,
+  "candidate": true
+ },
+ "x-0d8a77647d": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-0e6a433a25": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-0e8b512737": {
+  "type": "e",
+  "parent": false,
+  "candidate": true
+ },
+ "x-11d635241e": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-129e6ec062": {
+  "type": "c",
+  "parent": false,
+  "candidate": true
+ },
+ "x-149fb87644": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-14dae82351": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-15a135efb6": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-15d17c3446": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-17473f14d3": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-1794ed1e92": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-1cc47c9679": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-1ddc3d78d3": {
+  "type": "c",
+  "parent": false,
+  "candidate": false
+ },
+ "x-2381e9710c": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-2649d5be31": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-27fb58d1bc": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-2975c23a54": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-29bf88f458": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-2a1d07d5c1": {
+  "type": "e",
+  "parent": false,
+  "candidate": true
+ },
+ "x-2cdd362644": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-2d57734a34": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-2e3ff4f0f9": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-3007e11756": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-30b6305135": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-332f8b7aec": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-33ef989a25": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-3474db93fe": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-35b3968dfa": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-3985a40aaf": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-3e5ea322f9": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-4007ed0d02": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-415bda941d": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-429daa03b7": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-465e17007a": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-4755dfea3c": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-4c53c4cad2": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-4dd47dc2e7": {
+  "type": "b",
+  "parent": false,
+  "candidate": true
+ },
+ "x-4eea8ea640": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-4f81d94822": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-517d15db89": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-559ae0212c": {
+  "type": "c",
+  "parent": false,
+  "candidate": false
+ },
+ "x-56ce797feb": {
+  "type": "c",
+  "parent": false,
+  "candidate": true
+ },
+ "x-57e0c1c149": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-581ddc8581": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-58255989a5": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-59e17d8c51": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-5d78f1d0ba": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-5d82865bef": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-5e98b3fb34": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-614696495e": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-625e57d824": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-62a13e82de": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-6486dbe4b8": {
+  "type": "e",
+  "parent": false,
+  "candidate": true
+ },
+ "x-6611488385": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-67cd079613": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-67d8f9cd62": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-684fbc08af": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-68e475e83e": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-6c63675691": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-6de765b6ac": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-713b18feb4": {
+  "type": "c",
+  "parent": false,
+  "candidate": false
+ },
+ "x-72435e4209": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-73bdd1a96b": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-758d379572": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-7590b08667": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-76235401d6": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-7a2b499a6e": {
+  "type": "e",
+  "parent": false,
+  "candidate": false
+ },
+ "x-7b25cd7729": {
+  "type": "e",
+  "parent": false,
+  "candidate": false
+ },
+ "x-7c4cde21d5": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-7ca0dd8acd": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-820d4aace3": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-822e21108f": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-824491fd85": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-82b1f5e76c": {
+  "type": "e",
+  "parent": false,
+  "candidate": true
+ },
+ "x-8353081415": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-84c49d7da7": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-90663c2cfa": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-90c9291982": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-90fb867187": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-91694a4aee": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-932a43c71f": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-93380e81b6": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-936a192662": {
+  "type": "b",
+  "parent": false,
+  "candidate": true
+ },
+ "x-93db05ac40": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-96da976ef4": {
+  "type": "e",
+  "parent": false,
+  "candidate": false
+ },
+ "x-973bc3f783": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-97d57bf023": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-97e0bcd433": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-9aeb4c0ae1": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-9b1aedd6bd": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-9f617a6147": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-a03cc605ca": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-a133dff312": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-a3356e41f8": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-a4e2031b69": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-a68ce5ce54": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-a8e972c288": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-ae62362bf4": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-b1905844c1": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-b2042274ae": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-b32cf66c37": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-b3e43cf060": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-b46bef0339": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-b4a01dff99": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-b7e063c597": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-b90cd76a9f": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-c28c9f0254": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-c3c644745d": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-c40b90919c": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-c573ff12c1": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-c616cf548e": {
+  "type": "e",
+  "parent": false,
+  "candidate": true
+ },
+ "x-c899dfac7d": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-c96edb72f7": {
+  "type": "d",
+  "parent": false,
+  "candidate": false
+ },
+ "x-cb1e2b806b": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-d17febfcd0": {
+  "type": "e",
+  "parent": false,
+  "candidate": true
+ },
+ "x-d21a3e2a60": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-d729b0105d": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-d7614ec559": {
+  "type": "d",
+  "parent": false,
+  "candidate": true
+ },
+ "x-d7f0ad32f5": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-dc125a9fb8": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-e0eab80564": {
+  "type": "e",
+  "parent": false,
+  "candidate": true
+ },
+ "x-e2aeb45d63": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-e5a1c0bf84": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-e711597aba": {
+  "type": "a",
+  "parent": false,
+  "candidate": true
+ },
+ "x-e9199ce6af": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-ea0258de9d": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-eaf9521775": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-ebd139477f": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-ecf69800e2": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-f01260c315": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-f2567f7c2e": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-f26a589f6e": {
+  "type": "b",
+  "parent": false,
+  "candidate": true
+ },
+ "x-f348d3aacb": {
+  "type": "e",
+  "parent": true,
+  "candidate": true
+ },
+ "x-f375c8dfb6": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-f6f52e1dc3": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-f7144611fa": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-f76fb10867": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-f98ab50596": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-fa084da1b1": {
+  "type": "a",
+  "parent": true,
+  "candidate": true
+ },
+ "x-fb4d1e24ee": {
+  "type": "d",
+  "parent": true,
+  "candidate": true
+ },
+ "x-fc4571929b": {
+  "type": "a",
+  "parent": false,
+  "candidate": true
+ },
+ "x-fc631d76cd": {
+  "type": "b",
+  "parent": true,
+  "candidate": true
+ },
+ "x-fd00c53c5f": {
+  "type": "c",
+  "parent": true,
+  "candidate": true
+ },
+ "x-fe1c136b0a": {
+  "type": "b",
+  "parent": false,
+  "candidate": true
+ }
+}
