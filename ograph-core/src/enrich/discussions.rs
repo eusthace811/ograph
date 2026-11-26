@@ -263,7 +263,7 @@ const CUES: &[(&str, &[&str])] = &[
 
 /// Words that make a clause a question, a proposal, a plan or a condition when they come before
 /// the action in it.
-const NOT_YET: &[&str] = &["should", "shall", "let's", "lets", "could", "would", "can", "will", "i'll", "we'll", "gonna", "going to", "plan", "planning", "want to", "need to", "needs to", "might", "maybe", "about to", "considering", "consider", "suggest", "propose", "if", "unless", "before we", "whether"];
+const NOT_YET: &[&str] = &["should", "shall", "let's", "lets", "could", "would", "can", "will", "i'll", "we'll", "gonna", "going to", "plan", "planning", "want to", "need to", "needs to", "might", "maybe", "about to", "considering", "consider", "suggest", "propose", "if", "unless", "before we", "whether", "have to", "has to", "got to", "gotta", "i'd", "we'd better", "had better", "please", "pls"];
 /// Words that open a question about what follows them.
 const ASKS: &[&str] = &["did", "do", "does", "has", "have", "had", "is", "are", "was", "were", "should", "shall", "can", "could", "will", "would", "anyone", "someone", "who"];
 /// Who an asking word asks about.
@@ -301,7 +301,9 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
     // A sentence that opens as a question asks about the quote past any comma ("did anyone
     // restart X, or should I?").
     let sentence_end = next_end(&|c| matches!(c, '.' | '!' | '?' | '\n'));
-    let reason = before.iter().rposition(|w| matches!(w.as_str(), "so" | "because" | "since" | "after" | "when" | "that")).map_or(0, |i| i + 1);
+    let reason = before.iter().rposition(|w| matches!(w.as_str(), "so" | "because" | "since" | "after" | "when" | "that" | "but")).map_or(0, |i| i + 1);
+    // An interjection ("hey", "ok") opens nothing.
+    let reason = reason + before[reason..].iter().take_while(|w| matches!(w.as_str(), "hey" | "hi" | "ok" | "okay" | "btw" | "sorry" | "also")).count();
     // It opens as one when an asking word comes first with a subject after it ("did we", "has
     // anyone") or is itself the subject ("anyone"); "Had to restart X, anyone know why?" drops
     // its subject and reports.
@@ -452,6 +454,13 @@ mod tests {
             ("maybe unrelated but we restarted payments-api earlier", "restarted payments-api", None),
             ("we could wait but we should restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
             ("what do we do when we have to restart payments-api?", "have to restart payments-api", Some("is a question")),
+            ("we have to roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
+            ("gotta restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("please restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("we'd better restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("it got better after we restarted payments-api", "restarted payments-api", None),
+            ("ok but did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
+            ("hey did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
             ("Had to restart payments-api, anyone know why it leaked?", "restart payments-api", None),
             ("Have restarted payments-api, errors gone?", "restarted payments-api", None),
