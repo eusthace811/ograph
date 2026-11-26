@@ -276,7 +276,7 @@ const NEGATIONS: &[&str] = &["not", "never", "no", "without", "cannot", "dont", 
 /// Whether a lowercase word is a past verb: it ends in "ed" or is an irregular past unlike its
 /// present.
 fn is_past(w: &str) -> bool {
-    w.ends_with("ed") || matches!(w, "spun" | "took" | "brought" | "made" | "gave" | "ran" | "moved")
+    w.ends_with("ed") && !matches!(w, "need" | "proceed" | "succeed" | "exceed" | "feed" | "seed") || matches!(w, "spun" | "took" | "brought" | "made" | "gave" | "ran")
 }
 
 /// Whether `words[i]` is the `that` of "now that", which gives a reason as `because` does.
@@ -367,12 +367,16 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
     // roll back X" still plan.
     let cause = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "so" | "because" | "since" | "but") || now_that(&before, i)).map_or(0, |i| i + 1);
     // "please note" announces, and "I'd" before a past verb is "I had" ("I'd already restarted X").
-    let lead: Vec<&str> = before[cause..].iter().chain(&said).map(String::as_str).collect();
+    let lower: Vec<String> = before[cause..].iter().chain(&said).map(|w| w.to_lowercase()).collect();
+    let lead: Vec<&str> = lower.iter().map(String::as_str).collect();
+    // "I'd planned to" and "please be ready to" still plan.
     let lead = lead.iter().enumerate().filter(|&(i, w)| {
-        let next = lead[i + 1..].iter().find(|w| !matches!(**w, "just" | "already" | "also"));
+        let rest = &lead[i + 1..];
+        let at = rest.iter().position(|w| !matches!(*w, "just" | "already" | "also")).unwrap_or(rest.len());
+        let (next, then) = (rest.get(at).copied(), rest.get(at + 1).copied());
         match *w {
-            "please" | "pls" => !next.is_some_and(|n| matches!(*n, "note" | "be" | "see" | "fyi")),
-            "i'd" | "we'd" => !next.is_some_and(|n| is_past(&n.to_lowercase())),
+            "please" | "pls" => !(matches!(next, Some("note" | "fyi")) || next == Some("be") && matches!(then, Some("aware" | "advised"))),
+            "i'd" | "we'd" => !(next.is_some_and(is_past) && then != Some("to")),
             _ => true,
         }
     }).map(|(_, w)| *w).collect::<Vec<_>>();
@@ -481,6 +485,10 @@ mod tests {
             ("I'd already restarted payments-api by then", "restarted payments-api", None),
             ("I'd roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
             ("got to the box and restarted payments-api", "restarted payments-api", None),
+            ("please be sure to restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("please see that we roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
+            ("I'd planned to roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
+            ("I'd proceed with rolling back checkout", "rolling back checkout", Some("is a proposal or a plan")),
             ("ok but did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("hey did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
