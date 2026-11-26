@@ -1273,21 +1273,25 @@ pub fn uses(s: &Snapshot, ont: &crate::ontology::Ontology, st: &Settings, target
     out.facts = facts;
 
     let ids = Ids::new(s)?;
+    let mut events = Vec::new();
     let one = |x: Id, p: &str| -> anyhow::Result<Option<Id>> { Ok(match s.iri(p)? { Some(p) => s.object(x, p)?, None => None }) };
     for &x in &subjects {
         if !gone.contains(&x) {
             continue;
         }
         let Some(signal) = one(x, evt::SIGNAL)?.and_then(|v| literal(s, v)) else { continue };
-        out.events.push(UsedEvent {
+        let at = one(x, evt::AT)?;
+        events.push((at.and_then(term::millis), UsedEvent {
             node: vocab::compact(&literal(s, x).unwrap_or_default()),
             signal,
             app: one(x, evt::ON)?.map(|a| app_name(s, &ids, a)),
-            at: one(x, evt::AT)?.and_then(|v| literal(s, v)),
+            at: at.and_then(|v| literal(s, v)),
             record: one(x, evt::SOURCE_RECORD)?.and_then(|v| literal(s, v)),
-        });
+        }));
     }
-    out.events.sort_by(|a, b| (&a.at, &a.node).cmp(&(&b.at, &b.node)));
+    // By time, not by its text: "…:40Z" sorts after "…:40.5Z".
+    events.sort_by(|(a, x), (b, y)| (a, &x.node).cmp(&(b, &y.node)));
+    out.events = events.into_iter().map(|(_, e)| e).collect();
     out.shared = shared.iter().filter(|x| !gone.contains(x)).filter_map(|&x| literal(s, x)).map(|x| vocab::compact(&x)).collect();
     out.shared.sort();
 
@@ -1415,18 +1419,19 @@ pub fn news(s: &Snapshot, since_ms: Option<i64>) -> anyhow::Result<Vec<NewsHit>>
             }
             let mut processes: Vec<String> = procs.into_iter().collect();
             processes.sort();
-            out.push(NewsHit {
+            out.push((at, NewsHit {
                 at: term::format_millis(at),
                 summary: summary.and_then(|p| s.object(n, p).ok().flatten()).and_then(|x| literal(s, x)).unwrap_or_default(),
                 vendor: app_name(s, &ids, v),
                 apps: apps.iter().map(|&a| app_name(s, &ids, a)).collect(),
                 processes,
                 related_threads: threads.len(),
-            });
+            }));
         }
     }
-    out.sort_by(|a, b| b.at.cmp(&a.at));
-    Ok(out)
+    // By time, not by its text: "…:40Z" sorts after "…:40.5Z".
+    out.sort_by(|(a, _), (b, _)| b.cmp(a));
+    Ok(out.into_iter().map(|(_, hit)| hit).collect())
 }
 
 /// A duration such as `90`, `90s`, `10m`, `2h` or `1d`, in seconds.

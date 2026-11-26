@@ -322,7 +322,12 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         // A question about what followed a past action reports the action ("did latency recover
         // after we rolled back X?"); "is it true that we rolled back X?" and "will it recover
         // after we restart X?" still ask.
-        let past = words(&q).iter().any(|w| w.ends_with("ed"));
+        // The tense is the action's own, not a name's ("restart shared-cache") or an adjective's
+        // ("restart the failed pods").
+        let quoted: Vec<String> = words(&q).iter().map(|w| w.to_lowercase()).collect();
+        let cues = CUES.iter().find(|(k, _)| *k == kind).map_or(&[][..], |(_, c)| c);
+        let cued: Vec<&String> = quoted.iter().filter(|w| cues.iter().any(|c| c.split(' ').next().is_some_and(|stem| w.starts_with(stem)))).collect();
+        let past = if cued.is_empty() { quoted.iter().any(|w| w.ends_with("ed")) } else { cued.iter().any(|w| w.ends_with("ed")) };
         let follows = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "after" | "since" | "when") || now_that(&before, i)).map_or(0, |i| i + 1);
         let reports = past && follows > 0 && !before[follows..].iter().any(|w| ASKS.contains(&w.as_str()));
         if q.ends_with('?') || !reports && (!aside || before.iter().any(|w| ASKS.contains(&w.as_str()))) {
@@ -428,6 +433,8 @@ mod tests {
             ("will it recover after we restart payments-api?", "restart payments-api", Some("is a question")),
             ("when did we restart payments-api?", "restart payments-api", Some("is a question")),
             ("I suggest that we restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("what happens when we restart shared-cache?", "restart shared-cache", Some("is a question")),
+            ("what happens when we restart the failed pods?", "restart the failed pods", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
             ("Had to restart payments-api, anyone know why it leaked?", "restart payments-api", None),
             ("Have restarted payments-api, errors gone?", "restarted payments-api", None),

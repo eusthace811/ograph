@@ -1155,6 +1155,17 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn uses_lists_events_by_time_not_by_its_text() {
+        let at = |app: &str, t: &str| format!(r#"{{"labels":{{"alertname":"Slow","service":"{app}","severity":"critical"}},"startsAt":"{t}"}}"#);
+        let root = fixture("uses-order", &[("alerts", "db.json", &format!("[{},{}]", at("payments-api", "2026-11-22T22:26:40.5Z"), at("ledger-db", "2026-11-22T22:26:40Z")))]);
+        harvest(&root, None);
+        let ws = Workspace::open(&root).unwrap();
+        let u = crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, &ws.config.correlation, "db.json").unwrap();
+        let apps: Vec<_> = u.events.iter().map(|e| e.app.as_deref()).collect();
+        assert_eq!(apps, [Some("ledger-db"), Some("payments-api")], "{:?}", u.events.iter().map(|e| &e.at).collect::<Vec<_>>());
+    }
+
+    #[test]
     fn uses_warns_when_the_incidents_were_harvested_before_they_named_their_records() {
         let root = fixture("uses-old", &[("incidents", "more.json", &format!(r#"[{{"id":"INC-2","service":"checkout","opened":{}}}]"#, T + 86_400))]);
         harvest(&root, None);
