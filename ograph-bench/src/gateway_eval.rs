@@ -3,19 +3,14 @@
 //! committed, a full SHACL audit of the store is clean, and re-submitting writes nothing.
 
 use ograph_core::gateway;
+use ograph_core::enrich::dt;
 use ograph_core::model::*;
 use ograph_core::ontology::Ontology;
 use ograph_core::sparql;
 use ograph_core::store::Store;
-use ograph_core::term;
 use ograph_core::vocab::{RDF_TYPE, evt, inc, ops};
-use oxrdf::vocab::xsd;
-use oxrdf::{Literal, NamedNode};
+use oxrdf::NamedNode;
 use std::time::Instant;
-
-fn dt(ms: i64) -> Object {
-    lit(Literal::new_typed_literal(term::format_millis(ms), xsd::DATE_TIME))
-}
 
 /// The exact triples this eval marks bad (the last fact proposed for each bad subject, plus every
 /// fact of the kinds whose subject itself is invalid) that ended up in a harvest graph.
@@ -151,12 +146,6 @@ fn main() -> anyhow::Result<()> {
     let out = gateway::submit(&store, &ont, &b, t0)?;
     let took = t.elapsed();
     let snap = store.snapshot()?;
-    let bad_facts: Vec<(String, String)> = b.facts.iter().zip(&b.facts).filter_map(|(f, _)| {
-        let d = f.describe();
-        let local = bad.iter().find(|(_, l)| d.contains(l.as_str()))?.1.clone();
-        Some((local, d))
-    }).collect();
-    let _ = bad_facts;
     let in_harvest = |local: &str| -> anyhow::Result<bool> {
         let q = format!("ASK {{ GRAPH ?g {{ ?s ?p ?o }} FILTER(STRSTARTS(STR(?g), \"https://ograph.dev/graph/harvest/\")) FILTER(?s = <https://ograph.dev/id/ev/{local}> || STRENDS(STR(?s), \"/{local}\")) }}");
         Ok(matches!(sparql::run(&snap, &sparql::parse(&q)?, None)?, sparql::Answer::Boolean { value: true }))

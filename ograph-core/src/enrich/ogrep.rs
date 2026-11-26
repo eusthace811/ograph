@@ -11,14 +11,25 @@ use std::process::{Command, Output, Stdio};
 /// Why a call gave no records.
 #[derive(Debug)]
 pub enum Failure {
+    /// The binary could not be started, which every later call would hit too.
     NotRunnable(std::io::Error),
+    /// A configured repository that is not there, such as one not cloned yet.
+    NoRepository(std::path::PathBuf),
     Failed { flag: &'static str, stderr: String },
+}
+
+impl Failure {
+    /// Whether no other repository can answer either: the binary itself would not start.
+    pub fn stops_all(&self) -> bool {
+        matches!(self, Failure::NotRunnable(_))
+    }
 }
 
 impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Failure::NotRunnable(e) => write!(f, "ogrep not runnable: {e}"),
+            Failure::NoRepository(dir) => write!(f, "no repository at {}", dir.display()),
             Failure::Failed { flag, stderr } => write!(f, "ogrep {flag} failed: {stderr}"),
         }
     }
@@ -41,29 +52,17 @@ fn run(dir: &Path, args: &[&str], stdin: Option<&str>) -> std::io::Result<Output
 /// `f` of every item, in order, on up to eight threads: each call is one short-lived process,
 /// and a repository with fifty services would otherwise wait for fifty of them in turn.
 pub fn each<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> R + Sync) -> Vec<R> {
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let mut out: Vec<(usize, R)> = std::thread::scope(|s| {
-        let workers: Vec<_> = (0..items.len().min(8))
-            .map(|_| {
-                s.spawn(|| {
-                    let mut done = Vec::new();
-                    loop {
-                        let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        let Some(item) = items.get(i) else { return done };
-                        done.push((i, f(item)));
-                    }
-                })
-            })
-            .collect();
-        workers.into_iter().flat_map(|w| w.join().expect("an ogrep call does not panic")).collect()
-    });
-    out.sort_by_key(|(i, _)| *i);
-    out.into_iter().map(|(_, r)| r).collect()
+    crate::ordered_map(items, 8, f)
 }
 
 /// Standard output of a call. ogrep exits 1 when it found nothing, which is empty output
 /// unless `strict`.
 fn stdout(dir: &Path, flag: &'static str, args: &[&str], stdin: Option<&str>, strict: bool) -> Result<String, Failure> {
+    // A missing directory fails the spawn like a missing binary; it is told apart here, so the
+    // repositories after it are still searched.
+    if !dir.is_dir() {
+        return Err(Failure::NoRepository(dir.to_path_buf()));
+    }
     let out = run(dir, args, stdin).map_err(Failure::NotRunnable)?;
     if out.status.success() || (!strict && out.status.code() == Some(1)) {
         return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
@@ -413,6 +412,13 @@ pub fn introduced(dir: &Path, text: &str, until: &str) -> Result<Option<Introduc
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_repository_is_not_a_missing_binary() {
+        let missing = std::env::temp_dir().join("ograph-no-such-repository");
+        let e = stdout(&missing, "--about", &["--about", "x"], None, false).unwrap_err();
+        assert!(matches!(e, Failure::NoRepository(_)), "{e}");
+    }
 
     #[test]
     fn records_of_other_types_and_broken_lines_are_skipped() {

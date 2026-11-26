@@ -3,7 +3,7 @@
 //! Validating only chosen focus nodes is what the gateway needs and what no crate offers.
 
 use oxrdf::vocab::{rdf, rdfs, xsd};
-use oxrdf::{BlankNode, Literal, NamedNode, NamedNodeRef, Term};
+use oxrdf::{Literal, NamedNode, NamedNodeRef, Term};
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
@@ -23,6 +23,10 @@ pub trait Graph {
     /// `class` and every class it is a subclass of. Override when the closure is precomputed.
     fn superclasses(&self, class: &Term) -> Vec<Term> {
         closure(&Path::Pred(rdfs::SUB_CLASS_OF.into_owned()), self.as_dyn(), class, true)
+    }
+    /// `class` and every subclass of it. Override when the closure is precomputed.
+    fn subclasses(&self, class: &Term) -> Vec<Term> {
+        closure(&Path::Inverse(Box::new(Path::Pred(rdfs::SUB_CLASS_OF.into_owned()))), self.as_dyn(), class, true)
     }
     fn as_dyn(&self) -> &dyn Graph;
 }
@@ -150,7 +154,8 @@ pub enum Constraint {
     MaxInclusive(Term),
     MinLength(u64),
     MaxLength(u64),
-    Pattern(regex::Regex),
+    /// The compiled regex and the pattern as authored, which messages quote.
+    Pattern(regex::Regex, String),
     LanguageIn(Vec<String>),
     UniqueLang,
     Equals(NamedNode),
@@ -183,7 +188,7 @@ impl Constraint {
             Constraint::MaxInclusive(_) => "MaxInclusiveConstraintComponent",
             Constraint::MinLength(_) => "MinLengthConstraintComponent",
             Constraint::MaxLength(_) => "MaxLengthConstraintComponent",
-            Constraint::Pattern(_) => "PatternConstraintComponent",
+            Constraint::Pattern(..) => "PatternConstraintComponent",
             Constraint::LanguageIn(_) => "LanguageInConstraintComponent",
             Constraint::UniqueLang => "UniqueLangConstraintComponent",
             Constraint::Equals(_) => "EqualsConstraintComponent",
@@ -226,8 +231,74 @@ pub struct ValidationResult {
 
 pub struct Shapes {
     pub shapes: Vec<Shape>,
+    /// Constraints that could not be read, such as an `sh:pattern` the regex engine cannot
+    /// compile. Each would otherwise check nothing without a word.
+    pub problems: Vec<String>,
     index: HashMap<Term, usize>,
     sibling_qualified: HashMap<Term, Vec<Term>>,
+}
+
+/// A regex for an XPath `fn:matches` pattern and its flags. `q` quotes the pattern and leaves
+/// only `i`. XPath's `x` drops whitespace outside a character class, unlike the regex crate's
+/// (where `#` starts a comment and a class loses its spaces), so it is done here. Without `s`,
+/// XPath's `.` matches neither `\n` nor `\r`.
+fn xpath_regex(pattern: &str, flags: &str) -> Result<regex::Regex, regex::Error> {
+    if flags.contains('q') {
+        let prefix = if flags.contains('i') { "(?i)" } else { "" };
+        return regex::Regex::new(&format!("{prefix}{}", regex::escape(pattern)));
+    }
+    let (x, dot_all) = (flags.contains('x'), flags.contains('s'));
+    let mut body = String::with_capacity(pattern.len());
+    let (mut depth, mut escaped, mut dash) = (0usize, false, false);
+    for c in pattern.chars() {
+        let was_dash = std::mem::take(&mut dash);
+        match c {
+            _ if escaped => {
+                escaped = false;
+                // XPath's `\w` is anything but punctuation, separators and control characters,
+                // and its `\s` only the four ASCII spaces; the regex crate's are wider.
+                match c {
+                    'w' => body.push_str(r"[^\p{P}\p{Z}\p{C}]"),
+                    'W' => body.push_str(r"[\p{P}\p{Z}\p{C}]"),
+                    's' => body.push_str(r"[ \t\n\r]"),
+                    'S' => body.push_str(r"[^ \t\n\r]"),
+                    _ => {
+                        body.push('\\');
+                        body.push(c);
+                    }
+                }
+            }
+            '\\' => escaped = true,
+            // In a class the regex crate reads `&&` and `~~` as set operations; in XPath they are
+            // characters.
+            '&' | '~' if depth > 0 => {
+                body.push('\\');
+                body.push(c);
+            }
+            '[' => {
+                // XPath's `[a-z-[aeiou]]` subtracts; the regex crate spells that `--[`.
+                if depth > 0 && was_dash {
+                    body.push('-');
+                }
+                depth += 1;
+                body.push(c);
+            }
+            ']' => {
+                depth = depth.saturating_sub(1);
+                body.push(c);
+            }
+            '-' if depth > 0 => {
+                dash = true;
+                body.push(c);
+            }
+            ' ' | '\t' | '\n' | '\r' if x && depth == 0 => {}
+            '.' if depth == 0 && !dot_all => body.push_str(r"[^\n\r]"),
+            _ => body.push(c),
+        }
+    }
+    let inline: String = flags.chars().filter(|c| matches!(c, 'i' | 'm' | 's')).collect();
+    let prefix = if inline.is_empty() { String::new() } else { format!("(?{inline})") };
+    regex::Regex::new(&format!("{prefix}{body}"))
 }
 
 fn list(g: &dyn Graph, head: &Term) -> Vec<Term> {
@@ -341,14 +412,15 @@ impl Shapes {
                 sibling_qualified.insert(p.clone(), others);
             }
         }
+        let mut problems = Vec::new();
         for id in ids {
-            shapes.push(Self::parse_shape(g, id));
+            shapes.push(Self::parse_shape(g, id, &mut problems));
         }
         let index = shapes.iter().enumerate().map(|(i, s)| (s.id.clone(), i)).collect();
-        Self { shapes, index, sibling_qualified }
+        Self { shapes, problems, index, sibling_qualified }
     }
 
-    fn parse_shape(g: &dyn Graph, id: Term) -> Shape {
+    fn parse_shape(g: &dyn Graph, id: Term, problems: &mut Vec<String>) -> Shape {
         let all = |p: &str| g.objects(&id, &sh(p));
         let one = |p: &str| all(p).into_iter().next();
         let mut targets = Vec::new();
@@ -408,10 +480,9 @@ impl Shapes {
                 Some(Term::Literal(f)) => f.value().to_owned(),
                 _ => String::new(),
             };
-            let prefix = if flags.is_empty() { String::new() } else { format!("(?{})", flags.replace('q', "")) };
-            let body = if flags.contains('q') { regex::escape(p.value()) } else { p.value().to_owned() };
-            if let Ok(re) = regex::Regex::new(&format!("{prefix}{body}")) {
-                c.push(Constraint::Pattern(re));
+            match xpath_regex(p.value(), &flags) {
+                Ok(re) => c.push(Constraint::Pattern(re, p.value().to_owned())),
+                Err(e) => problems.push(format!("{id}: sh:pattern {:?} cannot be used: {e}", p.value())),
             }
         }
         if let Some(l) = one("languageIn") {
@@ -490,7 +561,7 @@ impl Shapes {
 
     pub fn from_shapes(shapes: Vec<Shape>) -> Self {
         let index = shapes.iter().enumerate().map(|(i, s)| (s.id.clone(), i)).collect();
-        Self { shapes, index, sibling_qualified: HashMap::new() }
+        Self { shapes, problems: vec![], index, sibling_qualified: HashMap::new() }
     }
 
     /// These shapes with `first` ahead of them, keeping what parsing learned about them.
@@ -502,15 +573,13 @@ impl Shapes {
     }
 }
 
-/// Instances of `class` including subclasses, following `rdfs:subClassOf` in the data graph.
+/// Instances of `class` including its subclasses.
 pub fn instances(g: &dyn Graph, class: &Term) -> Vec<Term> {
-    let sub = rdfs::SUB_CLASS_OF.into_owned();
     let ty = rdf::TYPE.into_owned();
-    let classes = closure(&Path::Inverse(Box::new(Path::Pred(sub))), g, class, true);
-    dedup(classes.iter().flat_map(|c| g.subjects(&ty, c)).collect())
+    dedup(g.subclasses(class).iter().flat_map(|c| g.subjects(&ty, c)).collect())
 }
 
-pub fn is_instance(g: &dyn Graph, node: &Term, class: &Term) -> bool {
+fn is_instance(g: &dyn Graph, node: &Term, class: &Term) -> bool {
     let ty = rdf::TYPE.into_owned();
     g.objects(node, &ty).iter().any(|t| t == class || g.superclasses(t).contains(class))
 }
@@ -591,7 +660,7 @@ impl<'a> Validator<'a> {
         out.is_empty()
     }
 
-    pub fn validate_shape(&self, shape: &Shape, focus: &Term, out: &mut Vec<ValidationResult>) {
+    fn validate_shape(&self, shape: &Shape, focus: &Term, out: &mut Vec<ValidationResult>) {
         if shape.deactivated {
             return;
         }
@@ -644,13 +713,13 @@ impl<'a> Validator<'a> {
             Constraint::MaxInclusive(b) => each(&|v| matches!(compare(v, b), Some(Ordering::Less | Ordering::Equal)), &|v| format!("{v} not <= {b}")),
             Constraint::MinLength(n) => each(&|v| str_of(v).is_some_and(|s| s.chars().count() as u64 >= *n), &|v| format!("{v} shorter than {n}")),
             Constraint::MaxLength(n) => each(&|v| str_of(v).is_some_and(|s| s.chars().count() as u64 <= *n), &|v| format!("{v} longer than {n}")),
-            Constraint::Pattern(re) => each(&|v| str_of(v).is_some_and(|s| re.is_match(&s)), &|v| format!("{v} does not match {}", re.as_str())),
+            Constraint::Pattern(re, source) => each(&|v| str_of(v).is_some_and(|s| re.is_match(&s)), &|v| format!("{v} does not match {source}")),
             Constraint::LanguageIn(langs) => each(
                 &|v| matches!(v, Term::Literal(l) if l.language().is_some_and(|lang| { let lang = lang.to_lowercase(); langs.iter().any(|r| lang == *r || lang.starts_with(&format!("{r}-"))) })),
                 &|v| format!("{v} language not allowed"),
             ),
             Constraint::UniqueLang => {
-                let mut count: HashMap<String, usize> = HashMap::new();
+                let mut count: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
                 for v in values {
                     if let Term::Literal(l) = v
                         && let Some(lang) = l.language() {
@@ -666,7 +735,10 @@ impl<'a> Validator<'a> {
             Constraint::Equals(p) => {
                 let other: HashSet<Term> = g.objects(focus, p).into_iter().collect();
                 let mine: HashSet<Term> = values.iter().cloned().collect();
-                for v in mine.symmetric_difference(&other) {
+                // Hash order would vary from run to run, and the first reason names a quarantine.
+                let mut diff: Vec<&Term> = mine.symmetric_difference(&other).collect();
+                diff.sort_by_cached_key(|v| v.to_string());
+                for v in diff {
                     out.push(self.result(shape, c, focus, Some(v), format!("{v} not in both")));
                 }
             }
@@ -769,18 +841,26 @@ const INT_TYPES: &[(&str, i128, i128)] = &[
     ("unsignedByte", 0, u8::MAX as i128),
 ];
 
-pub fn well_formed(l: &Literal) -> bool {
+fn well_formed(l: &Literal) -> bool {
     let dt = l.datatype().as_str();
     let Some(local) = dt.strip_prefix("http://www.w3.org/2001/XMLSchema#") else {
         return dt != rdf::LANG_STRING.as_str() || l.language().is_some();
     };
     let v = l.value();
     if let Some((_, lo, hi)) = INT_TYPES.iter().find(|(n, _, _)| *n == local) {
-        let t = v.trim_start_matches('+');
-        return !t.is_empty() && t.trim_start_matches('-').chars().all(|c| c.is_ascii_digit()) && i128::from_str(t).is_ok_and(|n| n >= *lo && n <= *hi);
+        let digits = v.strip_prefix(['+', '-']).unwrap_or(v);
+        if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_digit()) {
+            return false;
+        }
+        // Beyond i128, only a type with no bound on that side (xsd:integer, nonNegativeInteger, …).
+        return match i128::from_str(v.strip_prefix('+').unwrap_or(v)) {
+            Ok(n) => n >= *lo && n <= *hi,
+            Err(_) if v.starts_with('-') => *lo == i128::MIN,
+            Err(_) => *hi == i128::MAX,
+        };
     }
     match local {
-        "decimal" => oxsdatatypes::Decimal::from_str(v).is_ok(),
+        "decimal" => decimal_numeral(v),
         "double" => oxsdatatypes::Double::from_str(v).is_ok(),
         "float" => oxsdatatypes::Float::from_str(v).is_ok(),
         "boolean" => oxsdatatypes::Boolean::from_str(v).is_ok(),
@@ -794,23 +874,52 @@ pub fn well_formed(l: &Literal) -> bool {
     }
 }
 
-fn numeric(l: &Literal) -> Option<f64> {
-    let local = l.datatype().as_str().strip_prefix("http://www.w3.org/2001/XMLSchema#")?;
-    if INT_TYPES.iter().any(|(n, _, _)| *n == local) || matches!(local, "decimal" | "double" | "float") {
-        f64::from_str(l.value().trim_start_matches('+')).ok().or(match l.value() {
-            "INF" => Some(f64::INFINITY),
-            "-INF" => Some(f64::NEG_INFINITY),
-            _ => None,
-        })
-    } else {
-        None
+/// The xsd:decimal lexical form `(+|-)?(digits(.digits?)?|.digits)`, whatever its size or precision.
+fn decimal_numeral(v: &str) -> bool {
+    let n = v.strip_prefix(['+', '-']).unwrap_or(v);
+    let (int, frac) = n.split_once('.').unwrap_or((n, ""));
+    !(int.is_empty() && frac.is_empty()) && int.bytes().chain(frac.bytes()).all(|c| c.is_ascii_digit())
+}
+
+/// A number: exact for the integer types and decimal, a double for double and float.
+enum Number {
+    Exact(oxsdatatypes::Decimal),
+    Approx(f64),
+}
+
+impl Number {
+    fn approx(&self) -> f64 {
+        match self {
+            Self::Exact(d) => f64::from_str(&d.to_string()).unwrap_or(f64::NAN),
+            Self::Approx(f) => *f,
+        }
     }
+}
+
+fn numeric(l: &Literal) -> Option<Number> {
+    let local = l.datatype().as_str().strip_prefix("http://www.w3.org/2001/XMLSchema#")?;
+    let v = l.value();
+    if INT_TYPES.iter().any(|(n, _, _)| *n == local) || local == "decimal" {
+        // A number too large or too precise for a Decimal is still compared, as a double; text
+        // that is no decimal numeral (`inf`) is not compared at all.
+        return match oxsdatatypes::Decimal::from_str(v) {
+            Ok(d) => Some(Number::Exact(d)),
+            Err(_) if decimal_numeral(v) => f64::from_str(v.strip_prefix('+').unwrap_or(v)).ok().map(Number::Approx),
+            Err(_) => None,
+        };
+    }
+    if matches!(local, "double" | "float") {
+        return oxsdatatypes::Double::from_str(v).ok().map(|d| Number::Approx(d.into()));
+    }
+    None
 }
 
 pub fn compare(a: &Term, b: &Term) -> Option<Ordering> {
     let (Term::Literal(a), Term::Literal(b)) = (a, b) else { return None };
-    if let (Some(x), Some(y)) = (numeric(a), numeric(b)) {
-        return x.partial_cmp(&y);
+    match (numeric(a), numeric(b)) {
+        (Some(Number::Exact(x)), Some(Number::Exact(y))) => return Some(x.cmp(&y)),
+        (Some(x), Some(y)) => return x.approx().partial_cmp(&y.approx()),
+        _ => {}
     }
     let same = |dt: NamedNodeRef<'_>| a.datatype() == dt && b.datatype() == dt;
     if same(xsd::DATE_TIME) {
@@ -825,6 +934,99 @@ pub fn compare(a: &Term, b: &Term) -> Option<Ordering> {
     None
 }
 
-pub fn blank() -> Term {
-    BlankNode::default().into()
+#[cfg(test)]
+mod tests {
+    use super::{compare, well_formed};
+    use oxrdf::{Literal, Term, vocab::xsd};
+    use std::cmp::Ordering;
+
+    #[test]
+    fn an_integer_has_one_sign_at_most() {
+        let int = |v: &str| well_formed(&Literal::new_typed_literal(v, xsd::INTEGER));
+        assert!(int("5") && int("+5") && int("-5"));
+        assert!(!int("++5") && !int("+-5") && !int("") && !int("+"));
+        let dec = |v: &str| well_formed(&Literal::new_typed_literal(v, xsd::DECIMAL));
+        assert!(dec("0.1234567890123456789") && dec("-1.5") && dec("123456789012345678901234567890"));
+        assert!(!dec("1.2.3") && !dec("inf") && !dec("."));
+        let big = "1234567890123456789012345678901234567890";
+        let typed = |v: &str, t: &str| well_formed(&Literal::new_typed_literal(v, oxrdf::NamedNode::new_unchecked(format!("http://www.w3.org/2001/XMLSchema#{t}"))));
+        assert!(int(big) && typed(big, "nonNegativeInteger") && typed(&format!("-{big}"), "negativeInteger"));
+        assert!(!typed(&format!("-{big}"), "nonNegativeInteger") && !typed(big, "long"));
+    }
+
+    #[test]
+    fn a_pattern_is_checked_whatever_its_flags_and_one_that_cannot_compile_is_an_error() {
+        let shape = |pattern: &str, flags: &str| format!(
+            "@prefix sh: <http://www.w3.org/ns/shacl#> . <https://example.org/s> a sh:NodeShape ; sh:targetNode <https://example.org/n> ; sh:property [ sh:path <https://example.org/p> ; sh:pattern {pattern:?} {flags} ] .\n<https://example.org/n> <https://example.org/p> \"xyz\" ."
+        );
+        let results = |ttl: &str| {
+            let mut g = oxrdf::Graph::new();
+            for t in oxttl::TurtleParser::new().for_slice(ttl.as_bytes()) {
+                g.insert(&t.unwrap());
+            }
+            let shapes = super::Shapes::parse(&g);
+            (super::Validator::new(&shapes, &g).validate_all().len(), shapes.problems.len())
+        };
+        assert_eq!(results(&shape("a.c", "")), (1, 0));
+        assert_eq!(results(&shape("a.c", "; sh:flags \"q\"")), (1, 0));
+        // With `q`, `x` does nothing: the space stays in the quoted pattern.
+        assert_eq!(results(&shape("x yz", "; sh:flags \"qx\"")), (1, 0));
+        // XPath's `x`: whitespace outside a class goes, `#` is a character, `[ ]` keeps its space.
+        assert_eq!(results(&shape("x y z", "; sh:flags \"x\"")), (0, 0));
+        assert_eq!(results(&shape("^x#z$", "; sh:flags \"x\"")), (1, 0));
+        assert_eq!(results(&shape("^x[ ]z$", "; sh:flags \"x\"")), (1, 0));
+        assert_eq!(results(&shape("^(?=x)y", "")).1, 1);
+    }
+
+    #[test]
+    fn a_dot_matches_no_line_end_without_the_s_flag() {
+        assert!(!super::xpath_regex("^a.b$", "").unwrap().is_match("a\rb"));
+        assert!(super::xpath_regex("^a.b$", "s").unwrap().is_match("a\rb"));
+        assert!(super::xpath_regex("^a[.]b$", "").unwrap().is_match("a.b"));
+        assert!(super::xpath_regex("^a\\.b$", "").unwrap().is_match("a.b"));
+    }
+
+    #[test]
+    fn word_and_space_escapes_and_class_operators_mean_what_xpath_says() {
+        let m = |p: &str, v: &str| super::xpath_regex(p, "").unwrap().is_match(v);
+        assert!(m("^\\w+$", "a+b") && !m("^\\w+$", "a,b") && !m("^\\w$", " "));
+        assert!(m("^\\W$", ",") && !m("^\\W$", "+"));
+        assert!(m("^\\s$", "\t") && !m("^\\s$", "\u{a0}") && m("^\\S$", "\u{a0}"));
+        assert!(m("^[\\s,]$", ",") && m("^[\\w-]+$", "a-b"));
+        assert!(m("^[a&&b]$", "&") && m("^[a~~b]$", "~") && !m("^[a&&b]$", "c"));
+    }
+
+    #[test]
+    fn a_class_subtraction_subtracts() {
+        let re = super::xpath_regex("^[a-z-[aeiou]]+$", "x").unwrap();
+        assert!(re.is_match("b") && !re.is_match("a") && !re.is_match("-"));
+        // A dash before a plain class is still a range end or a character.
+        assert!(super::xpath_regex("^[a\\-]$", "").unwrap().is_match("-"));
+        // `x` keeps a space inside the subtracted class, which is still open after its `]`.
+        let spaced = super::xpath_regex("^[a-z -[aeiou]]$", "x").unwrap();
+        assert!(spaced.is_match(" ") && !spaced.is_match("e"));
+    }
+
+    #[test]
+    fn a_pattern_violation_quotes_the_pattern_as_written() {
+        let ttl = "@prefix sh: <http://www.w3.org/ns/shacl#> . <https://example.org/s> a sh:NodeShape ; sh:targetNode <https://example.org/n> ; sh:property [ sh:path <https://example.org/p> ; sh:pattern \"^a.b$\" ] .\n<https://example.org/n> <https://example.org/p> \"xyz\" .";
+        let mut g = oxrdf::Graph::new();
+        for t in oxttl::TurtleParser::new().for_slice(ttl.as_bytes()) {
+            g.insert(&t.unwrap());
+        }
+        let shapes = super::Shapes::parse(&g);
+        let found = super::Validator::new(&shapes, &g).validate_all();
+        assert!(found[0].message.ends_with("does not match ^a.b$"), "{}", found[0].message);
+    }
+
+    #[test]
+    fn integers_and_decimals_compare_exactly() {
+        let n = |v: &str, dt| Term::from(Literal::new_typed_literal(v, dt));
+        assert_eq!(compare(&n("9007199254740993", xsd::INTEGER), &n("9007199254740992", xsd::INTEGER)), Some(Ordering::Greater));
+        assert_eq!(compare(&n("0.100000000000000001", xsd::DECIMAL), &n("0.1", xsd::DECIMAL)), Some(Ordering::Greater));
+        assert_eq!(compare(&n("123456789012345678901234567890", xsd::INTEGER), &n("5", xsd::INTEGER)), Some(Ordering::Greater));
+        assert_eq!(compare(&n("2", xsd::INTEGER), &n("2.5", xsd::DOUBLE)), Some(Ordering::Less));
+        assert_eq!(compare(&n("inf", xsd::INTEGER), &n("5", xsd::INTEGER)), None);
+        assert_eq!(compare(&n("INF", xsd::DOUBLE), &n("5", xsd::INTEGER)), Some(Ordering::Greater));
+    }
 }

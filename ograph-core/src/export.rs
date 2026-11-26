@@ -2,7 +2,7 @@
 
 use crate::store::{GraphSel, Snapshot};
 use oxrdf::{GraphName, NamedOrBlankNode, Quad, Term};
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
 pub fn trig(snap: &Snapshot, path: &Path) -> anyhow::Result<usize> {
@@ -26,6 +26,7 @@ pub fn trig(snap: &Snapshot, path: &Path) -> anyhow::Result<usize> {
             n += 1;
         }
     }
-    w.finish()?;
+    // Dropping a BufWriter flushes it but loses the error: a full disk would cut the file short.
+    w.finish()?.flush()?;
     Ok(n)
 }

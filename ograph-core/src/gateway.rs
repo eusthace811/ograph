@@ -5,7 +5,7 @@
 //! classes, closed vocabularies and LLM confidence, evidence, then incremental SHACL on the
 //! nodes the batch touches (domain, range, cardinality), seen against the store as it will be.
 
-use crate::model::{Batch, EntityRef, Extraction, Object, ProposedFact, entity, slug};
+use crate::model::{Batch, EntityRef, Extraction, Object, ProposedFact};
 use crate::ontology::Ontology;
 use crate::shacl::{self, Graph};
 use crate::store::{GraphSel, Snapshot, Store};
@@ -67,13 +67,13 @@ pub(crate) fn norm(s: &str) -> String {
     s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
-fn words(s: &str) -> Vec<String> {
+pub(crate) fn words(s: &str) -> Vec<String> {
     s.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_owned).collect()
 }
 
 /// `query` names a sibling of the catalog name `known` rather than misspelling it: the same
 /// words but one, and that one unlike its counterpart (`inventory-service-uk` against
-/// `inventory-service-eu`, `v1` against `v2`, but not `svc` against `service`), or the same words plus some that are not filler
+/// `inventory-service-eu`, `v1` against `v2`, `db1` against `db2`, but not `svc` against `service`), or the same words plus some that are not filler
 /// (`inventory-service-eu-canary` against `inventory-service-eu`, but not `checkout-svc`
 /// against `checkout`).
 fn sibling(query: &[String], known: &[String]) -> bool {
@@ -84,7 +84,20 @@ fn sibling(query: &[String], known: &[String]) -> bool {
     }
     let mut diff = query.iter().zip(known).filter(|(x, y)| x != y);
     let filler = |w: &String| FILLER.contains(&w.as_str());
-    matches!((diff.next(), diff.next()), (Some((x, y)), None) if strsim::jaro_winkler(x, y) < SIBLING_WORD && !(filler(x) && filler(y)))
+    // Words either of which holds a number differ by it however alike they look (`db1`, `db2`,
+    // `db`), and otherwise by their letters alone (`db1` and `db01`, `1` and `01`, are one).
+    let digits = |w: &str| {
+        let all: String = w.chars().filter(char::is_ascii_digit).collect();
+        let n = all.trim_start_matches('0');
+        if n.is_empty() && !all.is_empty() { "0".to_owned() } else { n.to_owned() }
+    };
+    let letters = |w: &str| w.chars().filter(|c| !c.is_ascii_digit()).collect::<String>();
+    let has_digit = |w: &str| w.chars().any(|c| c.is_ascii_digit());
+    let unlike = |x: &str, y: &str| match has_digit(x) || has_digit(y) {
+        true => digits(x) != digits(y) || (letters(x) != letters(y) && strsim::jaro_winkler(&letters(x), &letters(y)) < SIBLING_WORD),
+        false => strsim::jaro_winkler(x, y) < SIBLING_WORD,
+    };
+    matches!((diff.next(), diff.next()), (Some((x, y)), None) if unlike(x, y) && !(filler(x) && filler(y)))
 }
 
 /// Words that name the kind of thing rather than which one.
@@ -116,12 +129,12 @@ impl Catalog {
                             continue;
                         }
                         if let Term::Literal(l) = snap.term(v)? {
-                            c.names.insert((class, norm(l.value())), (n.clone(), words(l.value())));
+                            c.insert_name(class, &n, l.value());
                         }
                     }
                 }
                 let local = n.as_str().rsplit('/').next().unwrap_or_default().to_owned();
-                c.names.insert((class, norm(&local)), (n.clone(), words(&local)));
+                c.insert_name(class, &n, &local);
             }
         }
         Ok(c)
@@ -131,7 +144,16 @@ impl Catalog {
         self.misses.get_mut().clear();
         self.known.insert(iri.as_str().to_owned());
         for n in names {
-            self.names.insert((class, norm(n)), (iri.clone(), words(n)));
+            self.insert_name(class, iri, n);
+        }
+    }
+
+    /// A name of no words, such as `--`, names nothing: under the empty key it would be a
+    /// prefix of every name.
+    fn insert_name(&mut self, class: &'static str, iri: &NamedNode, name: &str) {
+        let key = norm(name);
+        if !key.is_empty() {
+            self.names.insert((class, key), (iri.clone(), words(name)));
         }
     }
 
@@ -148,24 +170,25 @@ impl Catalog {
         hits.first().copied()
     }
 
+    /// The entity `name` is a name or alias of, exactly, with no fuzzy matching.
+    pub(crate) fn exact(&self, class: &'static str, name: &str) -> Option<&NamedNode> {
+        self.names.get(&(class, norm(name))).map(|(n, _)| n)
+    }
+
     pub fn resolve(&self, class: &'static str, name: &str) -> Resolution {
         let key = norm(name);
         if key.is_empty() {
             return Resolution::Missing;
         }
-        if let Some((n, _)) = self.names.get(&(class, key.clone())) {
+        if let Some(n) = self.exact(class, name) {
             return Resolution::Exact(n.clone());
         }
         if let Some(r) = self.misses.borrow().get(&(class, name.to_owned())) {
             return r.clone();
         }
-        let r = self.score(class, name, &key);
+        let r = self.explain_fuzzy(class, name, &key).resolution;
         self.misses.borrow_mut().insert((class, name.to_owned()), r.clone());
         r
-    }
-
-    fn score(&self, class: &'static str, name: &str, key: &str) -> Resolution {
-        self.explain_fuzzy(class, name, key).resolution
     }
 
     /// [`Catalog::resolve`] with its reason and the best-scoring entities, for `ograph resolve`.
@@ -174,7 +197,7 @@ impl Catalog {
         if key.is_empty() {
             return Match { resolution: Resolution::Missing, why: "an empty name".into(), candidates: vec![] };
         }
-        if let Some((n, _)) = self.names.get(&(class, key.clone())) {
+        if let Some(n) = self.exact(class, name) {
             return Match { resolution: Resolution::Exact(n.clone()), why: "exact name or alias".into(), candidates: vec![(n.clone(), 1.0)] };
         }
         self.explain_fuzzy(class, name, &key)
@@ -183,7 +206,7 @@ impl Catalog {
     fn explain_fuzzy(&self, class: &'static str, name: &str, key: &str) -> Match {
         let mut scored: Vec<(f64, &NamedNode, &[String])> =
             self.names.iter().filter(|((c, _), _)| *c == class).map(|((_, k), (n, w))| (strsim::jaro_winkler(key, k), n, w.as_slice())).collect();
-        scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.as_str().cmp(b.1.as_str())));
+        scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.as_str().cmp(b.1.as_str())).then_with(|| a.2.cmp(b.2)));
         let mut candidates: Vec<(NamedNode, f64)> = Vec::new();
         for (s, n, _) in &scored {
             if candidates.len() == 3 {
@@ -350,6 +373,14 @@ impl Graph for Overlay<'_> {
             _ => vec![class.clone()],
         }
     }
+    /// The ontology holds the class hierarchy; the store holds none of it. A superclass the
+    /// ontology names without declaring still has the subclasses that name it.
+    fn subclasses(&self, class: &Term) -> Vec<Term> {
+        let Term::NamedNode(n) = class else { return vec![class.clone()] };
+        let mut out: Vec<Term> = self.ont.classes.iter().filter(|(c, sups)| *c != n.as_str() && sups.contains(n.as_str())).map(|(c, _)| NamedNode::new_unchecked(c).into()).collect();
+        out.insert(0, class.clone());
+        out
+    }
     fn as_dyn(&self) -> &dyn Graph {
         self
     }
@@ -387,41 +418,43 @@ struct Resolved {
     fact: usize,
 }
 
-fn kind_of(class: &str) -> String {
-    slug(class.rsplit(['#', '/']).next().unwrap_or("thing"))
-}
-
 /// Runs the checks against `catalog` without writing. Returns the accepted triples and the
 /// rejections.
 pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id>, catalog: &Catalog) -> (Vec<(Triple, usize)>, Vec<Rejection>, usize) {
+    // Who holds each name: the catalog before this batch, and the batch's own entities by their
+    // names (not their aliases, which the claims pass below settles).
+    let mut holders = std::borrow::Cow::Borrowed(catalog);
     let mut catalog = std::borrow::Cow::Borrowed(catalog);
     let ty = NamedNode::new_unchecked(RDF_TYPE);
     let name_p = NamedNode::new_unchecked(ops::NAME);
     let alias_p = NamedNode::new_unchecked(ops::ALIAS);
     // Catalog facts in this batch define catalog entities before anything else resolves.
+    let mut names_of: FxHashMap<&EntityRef, Vec<&str>> = FxHashMap::default();
+    let mut own_names: FxHashMap<&EntityRef, Vec<&str>> = FxHashMap::default();
+    for g in batch.facts.iter().filter(|g| g.predicate == name_p || g.predicate == alias_p) {
+        if let Object::Literal(l) = &g.object {
+            names_of.entry(&g.subject).or_default().push(l.value());
+            if g.predicate == name_p {
+                own_names.entry(&g.subject).or_default().push(l.value());
+            }
+        }
+    }
     for f in &batch.facts {
         if !matches!(f.method, Extraction::Catalog { .. }) || f.predicate != ty {
             continue;
         }
         if let (EntityRef::Known(s), Object::Entity(EntityRef::Known(c))) = (&f.subject, &f.object)
             && let Some(class) = CATALOG_CLASSES.iter().find(|k| **k == c.as_str()) {
-                let names: Vec<String> = batch
-                    .facts
-                    .iter()
-                    .filter(|g| g.subject == f.subject && (g.predicate == name_p || g.predicate == alias_p))
-                    .filter_map(|g| match &g.object {
-                        Object::Literal(l) => Some(l.value().to_owned()),
-                        _ => None,
-                    })
-                    .collect();
-                catalog.to_mut().add(class, s, &names.iter().map(String::as_str).collect::<Vec<_>>());
+                catalog.to_mut().add(class, s, names_of.get(&f.subject).map_or(&[][..], Vec::as_slice));
+                let mut names = own_names.get(&f.subject).cloned().unwrap_or_default();
+                names.push(s.as_str().rsplit('/').next().unwrap_or_default());
+                holders.to_mut().add(class, s, &names);
             }
     }
     let mut rejected: Vec<Rejection> = batch.withheld.iter().map(|(f, reason)| Rejection::of(f, reason.clone())).collect();
     let mut fuzzy = 0;
     let mut accepted: Vec<Resolved> = Vec::new();
-    let mut minted: FxHashSet<(NamedNode, &'static str)> = FxHashSet::default();
-    let resolve = |r: &EntityRef, catalog_method: bool, fuzzy: &mut usize, minted: &mut FxHashSet<(NamedNode, &'static str)>| -> Result<NamedNode, String> {
+    let resolve = |r: &EntityRef, catalog_method: bool, fuzzy: &mut usize| -> Result<NamedNode, String> {
         match r {
             EntityRef::Known(n) => {
                 if !n.as_str().starts_with(vocab::DATA) && n.as_str().starts_with("https://ograph.dev/") && !ont.is_class(n.as_str()) {
@@ -430,7 +463,7 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                 if !iri_scheme().is_match(n.as_str()) && !ont.is_class(n.as_str()) {
                     return Err(format!("IRI {n} does not follow the id scheme"));
                 }
-                let is_catalog_kind = ["app/", "team/"].iter().any(|k| n.as_str()[vocab::DATA.len().min(n.as_str().len())..].starts_with(k));
+                let is_catalog_kind = n.as_str().strip_prefix(vocab::DATA).is_some_and(|r| r.starts_with("app/") || r.starts_with("team/"));
                 if is_catalog_kind && !catalog_method && !catalog.contains(n.as_str()) {
                     return Err(format!("{} is not in the catalog", vocab::compact(n.as_str())));
                 }
@@ -448,12 +481,8 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                         Resolution::Ambiguous(n, s) => Err(format!("\"{name}\" only fuzzily matches {} ({s:.2}); not created", vocab::compact(n.as_str()))),
                         Resolution::Missing => Err(format!("\"{name}\" is not in the {} catalog; not created", vocab::compact(class))),
                     }
-                } else if !ont.is_class(class) {
-                    Err(format!("{class} is not an ontology class"))
                 } else {
-                    let n = entity(&kind_of(class), name);
-                    minted.insert((n.clone(), class));
-                    Ok(n)
+                    Err(format!("\"{name}\" names a {}, which only the catalog resolves by name", vocab::compact(class)))
                 }
             }
         }
@@ -480,7 +509,7 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
                 rejected.push(reject(format!("model confidence {:.2} is below {MIN_LLM_CONFIDENCE}", confidence.get())));
                 continue;
             }
-        let s = match resolve(&f.subject, catalog_method, &mut fuzzy, &mut minted) {
+        let s = match resolve(&f.subject, catalog_method, &mut fuzzy) {
             Ok(s) => s,
             Err(e) => {
                 rejected.push(reject(e));
@@ -489,7 +518,7 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
         };
         let o: Term = match &f.object {
             Object::Literal(l) => l.clone().into(),
-            Object::Entity(r) => match resolve(r, catalog_method, &mut fuzzy, &mut minted) {
+            Object::Entity(r) => match resolve(r, catalog_method, &mut fuzzy) {
                 Ok(n) => n.into(),
                 Err(e) => {
                     rejected.push(reject(e));
@@ -517,44 +546,45 @@ pub fn check(snap: &Snapshot, ont: &Ontology, batch: &Batch, replaced: Option<Id
             rejected.push(reject(format!("unconfirmed: no {} edge backs this model-proposed {}", SUPPORTING_SOURCES.join(" or "), vocab::compact(p))));
             continue;
         }
-        if let Term::Literal(l) = &o
-            && p == ops::ALIAS
-            && let Resolution::Exact(other) = catalog.resolve(ops::APPLICATION, l.value())
-            && other != s
-        {
-            rejected.push(reject(format!("alias \"{}\" already names {}", l.value(), vocab::compact(other.as_str()))));
-            continue;
-        }
         accepted.push(Resolved { triple: Triple::new(s, f.predicate.clone(), o), fact: i });
     }
     // Two applications claiming one alias in the same batch: neither gets it, whatever the order.
+    // One claiming an alias another application held before the batch does not get it either,
+    // unless the holder claims it again here (then both claim it).
+    // Names are per class: an application and a team may share one.
+    let class_of = |a: &Resolved| {
+        let local = a.triple.subject.to_string();
+        let local = local.trim_matches(['<', '>']).strip_prefix(vocab::DATA).unwrap_or_default();
+        CATALOG_CLASSES.into_iter().zip(["app/", "team/"]).find(|(_, k)| local.starts_with(k)).map(|(c, _)| c)
+    };
     let alias_of = |a: &Resolved| match &a.triple.object {
-        Term::Literal(l) if a.triple.predicate.as_str() == ops::ALIAS => Some(norm(l.value())),
+        Term::Literal(l) if a.triple.predicate.as_str() == ops::ALIAS => Some((class_of(a), norm(l.value()))),
         _ => None,
     };
-    let mut claims: FxHashMap<String, std::collections::BTreeSet<String>> = FxHashMap::default();
+    let mut claims: FxHashMap<(Option<&str>, String), std::collections::BTreeSet<String>> = FxHashMap::default();
     for a in &accepted {
         if let Some(k) = alias_of(a) {
             claims.entry(k).or_default().insert(vocab::compact(a.triple.subject.to_string().trim_matches(['<', '>'])));
         }
     }
-    accepted.retain(|a| match alias_of(a).and_then(|k| claims.get(&k)).filter(|c| c.len() > 1) {
-        Some(c) => {
-            let names: Vec<&str> = c.iter().map(String::as_str).collect();
-            rejected.push(Rejection::of(&batch.facts[a.fact], format!("alias is claimed by {} in one batch", names.join(" and "))));
-            false
-        }
-        None => true,
+    accepted.retain(|a| {
+        let (Some(c), Term::Literal(l)) = (alias_of(a).and_then(|k| claims.get(&k)), &a.triple.object) else { return true };
+        let why = if c.len() > 1 {
+            format!("alias is claimed by {} in one batch", c.iter().map(String::as_str).collect::<Vec<_>>().join(" and "))
+        } else if let Some(class) = class_of(a)
+            && let Some(other) = holders.exact(class, l.value())
+            && !c.contains(&vocab::compact(other.as_str()))
+        {
+            format!("alias \"{}\" already names {}", l.value(), vocab::compact(other.as_str()))
+        } else {
+            return true;
+        };
+        rejected.push(Rejection::of(&batch.facts[a.fact], why));
+        false
     });
-    for (n, class) in minted {
-        accepted.push(Resolved { triple: Triple::new(n, ty.clone(), NamedNode::new_unchecked(class)), fact: usize::MAX });
-    }
     let (kept, dropped) = shacl_pass(snap, ont, replaced, accepted, |r| &r.triple);
     for (a, reason) in dropped {
-        rejected.push(match batch.facts.get(a.fact) {
-            Some(f) => Rejection::of(f, reason),
-            None => Rejection { fact: format!("{} (minted type)", a.triple), reason, records: vec![] },
-        });
+        rejected.push(Rejection::of(&batch.facts[a.fact], reason));
     }
     let accepted = kept;
     (accepted.into_iter().map(|r| (r.triple, r.fact)).collect(), rejected, fuzzy)
@@ -581,23 +611,20 @@ fn shacl_pass<T>(snap: &Snapshot, ont: &Ontology, replaced: Option<Id>, mut acce
         }
         let mut drop: FxHashSet<usize> = FxHashSet::default();
         let mut why: FxHashMap<usize, String> = FxHashMap::default();
+        let subjects: Vec<String> = accepted.iter().map(|a| triple(a).subject.to_string()).collect();
         for r in &results {
-            let prop = order_end(ont, r).or_else(|| r.path.as_deref().map(|p| p.trim_matches(['<', '>']).to_owned())).or_else(|| {
-                let local = r.shape.trim_matches(['<', '>']).strip_prefix("https://ograph.dev/shape/")?.strip_suffix("/domain")?.to_owned();
-                let (pfx, name) = local.split_once('-')?;
-                vocab::PREFIXES.iter().find(|(p, _)| *p == pfx).map(|(_, ns)| format!("{ns}{name}"))
-            });
-            let on_focus = |a: &T| triple(a).subject.to_string() == r.focus;
+            let prop = order_end(ont, r).or_else(|| r.path.as_deref().map(|p| p.trim_matches(['<', '>']).to_owned())).or_else(|| domain_of(ont, r));
+            let on_focus = |k: usize| subjects[k] == r.focus;
             let mut hits: Vec<usize> = accepted
                 .iter()
                 .enumerate()
-                .filter(|(_, a)| on_focus(a) && prop.as_ref().is_none_or(|p| triple(a).predicate.as_str() == p))
+                .filter(|&(k, a)| on_focus(k) && prop.as_ref().is_none_or(|p| triple(a).predicate.as_str() == p))
                 .map(|(k, _)| k)
                 .collect();
             // A required value missing rejects the node. A bad value the batch did not propose
             // belongs to another graph, and this batch is not rejected for it.
             if hits.is_empty() && r.value.is_none() {
-                hits = accepted.iter().enumerate().filter(|(_, a)| on_focus(a)).map(|(k, _)| k).collect();
+                hits = (0..accepted.len()).filter(|&k| on_focus(k)).collect();
             }
             for k in hits {
                 drop.insert(k);
@@ -633,6 +660,19 @@ fn order_end(ont: &Ontology, r: &shacl::ValidationResult) -> Option<String> {
     })
 }
 
+/// The property of a derived domain shape: its subjects are the focus, so only that property's
+/// facts on it are wrong.
+fn domain_of(ont: &Ontology, r: &shacl::ValidationResult) -> Option<String> {
+    if !r.shape.starts_with("<https://ograph.dev/shape/") || !r.shape.ends_with("/domain>") {
+        return None;
+    }
+    let shape = ont.shapes.shapes.iter().find(|s| s.id.to_string() == r.shape)?;
+    shape.targets.iter().find_map(|t| match t {
+        shacl::Target::SubjectsOf(p) => Some(p.as_str().to_owned()),
+        _ => None,
+    })
+}
+
 fn s(v: &str) -> Term {
     Literal::new_simple_literal(v).into()
 }
@@ -640,13 +680,12 @@ fn s(v: &str) -> Term {
 /// Checks a batch and commits it: accepted facts replace the batch's graph, rejections replace
 /// its quarantine graph. Re-submitting the same batch writes nothing new.
 pub fn submit(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64) -> anyhow::Result<Outcome> {
-    submit_with(store, ont, batch, now_ms, true, &mut None)
+    submit_with(store, ont, batch, now_ms, &mut None)
 }
 
-/// [`submit`] with a choice of durability and a catalog shared across batches. A harvest
-/// submits non-durably and flushes once, and builds the catalog again only after a batch that
-/// can change it.
-pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, _durable: bool, catalog: &mut Option<Catalog>) -> anyhow::Result<Outcome> {
+/// [`submit`] with a catalog shared across batches. A harvest builds the catalog again only
+/// after a batch that can change it.
+pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, catalog: &mut Option<Catalog>) -> anyhow::Result<Outcome> {
     let graph = batch.graph();
     let qgraph = batch.quarantine_graph();
     let snap = store.snapshot()?;
@@ -745,7 +784,6 @@ pub fn submit_with(store: &Store, ont: &Ontology, batch: &Batch, now_ms: i64, _d
     Ok(outcome(removed, added))
 }
 
-/// The node that holds a model-proposed fact's provenance.
 /// In a graph of several files, the records behind each fact about a node that more than one
 /// record states: `harv:fact`, `harv:method "rule"` and an `evt:sourceRecord` per record, on the
 /// fact's node. Without them a file that sets one field of an incident another file also states
@@ -779,6 +817,7 @@ fn record_provenance(batch: &Batch, accepted: &[(Triple, usize)]) -> Vec<Triple>
     out
 }
 
+/// The node that holds a model-proposed fact's provenance.
 pub fn fact_node(t: &Triple) -> NamedNode {
     NamedNode::new_unchecked(format!("{}fact/{}", vocab::DATA, &hex::encode(sha2_hash(&t.to_string()))[..20]))
 }
@@ -967,6 +1006,176 @@ pub fn shape_focus(snap: &Snapshot, ont: &Ontology) -> Vec<(String, usize)> {
 #[cfg(test)]
 mod tests {
     use super::{sibling, words};
+    use crate::model::{Batch, Extraction, known, lit, obj};
+    use crate::ontology::{DEFAULT_SHAPES, DEFAULT_TTL, Ontology};
+    use crate::store::Store;
+
+    #[test]
+    fn two_applications_of_one_catalog_batch_claiming_one_alias_get_neither() {
+        let path = std::env::temp_dir().join(format!("ograph-gateway-alias-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(&path).unwrap();
+        let mut b = Batch::new("catalog", "k", "rule");
+        let (ev, m) = (b.record("r1"), Extraction::Catalog { catalog: "test".into() });
+        for app in ["ledger-db", "checkout"] {
+            b.add(known("app", app), crate::vocab::RDF_TYPE, obj(oxrdf::NamedNode::new_unchecked(crate::vocab::ops::APPLICATION)), &ev, &m);
+            b.add(known("app", app), crate::vocab::ops::NAME, lit(app), &ev, &m);
+            b.add(known("app", app), crate::vocab::ops::ALIAS, lit("shared"), &ev, &m);
+        }
+        let out = super::submit(&store, &Ontology::load_default().unwrap(), &b, 0).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let reasons: Vec<&str> = out.quarantined.iter().map(|r| r.reason.as_str()).collect();
+        assert_eq!(reasons, ["alias is claimed by id:app/checkout and id:app/ledger-db in one batch"; 2]);
+    }
+
+    #[test]
+    fn an_alias_another_catalog_file_holds_is_not_taken() {
+        let path = std::env::temp_dir().join(format!("ograph-gateway-alias-files-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(&path).unwrap();
+        let ont = Ontology::load_default().unwrap();
+        let mut outs = vec![];
+        for (key, app) in [("a", "ledger-db"), ("b", "checkout")] {
+            let mut b = Batch::new("catalog", key, "rule");
+            let (ev, m) = (b.record("r1"), Extraction::Catalog { catalog: "test".into() });
+            b.add(known("app", app), crate::vocab::RDF_TYPE, obj(oxrdf::NamedNode::new_unchecked(crate::vocab::ops::APPLICATION)), &ev, &m);
+            b.add(known("app", app), crate::vocab::ops::NAME, lit(app), &ev, &m);
+            b.add(known("app", app), crate::vocab::ops::ALIAS, lit("shared"), &ev, &m);
+            outs.push(super::submit(&store, &ont, &b, 0).unwrap());
+        }
+        let _ = std::fs::remove_file(&path);
+        assert!(outs[0].quarantined.is_empty());
+        let reasons: Vec<&str> = outs[1].quarantined.iter().map(|r| r.reason.as_str()).collect();
+        assert_eq!(reasons, ["alias \"shared\" already names id:app/ledger-db"]);
+    }
+
+    #[test]
+    fn an_alias_held_elsewhere_is_not_taken_when_the_holders_own_claim_fails() {
+        let path = std::env::temp_dir().join(format!("ograph-gateway-alias-held-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(&path).unwrap();
+        let ont = Ontology::load_default().unwrap();
+        let m = Extraction::Catalog { catalog: "test".into() };
+        let app = |b: &mut Batch, ev: &crate::model::EvidenceRef, name: &str| {
+            b.add(known("app", name), crate::vocab::RDF_TYPE, obj(oxrdf::NamedNode::new_unchecked(crate::vocab::ops::APPLICATION)), ev, &m);
+            b.add(known("app", name), crate::vocab::ops::NAME, lit(name), ev, &m);
+        };
+        let mut a = Batch::new("catalog", "a", "rule");
+        let ev = a.record("r1");
+        app(&mut a, &ev, "ledger-db");
+        a.add(known("app", "ledger-db"), crate::vocab::ops::ALIAS, lit("shared"), &ev, &m);
+        super::submit(&store, &ont, &a, 0).unwrap();
+        let mut b = Batch::new("catalog", "b", "rule");
+        let ev = b.record("r1");
+        app(&mut b, &ev, "checkout");
+        b.add(known("app", "checkout"), crate::vocab::ops::ALIAS, lit("shared"), &ev, &m);
+        // A claim by the holder that fails on its own: its evidence is no record this batch read.
+        b.add(known("app", "ledger-db"), crate::vocab::ops::ALIAS, lit("shared"), &crate::model::EvidenceRef("nope".into()), &m);
+        let out = super::submit(&store, &ont, &b, 0).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert!(out.quarantined.iter().any(|r| r.reason == "alias \"shared\" already names id:app/ledger-db"), "{:?}", out.quarantined);
+    }
+
+    #[test]
+    fn an_alias_may_not_take_the_name_of_another_application_in_its_batch() {
+        for order in [["checkout", "ledger-db"], ["ledger-db", "checkout"]] {
+            let path = std::env::temp_dir().join(format!("ograph-gateway-alias-name-{}-{}.redb", std::process::id(), order[0]));
+            let _ = std::fs::remove_file(&path);
+            let store = Store::open(&path).unwrap();
+            let mut b = Batch::new("catalog", "k", "rule");
+            let (ev, m) = (b.record("r1"), Extraction::Catalog { catalog: "test".into() });
+            for app in order {
+                b.add(known("app", app), crate::vocab::RDF_TYPE, obj(oxrdf::NamedNode::new_unchecked(crate::vocab::ops::APPLICATION)), &ev, &m);
+                b.add(known("app", app), crate::vocab::ops::NAME, lit(app), &ev, &m);
+                if app == "ledger-db" {
+                    b.add(known("app", app), crate::vocab::ops::ALIAS, lit("checkout"), &ev, &m);
+                }
+            }
+            let out = super::submit(&store, &Ontology::load_default().unwrap(), &b, 0).unwrap();
+            let _ = std::fs::remove_file(&path);
+            let reasons: Vec<&str> = out.quarantined.iter().map(|r| r.reason.as_str()).collect();
+            assert_eq!(reasons, ["alias \"checkout\" already names id:app/checkout"], "{order:?}");
+        }
+    }
+
+    #[test]
+    fn a_team_alias_is_checked_against_teams_not_applications() {
+        let path = std::env::temp_dir().join(format!("ograph-gateway-team-alias-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(&path).unwrap();
+        let mut b = Batch::new("catalog", "k", "rule");
+        let (ev, m) = (b.record("r1"), Extraction::Catalog { catalog: "test".into() });
+        b.add(known("app", "payments"), crate::vocab::RDF_TYPE, obj(oxrdf::NamedNode::new_unchecked(crate::vocab::ops::APPLICATION)), &ev, &m);
+        b.add(known("app", "payments"), crate::vocab::ops::NAME, lit("payments"), &ev, &m);
+        b.add(known("team", "payments-team"), crate::vocab::RDF_TYPE, obj(oxrdf::NamedNode::new_unchecked(crate::vocab::ops::TEAM)), &ev, &m);
+        b.add(known("team", "payments-team"), crate::vocab::ops::ALIAS, lit("payments"), &ev, &m);
+        let out = super::submit(&store, &Ontology::load_default().unwrap(), &b, 0).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert!(out.quarantined.is_empty(), "{:?}", out.quarantined);
+    }
+
+    #[test]
+    fn a_name_of_no_words_names_nothing() {
+        let path = std::env::temp_dir().join(format!("ograph-gateway-empty-name-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(&path).unwrap();
+        let mut c = super::Catalog::from_snapshot(&store.snapshot().unwrap(), None).unwrap();
+        let _ = std::fs::remove_file(&path);
+        c.add(crate::vocab::ops::APPLICATION, &crate::model::entity("app", "ledger-db"), &["ledger-db", "--"]);
+        assert_eq!(c.extended(crate::vocab::ops::APPLICATION, "payments-api"), None);
+        assert!(c.extended(crate::vocab::ops::APPLICATION, "ledger-db-replica").is_some());
+    }
+
+    #[test]
+    fn a_target_class_selects_instances_of_its_subclasses_in_the_store() {
+        let path = std::env::temp_dir().join(format!("ograph-gateway-subclass-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(&path).unwrap();
+        let mut b = Batch::new("test", "k", "rule");
+        let (ev, m) = (b.record("r1"), Extraction::Rule { extractor: "rule".into() });
+        b.add(known("vendor", "acme"), crate::vocab::RDF_TYPE, obj(oxrdf::NamedNode::new_unchecked("https://ograph.dev/ops#Vendor")), &ev, &m);
+        super::submit(&store, &Ontology::load_default().unwrap(), &b, 0).unwrap();
+        let shapes = format!("{DEFAULT_SHAPES}\n<https://example.org/things> a <http://www.w3.org/ns/shacl#NodeShape> ; <http://www.w3.org/ns/shacl#targetClass> <https://ograph.dev/meta#Thing> .\n");
+        let ont = Ontology::load(DEFAULT_TTL, &shapes).unwrap();
+        let focus = super::shape_focus(&store.snapshot().unwrap(), &ont);
+        let _ = std::fs::remove_file(&path);
+        assert!(focus.iter().any(|(name, n)| name.contains("things") && *n > 0), "{focus:?}");
+    }
+
+    #[test]
+    fn a_domain_violation_outside_the_known_prefixes_rejects_only_that_fact() {
+        let ttl = format!("{DEFAULT_TTL}\n<https://example.org/x#foo> a owl:DatatypeProperty ; rdfs:domain ops:Application .\n");
+        let ont = Ontology::load(&ttl, DEFAULT_SHAPES).unwrap();
+        let path = std::env::temp_dir().join(format!("ograph-gateway-domain-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(&path).unwrap();
+        let mut b = Batch::new("test", "k", "rule");
+        let (ev, m) = (b.record("r1"), Extraction::Rule { extractor: "rule".into() });
+        let acme = known("vendor", "acme");
+        b.add(acme.clone(), crate::vocab::RDF_TYPE, obj(oxrdf::NamedNode::new_unchecked("https://ograph.dev/ops#Vendor")), &ev, &m);
+        b.add(acme.clone(), crate::vocab::RDFS_LABEL, lit("Acme"), &ev, &m);
+        b.add(acme, "https://example.org/x#foo", lit("x"), &ev, &m);
+        let out = super::submit(&store, &ont, &b, 0).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(out.quarantined.iter().map(|r| r.fact.contains("example.org/x#foo")).collect::<Vec<_>>(), [true], "{:?}", out.quarantined);
+        assert_eq!(out.accepted, 2);
+    }
+
+    #[test]
+    fn a_name_outside_the_catalog_classes_resolves_to_nothing() {
+        let ont = Ontology::load_default().unwrap();
+        let path = std::env::temp_dir().join(format!("ograph-gateway-provisional-{}.redb", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = Store::open(&path).unwrap();
+        let mut b = Batch::new("test", "k", "rule");
+        let (ev, m) = (b.record("r1"), Extraction::Rule { extractor: "rule".into() });
+        let vendor = crate::model::EntityRef::Provisional { class: "https://ograph.dev/ops#Vendor", name: "Acme".into() };
+        b.add(vendor, crate::vocab::RDFS_LABEL, lit("Acme"), &ev, &m);
+        let out = super::submit(&store, &ont, &b, 0).unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(out.accepted, 0);
+        assert!(out.quarantined[0].reason.contains("only the catalog resolves by name"), "{:?}", out.quarantined);
+    }
 
     #[test]
     fn siblings_differ_in_what_they_name() {
@@ -976,5 +1185,10 @@ mod tests {
         assert!(!is("inventory-svc-eu", "inventory-service-eu"));
         assert!(!is("checkout-svc", "checkout-service"));
         assert!(!is("checkout-svc", "checkout"));
+        assert!(is("orders-db2", "orders-db1") && is("shard02", "shard01") && is("redis2", "redis1"));
+        assert!(!is("orders-db1", "orders-db01") && !is("shard0", "shard00"));
+        assert!(!is("orders-db-1", "orders-db-01") && !is("api-v1", "api-v01"));
+        assert!(is("orders-db2", "orders-db") && is("redis2", "redis"));
+        assert!(is("redis0", "redis") && !is("db0", "db00"));
     }
 }

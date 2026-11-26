@@ -61,7 +61,7 @@ impl<'a> QueryableDataset<'a> for View<'a> {
     }
 
     fn contains_internal_graph_name(&self, g: &Id) -> StoreResult<bool> {
-        Ok(self.snap.graphs()?.iter().any(|(id, _)| id == g))
+        self.snap.has_graph(*g)
     }
 
     fn internalize_term(&self, term: Term) -> StoreResult<Id> {

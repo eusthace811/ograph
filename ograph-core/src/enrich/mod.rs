@@ -178,13 +178,21 @@ pub fn code_location(root: &Path, repo: &Path, at: &ogrep::CodeRef) -> String {
 
 /// [`files`], and the directories below the source path that could not be listed.
 fn walk(root: &Path, path: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let p = if path.is_absolute() { path.to_owned() } else { root.join(path) };
+    let p = root.join(path);
     if p.is_file() {
         return (vec![p], vec![]);
     }
     let (mut out, mut unreadable) = (Vec::new(), Vec::new());
+    // A symlinked directory is followed only when its target is not walked by its real path
+    // (outside the source, or under a hidden directory), so a directory's files keep one path
+    // whatever links point at it. Each directory is read once, so a link to an ancestor cannot loop.
+    let real_root = std::fs::canonicalize(&p).unwrap_or_else(|_| p.clone());
     let mut stack = vec![p];
+    let mut visited = std::collections::HashSet::new();
     while let Some(d) = stack.pop() {
+        if !visited.insert(std::fs::canonicalize(&d).unwrap_or_else(|_| d.clone())) {
+            continue;
+        }
         let Ok(rd) = std::fs::read_dir(&d) else {
             unreadable.push(d);
             continue;
@@ -195,7 +203,12 @@ fn walk(root: &Path, path: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
                 continue;
             }
             if path.is_dir() {
-                stack.push(path);
+                // Walked by its real path: inside the source and under no hidden directory.
+                let walked = |r: PathBuf| r.strip_prefix(&real_root).is_ok_and(|rel| !rel.components().any(|c| c.as_os_str().to_string_lossy().starts_with('.')));
+                let inside = e.file_type().is_ok_and(|t| t.is_symlink()) && std::fs::canonicalize(&path).is_ok_and(walked);
+                if !inside {
+                    stack.push(path);
+                }
             } else {
                 out.push(path);
             }
@@ -328,25 +341,56 @@ fn plausible(ms: i64) -> Option<i64> {
 pub fn parse_iso(s: &str) -> Option<i64> {
     let s = s.trim();
     let s = match s.strip_suffix(" UTC").or_else(|| s.strip_suffix(" GMT")) {
+        // `+0000 UTC` already says its offset.
+        Some(bare) if bare.rfind(['+', '-']).is_some_and(|i| i > 10) => bare.to_owned(),
         Some(bare) => format!("{bare}Z"),
         None => s.to_owned(),
     };
-    let s = s.replacen(' ', "T", 1);
+    // Only the space between date and time becomes `T`; one before an offset stays a space.
+    let mut s = s;
+    if s.as_bytes().get(10) == Some(&b' ') {
+        s.replace_range(10..11, "T");
+    }
     let (main, zone) = match s.find(['Z', '+']).or_else(|| s.get(10..).and_then(|t| t.find('-')).map(|i| i + 10)) {
         Some(i) => s.split_at(i),
         None => (s.as_str(), "Z"),
     };
+    // `12:00:00 +0530`: a space may come before the offset.
+    let (main, zone) = (main.trim_end(), zone.trim());
     let zone = match (zone.len(), zone.is_ascii() && !zone.contains(':')) {
         (5, true) => format!("{}:{}", &zone[..3], &zone[3..]),
         (3, true) => format!("{zone}:00"),
         _ => zone.to_owned(),
     };
-    let main = match main.split_once('.') {
-        Some((a, f)) => format!("{a}.{:0<3}", f.chars().take(3).collect::<String>()),
+    // `12:00:00,123`: ISO 8601 allows a comma before the fraction. The fraction is digits only, so
+    // a zone name after it (`.123 PST`) is not dropped to leave the time in UTC.
+    let main = match main.split_once(['.', ',']) {
+        Some((a, f)) if !f.is_empty() && f.bytes().all(|c| c.is_ascii_digit()) => format!("{a}.{:0<3}", &f[..f.len().min(3)]),
+        Some(_) => return None,
         None => main.to_owned(),
     };
     let dt: oxsdatatypes::DateTime = format!("{main}{zone}").parse().ok()?;
     plausible(crate::term::millis_of(dt.adjust(Some(oxsdatatypes::TimezoneOffset::UTC))?)?)
+}
+
+/// The values a closed vocabulary allows, one `- value: definition` line each, for a prompt.
+fn push_vocabulary(p: &mut String, ont: &crate::ontology::Ontology, prop: &str) {
+    for t in ont.vocabulary(prop).unwrap_or_default() {
+        match &t.definition {
+            Some(d) => p.push_str(&format!("- {}: {d}\n", t.value)),
+            None => p.push_str(&format!("- {}\n", t.value)),
+        }
+    }
+}
+
+/// The JSON object of a model answer, or the note a batch keeps when it has none.
+fn model_json(answer: &str) -> Result<serde_json::Value, String> {
+    crate::llm::first_json(answer).ok_or_else(|| format!("model answer was not JSON: {}", answer.chars().take(80).collect::<String>()))
+}
+
+/// The confidence a model answer states, 0 when it states none in range.
+fn stated_confidence(v: &serde_json::Value) -> crate::model::Confidence {
+    v.get("confidence").and_then(serde_json::Value::as_f64).and_then(crate::model::Confidence::new).unwrap_or(crate::model::Confidence::new(0.0).expect("0 is a confidence"))
 }
 
 pub fn app(name: &str) -> Object {
@@ -406,12 +450,15 @@ pub fn dt(ms: i64) -> crate::model::Object {
 /// exporter that truncates before it writes keeps the facts its file had.
 pub fn read_text(path: &Path) -> std::io::Result<String> {
     let bytes = std::fs::read(path)?;
-    let text = String::from_utf8_lossy(&bytes);
-    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    // One copy of the file, not two: valid UTF-8 keeps its buffer.
+    let mut text = String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned());
+    if text.starts_with('\u{feff}') {
+        text.drain(..'\u{feff}'.len_utf8());
+    }
     if text.trim().is_empty() {
         return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "empty file, keeping its previous facts"));
     }
-    Ok(text.to_owned())
+    Ok(text)
 }
 
 /// Reads JSON lines, one JSON array or one JSON object (pretty-printed or not) into values.
@@ -505,6 +552,57 @@ mod tests {
     use super::{parse_iso, parse_time_str};
 
     #[test]
+    fn an_offset_may_follow_the_time_after_a_space() {
+        let utc = parse_iso("2024-03-01T06:30:00Z");
+        for s in ["2024-03-01 12:00:00 +0530", "2024-03-01 12:00:00 +05:30", "2024-03-01 01:30:00 -0500", "2024-03-01 06:30:00 +0000 UTC", "2024-03-01T12:00:00 +0530", "2024-03-01T01:30:00 -05:00"] {
+            assert_eq!(parse_iso(s), utc, "{s}");
+        }
+        assert_eq!(parse_iso("2024-03-01T12:00:00.123 +0530"), utc.map(|t| t + 123));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_to_an_ancestor_does_not_repeat_its_files() {
+        let root = std::env::temp_dir().join(format!("ograph-walk-loop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src/d")).unwrap();
+        std::fs::write(root.join("src/d/a.json"), "{}").unwrap();
+        std::os::unix::fs::symlink("..", root.join("src/d/up")).unwrap();
+        let (files, unreadable) = super::walk(&root, std::path::Path::new("src"));
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(files, [root.join("src/d/a.json")]);
+        assert!(unreadable.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_keeps_its_real_path_whatever_links_point_at_its_directory() {
+        for link in ["0link", "zlink"] {
+            let root = std::env::temp_dir().join(format!("ograph-walk-link-{}-{link}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(root.join("src/m")).unwrap();
+            std::fs::write(root.join("src/m/a.json"), "{}").unwrap();
+            std::os::unix::fs::symlink("m", root.join("src").join(link)).unwrap();
+            let (files, _) = super::walk(&root, std::path::Path::new("src"));
+            let _ = std::fs::remove_dir_all(&root);
+            assert_eq!(files, [root.join("src/m/a.json")], "{link}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_into_a_hidden_directory_is_followed() {
+        let root = std::env::temp_dir().join(format!("ograph-walk-hidden-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src/.gen/alerts")).unwrap();
+        std::fs::write(root.join("src/.gen/alerts/a.json"), "{}").unwrap();
+        std::os::unix::fs::symlink(".gen/alerts", root.join("src/alerts")).unwrap();
+        let (files, _) = super::walk(&root, std::path::Path::new("src"));
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(files, [root.join("src/alerts/a.json")]);
+    }
+
+    #[test]
     fn an_epoch_number_is_read_by_its_magnitude() {
         let y2000 = Some(946_684_800_000);
         for s in ["946684800", "946684800000", "946684800000000", "946684800000000000"] {
@@ -528,5 +626,12 @@ mod tests {
             assert_eq!(parse_iso(s), z, "{s}");
         }
         assert_eq!(parse_iso("2024-03-01T12:00:00.12éé"), None);
+        // A comma before the fraction, as Python logging and log4j write it.
+        assert_eq!(parse_iso("2024-03-01 12:00:00,123"), parse_iso("2024-03-01 12:00:00.123"));
+        assert_eq!(parse_iso("2024-03-01T12:00:00,5Z"), Some(1_709_294_400_500));
+        // A zone name it cannot read is no UTC, with a fraction or without.
+        for s in ["2024-03-01 12:00:00 PST", "2024-03-01 12:00:00.123 PST", "2024-03-01 12:00:00,123 EST", "2024-03-01T12:00:00,"] {
+            assert_eq!(parse_iso(s), None, "{s}");
+        }
     }
 }

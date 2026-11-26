@@ -8,16 +8,17 @@ use crate::correlate::{self, Analysis, Chain, Ids, Settings, Signal};
 use crate::query;
 use crate::store::Snapshot;
 use crate::term::Id;
-use crate::vocab::{self, evt, rca};
+use crate::vocab::{self, evt};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt::Write;
 
 pub fn page(s: &Snapshot, st: &Settings) -> anyhow::Result<String> {
     let ids = Ids::new(s)?;
     let mut sections = Vec::new();
+    let mut sigs = query::Signatures::default();
     if let Some(c) = ids.incident {
         for i in s.subjects(ids.ty, c)? {
-            if let Ok(x) = section(s, &ids, i, st, sections.len()) {
+            if let Ok(x) = section(s, &ids, i, st, sections.len(), &mut sigs) {
                 sections.push(x);
             }
         }
@@ -39,11 +40,14 @@ struct Event {
     record: Option<String>,
 }
 
-fn section(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, n: usize) -> anyhow::Result<(i64, String)> {
+fn section(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, n: usize, sigs: &mut query::Signatures) -> anyhow::Result<(i64, String)> {
     let iri = correlate::literal(s, i).unwrap_or_default();
-    let mut a = query::chains(s, ids, i, st)?;
-    a.apps.truncate(5);
+    // The candidates, operator actions included, are read once: the chains are built on them.
+    let past = query::past(s, ids, i, st, sigs)?;
     let (app, t, mut cands) = correlate::candidates(s, ids, i, st)?;
+    let causes = cands.iter().filter(|c| c.kind != correlate::ACTION_SIGNAL).cloned().collect();
+    let mut a = query::chains_with(s, ids, i, st, &past, (app, t, causes))?;
+    a.apps.truncate(5);
     correlate::mark_chronic(s, ids, t - st.window_s * 1000, t, &query::chronic_span(st.window_s), cands.iter_mut())?;
     let src = s.iri(evt::SOURCE_RECORD)?;
     let events: Vec<Event> = cands
@@ -53,7 +57,7 @@ fn section(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, n: usize) -> anyhow::R
             Event { sig, record }
         })
         .collect();
-    let similar = query::similar(s, &iri, st, 3).unwrap_or_default();
+    let similar = query::similar(s, &iri, st, 3, sigs).unwrap_or_default();
     let top = a.apps.first().and_then(|r| Some((query::lookup(s, &r.app).ok()?, r)));
     let blast = top.and_then(|(_, r)| query::blast(s, &r.app, 8, Some(t)).ok());
     let chain = a.apps.first().and_then(|r| r.chain.as_ref());
@@ -102,28 +106,27 @@ fn section(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, n: usize) -> anyhow::R
 }
 
 fn ranked(a: &Analysis, n: usize) -> String {
-    let top = a.apps.first().map_or(1.0, |r| r.score).max(1e-9);
+    // The highest score, which an explained application can hold below rank 1.
+    let top = a.apps.iter().map(|r| r.score).fold(1e-9, f64::max);
     let mut h = String::from(r#"<div class="scroll"><table><tr><th>#</th><th>candidate cause</th><th></th><th>score</th><th>chain</th></tr>"#);
     for (k, r) in a.apps.iter().enumerate() {
         let chips = r.chain.as_ref().map_or(String::new(), |c| {
-            let mut x: Vec<String> = chain_events(c).enumerate().map(|(j, e)| format!(r#"<button class="chip" data-open="c{n}-{k}-{j}">{} {}</button>"#, esc(&e.app_name), esc(&e.kind))).collect();
+            let mut x: Vec<String> = c.events().enumerate().map(|(j, e)| format!(r#"<button class="chip" data-open="c{n}-{k}-{j}">{} {}</button>"#, esc(&e.app_name), esc(&e.kind))).collect();
             x.push(format!(r#"<button class="chip" data-open="c{n}-{k}">incident</button>"#));
             x.join(" → ")
         });
         let _ = write!(
             h,
-            r#"<tr><td>{}</td><td><b>{}</b></td><td style="width:20%"><div class="bar" style="width:{:.0}%"></div></td><td>{:.3}</td><td>{chips}</td></tr>"#,
+            r#"<tr><td>{}</td><td><b>{}</b>{}</td><td style="width:20%"><div class="bar" style="width:{:.0}%"></div></td><td>{:.3}</td><td>{chips}</td></tr>"#,
             k + 1,
             esc(&r.app),
+            // Why it ranks above a higher score.
+            if r.explains.is_empty() { String::new() } else { format!(r#" <span class="mute">explains {}</span>"#, esc(&r.explains.join(", "))) },
             (100.0 * r.score / top).max(4.0),
             r.score
         );
     }
     h + "</table></div>"
-}
-
-fn chain_events(c: &Chain) -> impl Iterator<Item = &Signal> {
-    std::iter::once(&c.root).chain(&c.links)
 }
 
 const W: f64 = 760.0;
@@ -142,7 +145,7 @@ fn timeline(events: &[Event], incident_app: &str, t: i64, chain: Option<&Chain>,
     let hi = nice(events.iter().map(|e| before(e.sig.at_ms)).fold(1.0, f64::max));
     let lo = events.iter().map(|e| before(e.sig.until_ms)).fold(0.0, f64::min);
     let x = |m: f64| LABEL + (hi - m) / (hi - lo) * (W - LABEL - 12.0);
-    let hot: FxHashSet<&str> = chain.map(|c| chain_events(c).map(|e| e.iri.as_str()).collect()).unwrap_or_default();
+    let hot: FxHashSet<&str> = chain.map(|c| c.events().map(|e| e.iri.as_str()).collect()).unwrap_or_default();
     let mut body = String::new();
     let mut at: FxHashMap<&str, (f64, f64)> = FxHashMap::default();
     let mut lane_mid: FxHashMap<&str, f64> = FxHashMap::default();
@@ -198,7 +201,7 @@ fn timeline(events: &[Event], incident_app: &str, t: i64, chain: Option<&Chain>,
     h += &body;
     let _ = write!(h, r#"<line class="zero" x1="{0:.0}" x2="{0:.0}" y1="{AXIS}" y2="{height:.0}"/><text class="tick" x="{0:.0}" y="12" text-anchor="middle">incident</text>"#, x(0.0));
     if let Some(c) = chain {
-        let mut points: Vec<(f64, f64)> = chain_events(c).filter_map(|e| at.get(e.iri.as_str()).copied()).collect();
+        let mut points: Vec<(f64, f64)> = c.events().filter_map(|e| at.get(e.iri.as_str()).copied()).collect();
         points.push((x(0.0), lane_mid[incident_app]));
         for (j, w) in points.windows(2).enumerate() {
             let ((x1, y1), (x2, y2)) = (w[0], w[1]);
@@ -240,7 +243,7 @@ fn hood(s: &Snapshot, ids: &Ids, (app, at): (Id, i64), depth: usize, top: Option
     let mut hot_apps: FxHashSet<Id> = FxHashSet::default();
     let mut hot_edges: FxHashSet<(Id, Id)> = FxHashSet::default();
     if let Some(c) = chain {
-        let path: Vec<Id> = chain_events(c).map(|e| e.app).chain([app]).collect();
+        let path: Vec<Id> = c.events().map(|e| e.app).chain([app]).collect();
         hot_apps.extend(&path);
         for w in path.windows(2) {
             hot_edges.insert((w[1], w[0]));
@@ -319,7 +322,7 @@ fn inspector(s: &Snapshot, a: &Analysis, t: i64, n: usize) -> anyhow::Result<Str
         }
         write!(h, r#"<p class="cmd"><code>ograph verdict {} accept --evidence TICKET --by "$USER"</code> <button data-copy="accept">copy</button> <button data-copy="reject">copy as reject</button></p>"#, esc(&id))?;
         h += "<ol>";
-        for (j, e) in chain_events(c).enumerate() {
+        for (j, e) in c.events().enumerate() {
             write!(h, r#"<li id="c{n}-{k}-{j}"><b>{} {}</b> at -{} min, strength {:.2}{}"#, esc(&e.app_name), esc(&e.kind), minutes(t - e.at_ms), e.severity, chronic_note(e))?;
             if let Some(l) = c.scores.get(j) {
                 let basis = if l.known_pair { "known pair".to_owned() } else { format!("time {:.2}, severity {:.2}", l.time, l.severity) };
@@ -343,10 +346,9 @@ fn inspector(s: &Snapshot, a: &Analysis, t: i64, n: usize) -> anyhow::Result<Str
 fn verdict(s: &Snapshot, chain: &str) -> anyhow::Result<Option<(String, String)>> {
     let Some(cid) = s.iri(chain)? else { return Ok(None) };
     let Some(v) = query::verdicts(s, cid)?.pop() else { return Ok(None) };
-    let get = |p: &str| -> Vec<String> { s.iri(p).ok().flatten().and_then(|p| s.objects(v, p).ok()).unwrap_or_default().into_iter().filter_map(|o| correlate::literal(s, o)).collect() };
-    let state = get(rca::STATE).join(", ");
-    let sentence = format!("{state} by {} at {}, evidence: {}", get(rca::BY).join(", "), get(rca::AT).join(", "), get(rca::EVIDENCE).join("; "));
-    Ok(Some((state, sentence)))
+    let v = query::verdict_event(s, v)?;
+    let sentence = format!("{} by {} at {}, evidence: {}", v.state, v.by, v.at, v.evidence.join("; "));
+    Ok(Some((v.state, sentence)))
 }
 
 /// A chronic event's mark, after its strength.

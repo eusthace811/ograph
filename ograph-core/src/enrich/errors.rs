@@ -60,7 +60,14 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<Batch> {
             match ogrep::stack_trace(repo, stack) {
                 Ok(frames) if !frames.is_empty() => return (Some((repo, frames)), notes),
                 Ok(_) => {}
-                Err(e) => notes.push(e.to_string()),
+                Err(e) => {
+                    // Without a runnable ogrep no other repository answers either.
+                    let stop = e.stops_all();
+                    notes.push(e.to_string());
+                    if stop {
+                        break;
+                    }
+                }
             }
         }
         (None, notes)

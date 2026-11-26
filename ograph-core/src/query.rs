@@ -47,7 +47,7 @@ fn quarantine_reason(s: &Snapshot, name: &str) -> anyhow::Result<Option<String>>
     let mut reasons = std::collections::BTreeSet::new();
     for q in s.quads([None, Some(fp), None], GraphSel::Union) {
         let [sub, _, o, _] = q?;
-        if literal(s, o).is_some_and(|text| text.split_whitespace().next().is_some_and(|first| names.contains(first)))
+        if literal(s, o).is_some_and(|text| text.split_whitespace().next().is_some_and(|first| names.contains(first) || names.contains(first.trim_matches(['<', '>']))))
             && let Some(r) = s.object(sub, rp)?.and_then(|v| literal(s, v))
         {
             reasons.insert(r);
@@ -143,6 +143,10 @@ pub fn before(s: &Snapshot, incident: &str, window_s: i64, depth: usize, lookbac
 
 /// The time `when` names: an incident's opening time, or a time as `--known-at` takes it.
 pub fn time_of(s: &Snapshot, when: &str) -> anyhow::Result<i64> {
+    // A dateTime names no node; looking it up first would scan the quarantine to say so.
+    if let Some(ms) = term::instant_millis(when) {
+        return Ok(ms);
+    }
     if let Ok(i) = lookup(s, when)
         && let Some(at) = s.iri(evt::AT)?
         && let Some(t) = s.object(i, at)?.and_then(term::millis)
@@ -195,20 +199,14 @@ pub fn blast(s: &Snapshot, app: &str, depth: usize, at: Option<i64>) -> anyhow::
                     // resolved time; without one, a resolved time means closed. The status is
                     // today's, so at a time the times decide: open if it had opened by then and
                     // was not resolved by then. Without a resolved time, the status decides.
+                    let stated_closed = state.as_deref().is_some_and(|st| st.eq_ignore_ascii_case("resolved") || st.eq_ignore_ascii_case("closed"));
                     let closed = match at {
                         Some(t) => {
                             let opened = s.object(i, ids.at)?.and_then(term::millis);
-                            let stated_closed = state.as_deref().is_some_and(|st| st.eq_ignore_ascii_case("resolved") || st.eq_ignore_ascii_case("closed"));
-                            opened.is_none_or(|o| o > t)
-                                || match resolved.and_then(term::millis) {
-                                    Some(r) => r <= t,
-                                    None => stated_closed,
-                                }
+                            opened.is_none_or(|o| o > t) || resolved.and_then(term::millis).map_or(stated_closed, |r| r <= t)
                         }
-                        None => match state.as_deref() {
-                            Some(st) => st.eq_ignore_ascii_case("resolved") || st.eq_ignore_ascii_case("closed"),
-                            None => resolved.is_some(),
-                        },
+                        None if state.is_some() => stated_closed,
+                        None => resolved.is_some(),
                     };
                     if !closed {
                         open.push(vocab::compact(&literal(s, i).unwrap_or_default()));
@@ -247,7 +245,24 @@ pub struct RuledOut {
 /// An incident's signature: (application, signal) pairs seen before it, summed over their events'
 /// strengths. Strength saturates at 1, so a max made every strongly anomalous application look
 /// alike; the sum keeps how much of the onset each application carries.
-pub fn signature(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<FxHashMap<(String, String), f64>> {
+type Signature = FxHashMap<(String, String), f64>;
+
+/// The correlation signatures of incidents, each computed once. `past` and `similar` compare an
+/// incident with every other one, so a loop over incidents would otherwise compute each
+/// signature once per incident. One `Signatures` serves one snapshot and one set of settings.
+#[derive(Default)]
+pub struct Signatures(FxHashMap<Id, Signature>);
+
+impl Signatures {
+    fn of(&mut self, s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<&Signature> {
+        Ok(match self.0.entry(i) {
+            std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::hash_map::Entry::Vacant(e) => e.insert(signature(s, ids, i, st)?),
+        })
+    }
+}
+
+fn signature(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<Signature> {
     let st = Settings { window_s: st.signature_window_s, ..st.clone() };
     let (_, _, cands) = correlate::causes(s, ids, i, &st)?;
     let mut sig: FxHashMap<(String, String), f64> = FxHashMap::default();
@@ -257,7 +272,7 @@ pub fn signature(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Resul
     Ok(sig)
 }
 
-fn cosine(a: &FxHashMap<(String, String), f64>, b: &FxHashMap<(String, String), f64>) -> f64 {
+fn cosine(a: &Signature, b: &Signature) -> f64 {
     let dot: f64 = a.iter().filter_map(|(k, v)| b.get(k).map(|w| v * w)).sum();
     let na: f64 = a.values().map(|v| v * v).sum::<f64>().sqrt();
     let nb: f64 = b.values().map(|v| v * v).sum::<f64>().sqrt();
@@ -381,9 +396,9 @@ fn judged_roots(s: &Snapshot, incident: Id) -> anyhow::Result<Vec<JudgedRoot>> {
 /// its telemetry signature, and the stated signature reorders the matches by rank fusion; one
 /// without telemetry is compared by what it states. The similarity is the cosine of the
 /// signature that chose the candidates.
-fn resembling(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<Vec<(Id, f64, Id, i64)>> {
+fn resembling(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, sigs: &mut Signatures) -> anyhow::Result<Vec<(Id, f64, Id, i64)>> {
     let (_, t) = correlate::incident_anchor(s, ids, i)?;
-    let mine = signature(s, ids, i, st)?;
+    let mine_empty = sigs.of(s, ids, i, st)?.is_empty();
     let stated = statement(s, ids, i)?;
     let Some(c) = ids.incident else { return Ok(vec![]) };
     let mut out = Vec::new();
@@ -398,7 +413,12 @@ fn resembling(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<V
         }
         let round = |x: f64| (x.max(0.0) * 1000.0).round() / 1000.0;
         let told = round(overlap(&stated, &statement(s, ids, other)?));
-        let similarity = if mine.is_empty() { told } else { round(cosine(&mine, &signature(s, ids, other, st)?)) };
+        let similarity = if mine_empty {
+            told
+        } else {
+            sigs.of(s, ids, other, st)?;
+            round(cosine(&sigs.0[&i], &sigs.0[&other]))
+        };
         if similarity == 0.0 {
             continue;
         }
@@ -412,12 +432,12 @@ fn resembling(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<V
 
 /// Q3: past incidents that resemble this one, with their accepted causes and mitigations, and
 /// the roots people rejected on them.
-pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize) -> anyhow::Result<Vec<Similar>> {
+pub fn similar(s: &Snapshot, incident: &str, st: &Settings, limit: usize, sigs: &mut Signatures) -> anyhow::Result<Vec<Similar>> {
     let ids = Ids::new(s)?;
     let i = lookup(s, incident)?;
     let (cause_p, mit_p, title_p) = (s.iri(inc::CAUSE)?, s.iri(inc::MITIGATION)?, s.iri(inc::TITLE)?);
     let mut out = Vec::new();
-    for (other, similarity, app, at) in resembling(s, &ids, i, st)?.into_iter().take(limit) {
+    for (other, similarity, app, at) in resembling(s, &ids, i, st, sigs)?.into_iter().take(limit) {
         let causes: Vec<Id> = cause_p.map(|p| s.objects(other, p)).transpose()?.unwrap_or_default();
         let mut ruled_out: Vec<RuledOut> = judged_roots(s, other)?.into_iter().filter(|v| !v.accepted).map(|v| RuledOut { app: v.app.map(|a| app_name(s, &ids, a)).unwrap_or_default(), signal: v.signal, evidence: v.evidence }).collect();
         ruled_out.sort_by(|a, b| (&a.app, &a.signal).cmp(&(&b.app, &b.signal)));
@@ -441,13 +461,13 @@ const PAST_TOP: usize = 3;
 
 /// The accepted causes of the `PAST_TOP` incidents most like `i` that have one, most similar
 /// first. Empty, and free, in a store without verdicts.
-pub fn past(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<Vec<correlate::PastRoot>> {
+pub fn past(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, sigs: &mut Signatures) -> anyhow::Result<Vec<correlate::PastRoot>> {
     let mut past = Vec::new();
     if s.iri(vocab::rca::STATE)?.is_none() {
         return Ok(past);
     }
     let mut incidents = 0;
-    for (other, similarity, _, _) in resembling(s, ids, i, st)? {
+    for (other, similarity, _, _) in resembling(s, ids, i, st, sigs)? {
         let incident = vocab::compact(&literal(s, other).unwrap_or_default());
         let mut roots: Vec<correlate::PastRoot> = judged_roots(s, other)?
             .into_iter()
@@ -471,10 +491,16 @@ pub fn past(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<Vec
 /// on the incidents most like it.
 /// Chain events whose series fired again and again in the window before the incident are
 /// marked chronic; the ranking does not change.
-pub fn chains(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<correlate::Analysis> {
-    let mut a = correlate::analyze(s, ids, i, st, &past(s, ids, i, st)?)?;
+pub fn chains(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, sigs: &mut Signatures) -> anyhow::Result<correlate::Analysis> {
+    let past = past(s, ids, i, st, sigs)?;
+    chains_with(s, ids, i, st, &past, correlate::causes(s, ids, i, st)?)
+}
+
+/// [`chains`] given the past and the [`correlate::causes`] of the incident, already read.
+pub fn chains_with(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, past: &[correlate::PastRoot], causes: (Id, i64, Vec<correlate::Signal>)) -> anyhow::Result<correlate::Analysis> {
+    let mut a = correlate::analyze_with(s, ids, i, st, past, causes)?;
     let t = a.at_ms;
-    let sigs = a.apps.iter_mut().filter_map(|r| r.chain.as_mut()).flat_map(|c| std::iter::once(&mut c.root).chain(c.links.iter_mut()));
+    let sigs = a.apps.iter_mut().filter_map(|r| r.chain.as_mut()).flat_map(correlate::Chain::events_mut);
     correlate::mark_chronic(s, ids, t - st.window_s * 1000, t, &chronic_span(st.window_s), sigs)?;
     Ok(a)
 }
@@ -524,7 +550,7 @@ pub fn verdicts(s: &Snapshot, chain: Id) -> anyhow::Result<Vec<Id>> {
     Ok(order)
 }
 
-fn verdict_event(s: &Snapshot, v: Id) -> anyhow::Result<VerdictEvent> {
+pub(crate) fn verdict_event(s: &Snapshot, v: Id) -> anyhow::Result<VerdictEvent> {
     let one = |p: &str| -> anyhow::Result<Option<String>> { Ok(s.iri(p)?.and_then(|p| s.object(v, p).ok().flatten()).and_then(|o| literal(s, o))) };
     let mut evidence: Vec<String> = match s.iri(rca::EVIDENCE)? {
         Some(p) => s.objects(v, p)?.into_iter().filter_map(|o| literal(s, o)).collect(),
@@ -632,8 +658,8 @@ fn judge(state: &str, a: Option<&correlate::Analysis>, app: &str, chain: &str, m
 }
 
 /// The ranking a harvest stores: the past is read only when `precedent_weight` lets it move a rank.
-fn ranked(s: &Snapshot, ids: &Ids, i: Id, st: &Settings) -> anyhow::Result<correlate::Analysis> {
-    let past = if st.precedent_weight > 0.0 { past(s, ids, i, st)? } else { vec![] };
+fn ranked(s: &Snapshot, ids: &Ids, i: Id, st: &Settings, sigs: &mut Signatures) -> anyhow::Result<correlate::Analysis> {
+    let past = if st.precedent_weight > 0.0 { past(s, ids, i, st, sigs)? } else { vec![] };
     correlate::analyze(s, ids, i, st, &past)
 }
 
@@ -655,6 +681,7 @@ pub fn replay(s: &Snapshot, st: &Settings, config: &Settings) -> anyhow::Result<
     let sup = s.iri(rca::SUPERSEDED_BY)?;
     let get = |x: Id, p: &str| -> anyhow::Result<Option<Id>> { Ok(match s.iri(p)? { Some(p) => s.object(x, p)?, None => None }) };
     let mut analyses: FxHashMap<Id, [Option<correlate::Analysis>; 2]> = FxHashMap::default();
+    let (mut config_sigs, mut sigs) = (Signatures::default(), Signatures::default());
     for v in s.subjects(ty, verdict)? {
         if let Some(p) = sup
             && s.object(v, p)?.is_some()
@@ -664,8 +691,8 @@ pub fn replay(s: &Snapshot, st: &Settings, config: &Settings) -> anyhow::Result<
         let Some(chain) = s.object(v, on_chain)? else { continue };
         let Some(incident) = get(chain, corr::LEADS_TO)? else { continue };
         let [parent, candidate] = analyses.entry(incident).or_insert_with(|| {
-            let parent = ranked(s, &ids, incident, config).ok();
-            let candidate = if paired { ranked(s, &ids, incident, st).ok() } else { parent.clone() };
+            let parent = ranked(s, &ids, incident, config, &mut config_sigs).ok();
+            let candidate = if paired { ranked(s, &ids, incident, st, &mut sigs).ok() } else { parent.clone() };
             [parent, candidate]
         });
         let chain_iri = literal(s, chain).unwrap_or_default();
@@ -738,7 +765,6 @@ pub struct FactChange {
 /// differently in `now`, by subject. Harvest bookkeeping, quarantined proposals and chains are
 /// left out: chains are recomputed from the facts listed here.
 pub fn changes(then: &Snapshot, now: &Snapshot) -> anyhow::Result<Vec<FactChange>> {
-    let derived = [vocab::QUARANTINE.to_owned(), format!("{}harvest/correlation/", vocab::GRAPH)];
     let records = [format!("{}fact/", vocab::DATA), format!("{}quarantine/", vocab::DATA)];
     let (mut cache_then, mut cache_now) = (FxHashMap::default(), FxHashMap::default());
     let mut by_property: std::collections::BTreeMap<(String, String), [Vec<FactChange>; 2]> = Default::default();
@@ -748,7 +774,7 @@ pub fn changes(then: &Snapshot, now: &Snapshot) -> anyhow::Result<Vec<FactChange
         if s == g
             || predicate.as_str().starts_with(harv::NS)
             || records.iter().any(|r| subject.as_str().starts_with(r.as_str()))
-            || derived.iter().any(|d| graph.as_str().starts_with(d.as_str()))
+            || derived_graph(graph.as_str())
         {
             continue;
         }
@@ -812,6 +838,12 @@ pub struct RankCause {
     pub enough: bool,
 }
 
+/// A graph ograph writes from other graphs: quarantine and correlation. A change there follows
+/// from a change of the sources, so it is no cause of its own.
+fn derived_graph(iri: &str) -> bool {
+    iri.starts_with(vocab::QUARANTINE) || iri.strip_prefix(vocab::GRAPH).is_some_and(|r| r.starts_with("harvest/correlation/"))
+}
+
 /// Ranks `incident` at `t_ms` (a time the history covers) and now, and when the ranked
 /// applications differ, tests each changed source graph twice: now with only that graph taken
 /// back, and then with only that graph brought forward. A graph is a cause when either test
@@ -824,12 +856,11 @@ pub fn rank_shift(s: &Snapshot, t_ms: i64, incident: &str, st: &Settings, top: u
         if correlate::incident_anchor(v, &ids, i).is_err() {
             return Ok(vec![]);
         }
-        let a = chains(v, &ids, i, st)?;
+        let a = ranked(v, &ids, i, st, &mut Signatures::default())?;
         Ok(a.apps.into_iter().take(top).map(|r| RankedApp { app: r.app, score: r.score }).collect())
     };
     let order = |r: &[RankedApp]| r.iter().map(|a| a.app.clone()).collect::<Vec<_>>();
     let d = s.delta(t_ms)?;
-    let derived = [vocab::QUARANTINE.to_owned(), format!("{}harvest/correlation/", vocab::GRAPH)];
     let mut bookkeeping: FxHashMap<Id, bool> = FxHashMap::default();
     let mut changed = std::collections::BTreeSet::new();
     for &[subject, p, _, g] in d.quads() {
@@ -840,7 +871,7 @@ pub fn rank_shift(s: &Snapshot, t_ms: i64, incident: &str, st: &Settings, top: u
     let graphs: Vec<(Id, String)> = changed
         .into_iter()
         .map(|g| (g, literal(s, g).unwrap_or_default()))
-        .filter(|(_, iri)| !derived.iter().any(|x| iri.starts_with(x.as_str())))
+        .filter(|(_, iri)| !derived_graph(iri))
         .collect();
     let then_view = s.now()?.revert(&d, |_| true)?;
     let (then, current) = (ranking(&then_view)?, ranking(s)?);
@@ -1039,15 +1070,12 @@ fn lexical(p: &Path) -> PathBuf {
     out
 }
 
-const NAMING: [&str; 3] = ["catalog", "ownership", "docs"];
-
 /// `ograph uses`: what depends on a source file, a directory of them or one record. Its facts
 /// are those of the graphs keyed by the file and, in a graph that spans several files (the
 /// incidents), those of the nodes whose `evt:sourceRecord` names it. Chains are ranked again
 /// for every incident over a view of the store without those facts, so a chain that changes
 /// through a dependency the file states is found as well as one whose events go.
-pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &Settings, target: &str) -> anyhow::Result<Uses> {
-    let s = &store.snapshot()?;
+pub fn uses(s: &Snapshot, ont: &crate::ontology::Ontology, st: &Settings, target: &str) -> anyhow::Result<Uses> {
     let (key, record) = split_record(target);
     let enc = crate::model::path_iri(key);
     let below = |path: &str, top: &str| path == top || path.strip_prefix(top).is_some_and(|r| r.starts_with('/'));
@@ -1092,7 +1120,7 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
         } else {
             continue;
         }
-        if NAMING.contains(&source) {
+        if crate::gateway::NAMING_SOURCES.contains(&source) {
             out.naming = Some(source.to_owned());
         }
         out.graphs.push(vocab::compact(&iri));
@@ -1213,7 +1241,7 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
     }
     let mut because: FxHashMap<[Id; 4], String> = FxHashMap::default();
     if !again.is_empty() {
-        let view = store.snapshot()?.without(derived.iter().copied())?;
+        let view = s.now()?.without(derived.iter().copied())?;
         let mut again: Vec<Id> = again.into_iter().collect();
         again.sort_unstable();
         for g in again {
@@ -1265,7 +1293,7 @@ pub fn uses(store: &crate::store::Store, ont: &crate::ontology::Ontology, st: &S
 
     let gone_iris: FxHashSet<String> = gone.iter().filter_map(|&x| literal(s, x)).collect();
     if !derived.is_empty() {
-        out.chains = chain_changes(s, store.snapshot()?.without(derived.iter().copied())?, st, &gone_iris)?;
+        out.chains = chain_changes(s, s.now()?.without(derived.iter().copied())?, st, &gone_iris)?;
     }
     for c in out.chains.iter().filter(|c| matches!(c.change, "gone" | "relinked")) {
         let Some(chain) = s.iri(&crate::workspace::resolve_iri(&c.chain))? else { continue };
@@ -1318,9 +1346,10 @@ fn chain_changes(s: &Snapshot, view: Snapshot, st: &Settings, gone: &FxHashSet<S
     let (ids, view_ids) = (Ids::new(s)?, Ids::new(&view)?);
     let (Some(ty), Some(class)) = (s.iri(vocab::RDF_TYPE)?, s.iri(inc::INCIDENT)?) else { return Ok(vec![]) };
     let mut out = Vec::new();
+    let (mut sigs, mut view_sigs) = (Signatures::default(), Signatures::default());
     for i in s.subjects(ty, class)? {
-        let Ok(now) = ranked(s, &ids, i, st) else { continue };
-        let (before, after) = (stored(&now), ranked(&view, &view_ids, i, st).map(|a| stored(&a)).unwrap_or_default());
+        let Ok(now) = ranked(s, &ids, i, st, &mut sigs) else { continue };
+        let (before, after) = (stored(&now), ranked(&view, &view_ids, i, st, &mut view_sigs).map(|a| stored(&a)).unwrap_or_default());
         let incident = match s.iri(inc::ID)? {
             Some(p) => s.object(i, p)?.and_then(|x| literal(s, x)),
             None => None,
@@ -1374,13 +1403,14 @@ pub fn news(s: &Snapshot, since_ms: Option<i64>) -> anyhow::Result<Vec<NewsHit>>
                 continue;
             }
             let mut procs: FxHashSet<String> = FxHashSet::default();
-            let mut threads = 0;
+            // A thread about several of these applications is one thread.
+            let mut threads: FxHashSet<Id> = FxHashSet::default();
             for &a in &apps {
                 if let Some(p) = supports {
                     procs.extend(s.objects(a, p)?.into_iter().map(|x| app_name(s, &ids, x)));
                 }
                 if let Some(p) = about {
-                    threads += s.subjects(p, a)?.len();
+                    threads.extend(s.subjects(p, a)?);
                 }
             }
             let mut processes: Vec<String> = procs.into_iter().collect();
@@ -1391,7 +1421,7 @@ pub fn news(s: &Snapshot, since_ms: Option<i64>) -> anyhow::Result<Vec<NewsHit>>
                 vendor: app_name(s, &ids, v),
                 apps: apps.iter().map(|&a| app_name(s, &ids, a)).collect(),
                 processes,
-                related_threads: threads,
+                related_threads: threads.len(),
             });
         }
     }
@@ -1402,7 +1432,10 @@ pub fn news(s: &Snapshot, since_ms: Option<i64>) -> anyhow::Result<Vec<NewsHit>>
 /// A duration such as `90`, `90s`, `10m`, `2h` or `1d`, in seconds.
 pub fn duration_s(s: &str) -> anyhow::Result<i64> {
     let (num, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len()));
-    let n: i64 = num.parse()?;
+    let n: i64 = num.parse().map_err(|e: std::num::ParseIntError| match e.kind() {
+        std::num::IntErrorKind::PosOverflow => anyhow::anyhow!("duration {s} is longer than a century"),
+        _ => anyhow::anyhow!("{s:?} is not a duration: a number with s, m, h or d, such as 90m"),
+    })?;
     let scale = match unit {
         "" | "s" => 1,
         "m" => 60,
@@ -1410,7 +1443,8 @@ pub fn duration_s(s: &str) -> anyhow::Result<i64> {
         "d" => 86_400,
         _ => anyhow::bail!("unknown unit in {s}"),
     };
-    n.checked_mul(scale).ok_or_else(|| anyhow::anyhow!("duration {s} is too long"))
+    let d = n.checked_mul(scale).filter(|&d| d <= crate::correlate::MAX_SPAN_S);
+    d.ok_or_else(|| anyhow::anyhow!("duration {s} is longer than a century"))
 }
 
 #[derive(Serialize)]
@@ -1551,9 +1585,9 @@ pub fn code(s: &Snapshot, incident: &str, st: &Settings) -> anyhow::Result<(Code
     commits.sort_by_key(|c| c.touches.is_empty());
     deployments.sort_by_key(|d| d.touches.is_empty());
     let mut words: Vec<String> = text(i, title).into_iter().collect();
-    let analysis = chains(s, &ids, i, st)?;
+    let analysis = ranked(s, &ids, i, st, &mut Signatures::default())?;
     if let Some(chain) = analysis.apps.first().and_then(|r| r.chain.as_ref()) {
-        for link in std::iter::once(&chain.root).chain(&chain.links) {
+        for link in chain.events() {
             words.push(link.app_name.clone());
             words.extend(describe(link.id));
         }
@@ -1576,7 +1610,7 @@ pub fn code_search(answer: &mut Code, text: &str, root: &Path, repos: &[PathBuf]
         let within = |path: &str| rel(root, &repo.join(path));
         let mut failed = |e: ogrep::Failure| {
             answer.degraded.push(format!("{}: {e}", rel(root, repo)));
-            matches!(e, ogrep::Failure::NotRunnable(_))
+            e.stops_all()
         };
         match ogrep::about(repo, text, top) {
             Ok(about) => {
@@ -1586,8 +1620,13 @@ pub fn code_search(answer: &mut Code, text: &str, root: &Path, repos: &[PathBuf]
                 answer.files.extend(about.files.into_iter().map(|f| CodeFile { path: within(&f.path), score: f.score, line: f.line }));
             }
             Err(e) => {
+                // A missing repository has nothing more to say than that.
+                let missing = matches!(e, ogrep::Failure::NoRepository(_));
                 if failed(e) {
                     break;
+                }
+                if missing {
+                    continue;
                 }
             }
         }
@@ -1749,7 +1788,7 @@ pub fn suspects(root: &Path, repos: &[PathBuf], failing: &[String], since: &str,
             }
             Err(e) => {
                 degraded.push(format!("{}: {e}", rel(root, repo)));
-                if matches!(e, ogrep::Failure::NotRunnable(_)) {
+                if e.stops_all() {
                     break;
                 }
             }
@@ -1824,7 +1863,7 @@ pub fn resolve(s: &Snapshot, mentions: &[String]) -> anyhow::Result<Resolved> {
         let r = if iri.starts_with(vocab::DATA) {
             let n = oxrdf::NamedNode::new_unchecked(&iri);
             let found = match (s.iri(&iri)?, s.iri(ops::APPLICATION)?) {
-                (Some(i), Some(c)) => s.object(i, ids.ty)? == Some(c),
+                (Some(i), Some(c)) => s.contains([i, ids.ty, c])?,
                 _ => false,
             };
             crate::gateway::Match {
@@ -1850,6 +1889,18 @@ pub fn resolve(s: &Snapshot, mentions: &[String]) -> anyhow::Result<Resolved> {
 #[cfg(all(test, unix))]
 mod tests {
     use crate::correlate::{PastRoot, Settings};
+
+    #[test]
+    fn a_duration_is_at_most_a_century() {
+        assert_eq!(super::duration_s("90m").unwrap(), 5400);
+        assert_eq!(super::duration_s("36500d").unwrap(), 36500 * 86_400);
+        for s in ["99999999999999d", "9999999999999999s", "36501d", "99999999999999999999"] {
+            assert_eq!(super::duration_s(s).unwrap_err().to_string(), format!("duration {s} is longer than a century"));
+        }
+        assert!(super::duration_s("abc").unwrap_err().to_string().contains("is not a duration"));
+        let st = crate::correlate::Settings { window_s: 9_999_999_999_999_999, ..Default::default() };
+        assert!(st.check().is_err());
+    }
     use crate::workspace::Workspace;
     use crate::workspace::tests::{T, alert, fixture, harvest};
     use std::path::{Path, PathBuf};
@@ -1871,9 +1922,9 @@ mod tests {
         let ws = Workspace::open(root).unwrap();
         let snap = ws.store.snapshot().unwrap();
         let ids = crate::correlate::Ids::new(&snap).unwrap();
-        let mut settings = ws.config.correlation.clone();
+        let mut settings = ws.config.correlation;
         st(&mut settings);
-        let a = super::chains(&snap, &ids, super::lookup(&snap, incident).unwrap(), &settings).unwrap();
+        let a = super::chains(&snap, &ids, super::lookup(&snap, incident).unwrap(), &settings, &mut Default::default()).unwrap();
         a.apps.into_iter().map(|r| (r.app, format!("{:.3}", r.score), r.precedent)).collect()
     }
 
@@ -1882,7 +1933,7 @@ mod tests {
         let root = twice("ruled-out");
         Workspace::open(&root).unwrap().verdict("id:chain/inc-1-1", false, "oncall", &["pool was at 40%".into()]).unwrap();
         let ws = Workspace::open(&root).unwrap();
-        let similar = super::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5).unwrap();
+        let similar = super::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5, &mut Default::default()).unwrap();
         assert_eq!(similar.len(), 1);
         assert_eq!(similar[0].ruled_out, [super::RuledOut { app: "ledger-db".into(), signal: "ALERT".into(), evidence: vec!["pool was at 40%".into()] }]);
         assert!(similar[0].cause_apps.is_empty());
@@ -1895,13 +1946,13 @@ mod tests {
         let ws = Workspace::open(&root).unwrap();
         ws.verdict("id:chain/inc-1-1", false, "oncall", &["pool was at 40%".into()]).unwrap();
         ws.verdict("id:chain/inc-1-1", true, "oncall", &["PM-9".into()]).unwrap();
-        let similar = super::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5).unwrap();
+        let similar = super::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5, &mut Default::default()).unwrap();
         assert_eq!(similar[0].ruled_out, []);
         assert_eq!(similar[0].cause_apps, ["ledger-db"]);
         let mark = Some(PastRoot { incident: "id:inc/inc-1".into(), similarity: 1.0, app: "ledger-db".into(), signal: "ALERT".into(), evidence: vec!["PM-9".into()] });
         assert_eq!(ranked(&root, "INC-2", |_| {}), [("ledger-db".to_owned(), "0.900".to_owned(), mark), ("payments-api".to_owned(), "0.900".to_owned(), None)]);
         ws.verdict("id:chain/inc-1-1", false, "oncall", &["PM-9 was wrong".into()]).unwrap();
-        let similar = super::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5).unwrap();
+        let similar = super::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5, &mut Default::default()).unwrap();
         assert_eq!(similar[0].ruled_out, [super::RuledOut { app: "ledger-db".into(), signal: "ALERT".into(), evidence: vec!["PM-9 was wrong".into()] }]);
         assert_eq!(ranked(&root, "INC-2", |_| {}), [("ledger-db".to_owned(), "0.900".to_owned(), None), ("payments-api".to_owned(), "0.900".to_owned(), None)]);
     }
@@ -1912,7 +1963,7 @@ mod tests {
         Workspace::open(&root).unwrap().verdict("id:chain/inc-1-2", true, "oncall", &["PM-7".into()]).unwrap();
         let mark = Some(PastRoot { incident: "id:inc/inc-1".into(), similarity: 1.0, app: "payments-api".into(), signal: "ALERT".into(), evidence: vec!["PM-7".into()] });
         assert_eq!(ranked(&root, "INC-2", |_| {}), [("ledger-db".to_owned(), "0.900".to_owned(), None), ("payments-api".to_owned(), "0.900".to_owned(), mark.clone())]);
-        assert_eq!(ranked(&root, "INC-2", |st| st.precedent_weight = 0.1), [("payments-api".to_owned(), "1.000".to_owned(), mark.clone()), ("ledger-db".to_owned(), "0.900".to_owned(), None)]);
+        assert_eq!(ranked(&root, "INC-2", |st| st.precedent_weight = 0.1), [("payments-api".to_owned(), "1.000".to_owned(), mark), ("ledger-db".to_owned(), "0.900".to_owned(), None)]);
         // INC-2 opened later, so it is no precedent for INC-1, unless an evaluation says so.
         assert!(ranked(&root, "INC-1", |st| st.precedent_weight = 0.1).iter().all(|r| r.2.is_none()));
         Workspace::open(&root).unwrap().verdict("id:chain/inc-2-2", true, "oncall", &["PM-9".into()]).unwrap();

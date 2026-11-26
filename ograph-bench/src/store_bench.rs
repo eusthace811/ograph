@@ -255,9 +255,8 @@ fn main() -> anyhow::Result<()> {
     let store = Store::open(&path)?;
     let t = Instant::now();
     let chunk_size: usize = flag("--chunk").map_or(4_000_000, |s| s.parse().unwrap());
-    let durable = !args.iter().any(|a| a == "--non-durable");
     for chunk in world.quads.chunks(chunk_size) {
-        store.transact_with(durable, |tx| {
+        store.transact(|tx| {
             let mut ids = Vec::with_capacity(chunk.len());
             for q in chunk {
                 let GraphName::NamedNode(g) = &q.graph_name else { unreachable!() };
@@ -266,7 +265,6 @@ fn main() -> anyhow::Result<()> {
             tx.insert(ids)
         })?;
     }
-    store.flush()?;
     let load = t.elapsed();
     let loose = std::fs::metadata(&path)?.len();
     let mut store = store;
@@ -333,7 +331,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    let w1rows = check("W1", &w1_q(), native.w1());
+    check("W1", &w1_q(), native.w1());
     for i in &picked {
         check(i.as_str(), &w2_q(i), native.w2(i));
     }
@@ -361,7 +359,6 @@ fn main() -> anyhow::Result<()> {
     row("W2 10 min before incident (20)", picked.iter().map(|i| (w2_q(i), Box::new(move || native.w2(i)) as Box<dyn Fn() -> Rows>)).collect());
     row("W3 blast radius, hub app", vec![(w3_q(&world.apps[hub]), Box::new(|| native.w3(&world.apps[hub])))]);
     row("W3 blast radius (20 apps)", starts.iter().map(|&a| (w3_q(&world.apps[a]), Box::new(move || native.w3(&apps[a])) as Box<dyn Fn() -> Rows>)).collect());
-    let _ = w1rows;
     drop(snap);
 
     // Harvest replace: re-run one day's harvest unchanged, then with 10% of its events changed.

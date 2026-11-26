@@ -4,7 +4,7 @@
 
 use super::{Ctx, json_records, parse_time, str_field};
 use crate::gateway::KnownApp;
-use crate::model::{Batch, Confidence, EntityRef, Extraction, Object, known, lit, obj, slug};
+use crate::model::{Batch, EntityRef, Extraction, Object, known, lit, obj, slug};
 use crate::ontology::Ontology;
 use crate::vocab::{RDF_TYPE, disc, evt, ops};
 use oxrdf::NamedNode;
@@ -28,12 +28,7 @@ pub fn prompt(ont: &Ontology, actions: bool) -> String {
     let all = [(disc::CATEGORY, "category"), (disc::SENTIMENT, "sentiment"), (evt::ACTION_KIND, "action")];
     for &(prop, label) in &all[..if actions { 3 } else { 2 }] {
         p.push_str(&format!("Allowed {label} values:\n"));
-        for t in ont.vocabulary(prop).unwrap_or_default() {
-            match &t.definition {
-                Some(d) => p.push_str(&format!("- {}: {d}\n", t.value)),
-                None => p.push_str(&format!("- {}\n", t.value)),
-            }
-        }
+        super::push_vocabulary(&mut p, ont, prop);
         p.push('\n');
     }
     p.push_str(
@@ -58,7 +53,7 @@ pub fn prompt(ont: &Ontology, actions: bool) -> String {
 /// hosts) for the application (docs/evidence/catalog-slice.txt). The list is per thread, so a
 /// catalog change asks the model again only about the threads whose list it changes; a thread
 /// with no list is sent as it always was.
-pub fn with_known<'a>(thread: &str, apps: &'a [KnownApp]) -> String {
+fn with_known<'a>(thread: &str, apps: &'a [KnownApp]) -> String {
     let said = words(thread);
     let named = |w: &String| said.iter().any(|t| t == w || (t.len().min(w.len()) >= 4 && (t.starts_with(w.as_str()) || w.starts_with(t.as_str()))));
     let whole = |n: &String| {
@@ -66,7 +61,7 @@ pub fn with_known<'a>(thread: &str, apps: &'a [KnownApp]) -> String {
         !w.is_empty() && said.windows(w.len()).any(|x| x == w.as_slice())
     };
     let names = |a: &'a KnownApp| std::iter::once(&a.name).chain(&a.aliases);
-    let known: Vec<&KnownApp> = apps.iter().filter(|a| !names(a).any(whole) && names(a).flat_map(|n| words(n)).filter(|w| w.len() >= 2 && !STOP.contains(&w.as_str())).any(|w| named(&w))).collect();
+    let known: Vec<&KnownApp> = apps.iter().filter(|a| !names(a).any(whole) && names(a).flat_map(|n| words(n)).filter(|w| w.len() >= 2 && !crate::gateway::FILLER.contains(&w.as_str()) && w != "db").any(|w| named(&w))).collect();
     if known.is_empty() {
         return thread.to_owned();
     }
@@ -84,16 +79,29 @@ pub fn with_known<'a>(thread: &str, apps: &'a [KnownApp]) -> String {
     out
 }
 
-/// Words that say what kind of thing an application is, not which one.
-const STOP: [&str; 7] = ["svc", "service", "srv", "server", "app", "api", "db"];
-
-fn words(s: &str) -> Vec<String> {
-    s.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).map(str::to_owned).collect()
-}
+use crate::gateway::words;
 
 fn incident_refs() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"\b(INC|SEV|PD|IR)-?\d{2,}\b").unwrap())
+    // `INC-4388`, `INC4388`, `INC-011F3B`, `INC-2024-001`, in any case. A part has two or more
+    // letters and digits with a digit in it, so `SEV-2` is no incident.
+    RE.get_or_init(|| regex::Regex::new(r"(?i)\b(?:INC|SEV|PD|IR)(?:\d{2,}|(?:-(?:[A-Z0-9]+\d[A-Z0-9]*|\d[A-Z0-9]+))+)\b").unwrap())
+}
+
+/// The incident ids a text names. A severity (`SEV-01`) is none, and `PD`/`IR` count only in
+/// capitals, since `pd-2fa` or `ir-4xx` in lowercase are words.
+fn incident_ids(text: &str) -> Vec<&str> {
+    incident_refs()
+        .find_iter(text)
+        .map(|m| m.as_str())
+        .filter(|id| {
+            let (prefix, rest) = id.split_at(id.find(|c: char| !c.is_ascii_alphabetic()).unwrap_or(id.len()));
+            let rest = rest.trim_start_matches('-');
+            let severity = prefix.eq_ignore_ascii_case("sev") && rest.len() <= 2 && rest.bytes().all(|c| c.is_ascii_digit());
+            let word = prefix.len() == 2 && prefix != prefix.to_ascii_uppercase();
+            !severity && !word
+        })
+        .collect()
 }
 
 pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>, actions: bool, known_apps: bool) -> anyhow::Result<Batch> {
@@ -129,7 +137,7 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>, actions: bool, known_apps:
             let ev = b.record(format!("{key}#{}", m.2));
             b.add(node.clone(), evt::SOURCE_RECORD, lit(ev.0.as_str()), &ev, &rule);
         }
-        let mut incidents: Vec<&str> = incident_refs().find_iter(&text).map(|r| r.as_str()).collect();
+        let mut incidents: Vec<&str> = incident_ids(&text);
         for r in &incidents {
             b.add(node.clone(), disc::ABOUT, obj(crate::model::entity("inc", r)), &ev, &rule);
         }
@@ -155,11 +163,14 @@ pub fn harvest(path: &Path, key: &str, ctx: &Ctx<'_>, actions: bool, known_apps:
                 continue;
             }
         };
-        let Some(v) = crate::llm::first_json(&answer) else {
-            b.degraded.push(format!("model answer was not JSON: {}", answer.chars().take(80).collect::<String>()));
-            continue;
+        let v = match super::model_json(&answer) {
+            Ok(v) => v,
+            Err(note) => {
+                b.degraded.push(note);
+                continue;
+            }
         };
-        let confidence = v.get("confidence").and_then(|c| c.as_f64()).and_then(Confidence::new).unwrap_or(Confidence::new(0.0).unwrap());
+        let confidence = super::stated_confidence(&v);
         let m = Extraction::Llm { model: llm.config.model.clone(), prompt_hash: prompt_hash.clone(), confidence };
         // A cause the model cannot quote from the thread is not stated there, so it abstains. A
         // value outside the vocabulary still goes to the gateway, which quarantines it.
@@ -220,7 +231,7 @@ fn action(b: &mut Batch, key: &str, a: &serde_json::Value, thread: &str, msgs: &
         Some(format!("\"{quote}\" is not in message {}", n.unwrap()))
     } else if name.is_empty() || !crate::llm::quoted(thread, name) {
         Some(format!("the thread does not name \"{name}\""))
-    } else if let Some(why) = not_done(said, quote) {
+    } else if let Some(why) = not_done(said, quote, &kind) {
         Some(format!("\"{quote}\" {why}, not a done action"))
     } else {
         let q = format!(" {}", quote.to_lowercase().replace(|c: char| !(c.is_alphanumeric() || c == '_'), " "));
@@ -253,29 +264,85 @@ const CUES: &[(&str, &[&str])] = &[
 /// Words that make a clause a question, a proposal, a plan or a condition when they come before
 /// the action in it.
 const NOT_YET: &[&str] = &["should", "shall", "let's", "lets", "could", "would", "can", "will", "i'll", "we'll", "gonna", "going to", "plan", "planning", "want to", "need to", "needs to", "might", "maybe", "about to", "considering", "consider", "suggest", "propose", "if", "unless", "before we", "whether"];
-const NEGATIONS: &[&str] = &["not", "didn't", "don't", "won't", "never", "no", "without", "haven't", "hasn't", "wasn't"];
+/// Words that open a question about what follows them.
+const ASKS: &[&str] = &["did", "do", "does", "has", "have", "had", "is", "are", "was", "were", "should", "shall", "can", "could", "will", "would", "anyone", "someone", "who"];
+/// Who an asking word asks about.
+const SUBJECTS: &[&str] = &["we", "you", "i", "they", "he", "she", "it", "anyone", "someone", "somebody", "anybody"];
+/// Words that join what an action was done for, or a next step, to the action.
+const LINKS: &[&str] = &["so", "because", "until", "and", "then", "but", "while", "since", "once"];
+/// Negations besides any `n't` contraction, with the contractions chat leaves unapostrophised.
+const NEGATIONS: &[&str] = &["not", "never", "no", "without", "cannot", "dont", "didnt", "doesnt", "wont", "cant", "couldnt", "wouldnt", "shouldnt", "isnt", "arent", "wasnt", "werent", "hasnt", "havent", "hadnt"];
 
-/// Why the clause of `message` that holds `quote` does not report a done action, if it does not:
-/// it is a question, a proposal word comes before the quote in it, or a negation comes right
-/// before the quote. Clauses end at `. ! ? ; ,` and line breaks.
-fn not_done(message: &str, quote: &str) -> Option<&'static str> {
-    let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
-    let (msg, q) = (squash(message), squash(quote.trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace())));
-    let start = msg.find(&q)?;
+/// Why the clause of `message` that holds `quote` does not report a done action of `kind`, if it
+/// does not: it is a question, a proposal word comes before the action in it, or a negation comes
+/// right before the action. The action runs from the quote's first cue of the kind to its last cue
+/// before a linking word such as `so` or `and`, so what the quote says after it ("restarted X so we
+/// can see") is no plan; for a kind with no cues it is the quote's end. Clauses end at `. ! ? ; ,`
+/// and line breaks.
+fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
+    // Squashed line by line, so a line break still ends a clause; the quote may span lines.
+    let msg = message.lines().map(crate::llm::squash).filter(|l| !l.is_empty()).collect::<Vec<_>>().join("\n");
+    let q = crate::llm::squash_quote(quote);
+    let start = msg.replace('\n', " ").find(&q)?;
     let end = start + q.len();
     let ends = |c: char| matches!(c, '.' | '!' | '?' | ';' | ',' | '\n');
     let from = msg[..start].rfind(ends).map_or(0, |i| i + 1);
-    let to = msg[end..].find(ends).map(|i| end + i);
-    if to.is_some_and(|i| msg[i..].starts_with('?')) || q.ends_with('?') {
+    // Chat apps type `’` for an apostrophe.
+    let words = |s: &str| s.split(|c: char| !(c.is_alphanumeric() || c == '\'' || c == '\u{2019}')).filter(|w| !w.is_empty()).map(|w| w.replace('\u{2019}', "'")).collect::<Vec<_>>();
+    let before = words(&msg[from..start]);
+    // A `.` inside a word (`2.3`, `v1.4`) ends no clause.
+    let next_end = |stop: &dyn Fn(char) -> bool| msg[end..].char_indices().find(|&(i, c)| stop(c) && (c != '.' || msg[end + i + 1..].chars().next().is_none_or(char::is_whitespace))).map(|(i, _)| end + i);
+    let to = next_end(&ends);
+    // A sentence that opens as a question asks about the quote past any comma ("did anyone
+    // restart X, or should I?").
+    let sentence_end = next_end(&|c| matches!(c, '.' | '!' | '?' | '\n'));
+    let reason = before.iter().rposition(|w| matches!(w.as_str(), "so" | "because" | "since" | "after" | "when" | "that")).map_or(0, |i| i + 1);
+    // It opens as one when an asking word comes first with a subject after it ("did we", "has
+    // anyone") or is itself the subject ("anyone"); "Had to restart X, anyone know why?" drops
+    // its subject and reports.
+    let opens_question = match (before.get(reason).map(String::as_str), before.get(reason + 1).map(String::as_str)) {
+        (Some("anyone" | "someone" | "who"), _) => true,
+        (Some(w), Some(subject)) => ASKS.contains(&w) && SUBJECTS.contains(&subject),
+        _ => false,
+    };
+    if opens_question && sentence_end.is_some_and(|i| msg[i..].starts_with('?')) {
         return Some("is a question");
     }
-    let words = |s: &str| s.split(|c: char| !(c.is_alphanumeric() || c == '\'')).filter(|w| !w.is_empty()).map(str::to_owned).collect::<Vec<_>>();
-    let before = words(&msg[from..start]);
-    let lead = format!(" {} {} ", before.join(" "), words(&q).join(" "));
+    if q.ends_with('?') || to.is_some_and(|i| msg[i..].starts_with('?')) {
+        // A dash or a bracket before the `?` opens an aside that asks its own question
+        // ("rolled back X - can someone verify?"), unless the clause opened as one ("did we
+        // restart X (the eu one)?").
+        let tail = &msg[end..to.unwrap_or(msg.len())];
+        let aside = tail.contains(['(', '\u{2013}', '\u{2014}']) || tail.contains(" - ");
+        if q.ends_with('?') || !aside || before.iter().any(|w| ASKS.contains(&w.as_str())) {
+            return Some("is a question");
+        }
+    }
+    let mut said = words(&q);
+    // The quote's words before its action, which a negation may be among.
+    let mut lead_in = 0;
+    if let Some((_, cues)) = CUES.iter().find(|(k, _)| *k == kind) {
+        let lower: Vec<String> = said.iter().map(|w| w.to_lowercase()).collect();
+        let cue_at = |i: usize| cues.iter().any(|c| c.split(' ').enumerate().all(|(k, stem)| lower.get(i + k).is_some_and(|w| w.starts_with(stem))));
+        if let Some(first) = (0..lower.len()).find(|&i| cue_at(i)) {
+            let link = (first + 1..lower.len()).find(|&i| LINKS.contains(&lower[i].as_str())).unwrap_or(lower.len());
+            let last = (first..link).rev().find(|&i| cue_at(i)).unwrap_or(first);
+            said.truncate(last + 1);
+            lead_in = first;
+        }
+    }
+    // What comes before `so` or `because` is the reason ("it would not recover so we restarted
+    // X"), and "can confirm" reports; neither makes the action a plan. Nothing else cuts it: "we
+    // should check logs and restart X", "I suggest that we restart X" and "I'll post when we
+    // roll back X" still plan.
+    let cause = before.iter().rposition(|w| matches!(w.as_str(), "so" | "because" | "since")).map_or(0, |i| i + 1);
+    let lead = format!(" {} {} ", before[cause..].join(" "), said.join(" ")).replace(" can confirm ", " confirm ").replace(" can see ", " see ");
     if NOT_YET.iter().any(|w| lead.contains(&format!(" {w} "))) {
         return Some("is a proposal or a plan");
     }
-    if before.iter().rev().take(3).any(|w| NEGATIONS.contains(&w.as_str())) {
+    // A negation before a linking word ("no change so restarted X") belongs to an earlier part.
+    let tail = before.iter().rposition(|w| LINKS.contains(&w.as_str())).map_or(0, |i| i + 1);
+    if before[tail..].iter().chain(&said[..lead_in]).rev().take(3).any(|w| w.ends_with("n't") || NEGATIONS.contains(&w.as_str())) {
         return Some("is negated");
     }
     None
@@ -299,6 +366,16 @@ mod tests {
     }
 
     #[test]
+    fn incident_ids_are_read_in_the_forms_a_store_holds() {
+        let refs = |t: &str| super::incident_ids(t).into_iter().map(str::to_owned).collect::<Vec<_>>();
+        assert_eq!(refs("rolled back for INC-011F3B"), ["INC-011F3B"]);
+        assert_eq!(refs("INC-2024-001 is open, see inc-4388 and INC4120"), ["INC-2024-001", "inc-4388", "INC4120"]);
+        // A severity is no incident, and neither is a lowercase word like `pd-2fa`.
+        assert_eq!(refs("SEV1 paged, then SEV-2, then SEV-01"), Vec::<String>::new());
+        assert_eq!(refs("INC-4388 declared SEV-01; pd-2fa and ir-4xx are not ids"), ["INC-4388"]);
+    }
+
+    #[test]
     fn only_a_done_action_reads_as_done() {
         let cases = [
             ("rolled back checkout to 4.0.9, errors gone", "rolled back checkout", None),
@@ -307,9 +384,52 @@ mod tests {
             ("I'll scale orders-api after lunch", "scale orders-api", Some("is a proposal or a plan")),
             ("we did not roll back checkout yet", "roll back checkout", Some("is negated")),
             ("restarted payments-api to see if it helps", "restarted payments-api", None),
+            ("restarted payments-api so we can see if the leak returns", "restarted payments-api so we can see if the leak returns", None),
+            ("rolled back checkout to 4.0.9 and will keep watching", "rolled back checkout to 4.0.9 and will keep watching", None),
+            ("I'll restart payments-api so it picks up the fix", "I'll restart payments-api so it picks up the fix", Some("is a proposal or a plan")),
+            ("pool will be raised to 50", "pool will be raised to 50", Some("is a proposal or a plan")),
+            ("we did not roll back checkout yet", "did not roll back checkout", Some("is negated")),
+            ("never restarted payments-api", "never restarted payments-api", Some("is negated")),
+            ("we didn\u{2019}t roll back checkout", "roll back checkout", Some("is negated")),
+            ("we won\u{2019}t restart payments-api", "restart payments-api", Some("is negated")),
+            ("Let\u{2019}s restart payments-api and see", "restart payments-api", Some("is a proposal or a plan")),
+            ("I\u{2019}ll scale orders-api after lunch", "scale orders-api", Some("is a proposal or a plan")),
+            ("we couldn't roll back checkout", "roll back checkout", Some("is negated")),
+            ("we can't restart payments-api", "restart payments-api", Some("is negated")),
+            ("we didnt roll back checkout", "roll back checkout", Some("is negated")),
+            ("we weren't able to restart payments-api", "restart payments-api", Some("is negated")),
+            ("No change so restarted payments-api", "restarted payments-api", None),
+            ("Rolled back checkout to 4.0.9 - can someone verify?", "Rolled back checkout to 4.0.9", None),
+            ("restarted payments-api (can someone double check?)", "restarted payments-api", None),
+            ("restarted payments-api \u{2014} errors gone?", "restarted payments-api", None),
+            ("did we restart checkout-service (eu)?", "restart checkout-service", Some("is a question")),
+            ("has anyone restarted ledger-db (the primary)?", "restarted ledger-db", Some("is a question")),
+            ("did someone roll back payments - the 2.3 deploy?", "roll back payments", Some("is a question")),
+            ("did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
+            ("did we roll back checkout to 4.0.9, or just restart it?", "roll back checkout to 4.0.9", Some("is a question")),
+            ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
+            ("Had to restart payments-api, anyone know why it leaked?", "restart payments-api", None),
+            ("Have restarted payments-api, errors gone?", "restarted payments-api", None),
+            ("Was able to roll back checkout, can someone verify?", "roll back checkout", None),
+            ("we restarted payments-api, is it better?", "restarted payments-api", None),
+            ("has it recovered after we restarted payments-api, or still flapping?", "restarted payments-api", None),
+            ("I suggest that we restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("I'll post an update when we roll back checkout", "roll back checkout", Some("is a proposal or a plan")),
+            ("we'll know more after we restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("is it fixed now that we restarted payments-api, or still erroring?", "restarted payments-api", None),
+            ("was it you who restarted payments-api, or the autoscaler?", "restarted payments-api", Some("is a question")),
+            ("payments-api would not recover so we restarted payments-api", "restarted payments-api", None),
+            ("checkout could not reach ledger-db so we rolled back checkout", "rolled back checkout", None),
+            ("can confirm we rolled back checkout", "rolled back checkout", None),
+            ("we should check logs and restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("failed over payments so it can stop failing", "failed over payments so it can stop failing", None),
+            ("restarted payments-api so we can kill the stuck worker", "restarted payments-api so we can kill the stuck worker", None),
             ("We rolled back, should we also restart?", "rolled back", None),
+            ("should we wait\nrolled back checkout", "rolled back checkout", None),
+            ("we rolled back\n  checkout to 4.0.9", "rolled back checkout", None),
         ];
-        let got: Vec<Option<&str>> = cases.iter().map(|(m, q, _)| not_done(m, q)).collect();
+        let kind = |q: &str| ["roll", "restart", "scale", "failed over"].iter().zip(["ROLLBACK", "RESTART", "SCALE", "FAILOVER"]).find(|(c, _)| q.to_lowercase().contains(*c)).map_or("CONFIG", |x| x.1);
+        let got: Vec<Option<&str>> = cases.iter().map(|(m, q, _)| not_done(m, q, kind(q))).collect();
         assert_eq!(got, cases.iter().map(|c| c.2).collect::<Vec<_>>());
     }
 }

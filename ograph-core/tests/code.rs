@@ -211,7 +211,7 @@ fn every_view_of_the_ranking_follows_a_dependency_only_from_its_date() {
     let ws = Workspace::open(&root).unwrap();
     let ranked = |snap: &ograph_core::store::Snapshot| {
         let ids = ograph_core::correlate::Ids::new(snap).unwrap();
-        let a = ograph_core::query::chains(snap, &ids, ograph_core::query::lookup(snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+        let a = ograph_core::query::chains(snap, &ids, ograph_core::query::lookup(snap, "INC-1").unwrap(), &ws.config.correlation, &mut Default::default()).unwrap();
         (a.apps.iter().map(|r| r.app.clone()).collect::<Vec<_>>(), a.withheld.iter().map(|w| format!("{} -> {} from {}", w.caller, w.callee, w.valid_from)).collect::<Vec<_>>())
     };
     assert_eq!(ranked(&ws.store.snapshot().unwrap()), (vec!["payments".to_owned()], vec!["checkout -> mailer from 2004-11-09T11:33:20Z".to_owned()]));
@@ -223,11 +223,11 @@ fn every_view_of_the_ranking_follows_a_dependency_only_from_its_date() {
     assert_eq!((names(&shift.then), names(&shift.now)), (vec!["mailer".to_owned(), "payments".to_owned()], vec!["payments".to_owned()]));
     assert_eq!(shift.causes.iter().map(|c| c.graph.as_str()).collect::<Vec<_>>(), ["g:harvest/catalog/shop"]);
 
-    let used = ograph_core::query::uses(&ws.store, &ws.ontology, &ws.config.correlation, "alerts.json").unwrap();
+    let used = ograph_core::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, &ws.config.correlation, "alerts.json").unwrap();
     assert_eq!(used.chains.iter().map(|c| (c.change, c.rank)).collect::<Vec<_>>(), [("gone", Some(1))]);
     let snap = ws.store.snapshot().unwrap();
     let ids = ograph_core::correlate::Ids::new(&snap).unwrap();
-    let now = ograph_core::query::chains(&snap, &ids, ograph_core::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+    let now = ograph_core::query::chains(&snap, &ids, ograph_core::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation, &mut Default::default()).unwrap();
     assert_eq!(used.chains[0].chain, ograph_core::vocab::compact(&now.apps[0].chain.as_ref().unwrap().id));
 }
 
@@ -486,7 +486,7 @@ fn chains_falls_back_to_suspects_only_when_nothing_ranks_and_code_is_configured(
         let ws = Workspace::open(root).unwrap();
         let snap = ws.store.snapshot().unwrap();
         let ids = ograph_core::correlate::Ids::new(&snap).unwrap();
-        let analysis = ograph_core::query::chains(&snap, &ids, ograph_core::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+        let analysis = ograph_core::query::chains(&snap, &ids, ograph_core::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation, &mut Default::default()).unwrap();
         let (found, _) = ws.fallback_suspects(&snap, &analysis, "INC-1", &ws.config.correlation);
         (analysis.apps.len(), serde_json::to_value(ograph_core::query::Chains { analysis, suspects: found, shift: None }).unwrap())
     };
@@ -519,6 +519,18 @@ fn code_names_the_repository_ogrep_failed_in_and_keeps_the_graph_half() {
     let answer = ws.code(&ws.store.snapshot().unwrap(), "INC-1", 5).unwrap();
     assert_eq!(answer.degraded, ["broken: ogrep --about failed: boom", "broken: ogrep --similar-incidents failed: boom"]);
     assert_eq!((answer.locations.len(), answer.commits.len(), answer.files.len(), answer.writeups.len()), (3, 1, 2, 1));
+}
+
+#[test]
+fn a_missing_repository_is_noted_once_and_the_next_one_still_answers() {
+    let sources = format!("{CATALOG}[[source]]\nkind = \"code\"\npath = \"missing\"\n{CODE}{EVERYTHING}");
+    let root = workspace("code-missing", &sources, &[("logs.jsonl", &logs()), ("errors.jsonl", &errors())]);
+    harvest(&root);
+    let ws = Workspace::open(&root).unwrap();
+    let answer = ws.code(&ws.store.snapshot().unwrap(), "INC-1", 5).unwrap();
+    assert_eq!(answer.degraded.len(), 1, "{:?}", answer.degraded);
+    assert!(answer.degraded[0].starts_with("missing: no repository at "), "{:?}", answer.degraded);
+    assert_eq!((answer.files.len(), answer.writeups.len()), (2, 1));
 }
 
 #[test]

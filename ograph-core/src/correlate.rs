@@ -15,6 +15,10 @@ use oxrdf::Term;
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 
+/// The longest window or duration, in seconds: a century. Beyond it, times in ms leave the
+/// range the store's time ids hold, and `* 1000` can overflow.
+pub const MAX_SPAN_S: i64 = 100 * 365 * 86_400;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
@@ -64,17 +68,16 @@ impl Settings {
         anyhow::ensure!(self.w_time + self.w_severity <= 1.0, "correlation settings w_time + w_severity = {} must not exceed 1", self.w_time + self.w_severity);
         anyhow::ensure!(self.prop_weights.iter().all(|w| w.is_finite() && *w >= 0.0), "correlation setting prop_weights must be finite and not negative");
         for (name, v) in [("window_s", self.window_s), ("signature_window_s", self.signature_window_s)] {
-            anyhow::ensure!(v > 0, "correlation setting {name} = {v} must be positive");
+            anyhow::ensure!(v > 0 && v <= MAX_SPAN_S, "correlation setting {name} = {v} must be positive and at most a century");
         }
-        anyhow::ensure!(self.after_s >= 0, "correlation setting after_s = {} must not be negative", self.after_s);
+        anyhow::ensure!((0..=MAX_SPAN_S).contains(&self.after_s), "correlation setting after_s = {} must be between 0 and a century", self.after_s);
         Ok(())
     }
 
     /// 64 bits of the digest of every setting, stored on chains as `corr:settings`, so a chain
     /// says which settings ranked it.
     pub fn hash(&self) -> String {
-        let json = serde_json::to_string(self).expect("settings serialize");
-        hex::encode(crate::gateway::sha2_hash(&json))[..16].to_owned()
+        crate::llm::hash(&serde_json::to_string(self).expect("settings serialize"))
     }
 }
 
@@ -148,6 +151,17 @@ pub struct Chain {
     pub weakest: Weakest,
 }
 
+impl Chain {
+    /// The root, then each link toward the incident.
+    pub fn events(&self) -> impl Iterator<Item = &Signal> {
+        std::iter::once(&self.root).chain(&self.links)
+    }
+
+    pub fn events_mut(&mut self) -> impl Iterator<Item = &mut Signal> {
+        std::iter::once(&mut self.root).chain(self.links.iter_mut())
+    }
+}
+
 /// How one link scored. `score` is `known_pair_prior` for a known pair and
 /// `w_time * time + w_severity * severity` otherwise.
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -176,8 +190,7 @@ pub enum Edge {
     Trace,
     /// Only some other source states it.
     Other,
-    /// No single dependency: the link closes at the incident from more than one hop away, or
-    /// dependencies are ignored.
+    /// No single dependency: the link closes at the incident from more than one hop away.
     Indirect,
 }
 
@@ -624,7 +637,11 @@ pub fn causes(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings) -> anyhow::R
 /// incidents, most similar first: a root with the application and signal of one is marked with
 /// it, and gains `precedent_weight` times its similarity.
 pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[PastRoot]) -> anyhow::Result<Analysis> {
-    let (app, t, cands) = causes(s, ids, incident, st)?;
+    analyze_with(s, ids, incident, st, past, causes(s, ids, incident, st)?)
+}
+
+/// [`analyze`] on the [`causes`] of the incident, already read.
+pub fn analyze_with(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[PastRoot], (app, t, cands): (Id, i64, Vec<Signal>)) -> anyhow::Result<Analysis> {
     let incident_iri = literal(s, incident).unwrap_or_default();
     // Which application calls which, inside the scope: a link may go from an event on X to an
     // event on X or on a caller of X.
@@ -684,15 +701,21 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
             }
         }
         let chain = match best {
-            Some((path, conf, gated)) => {
+            // Chain mode ranks only chains that pass the gate; the others are for propagation.
+            Some((_, _, false)) if st.rank == RankMode::Chain => None,
+            Some((path, conf, _)) => {
                 let scores = link_scores(s, ids, st, &cands, &path, app, t)?;
                 let low = scores.iter().fold(&scores[0], |low, l| if l.score < low.score { l } else { low });
                 let weakest = Weakest { from: low.from.clone(), to: low.to.clone(), score: low.score };
                 let c = Chain { id: chain_iri(&incident_iri, &cands[path[0]].iri), root: cands[path[0]].clone(), links: path[1..].iter().map(|&i| cands[i].clone()).collect(), confidence: conf, scores, weakest };
-                if gated {
-                    chains.push(c.clone());
+                match st.rank {
+                    RankMode::Chain => {
+                        chains.push(c);
+                        None
+                    }
+                    // Propagation ranks from every root's best path; only Chain mode reads `chains`.
+                    RankMode::Propagation => Some(c),
                 }
-                Some(c)
             }
             None => None,
         };
@@ -703,8 +726,10 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
     match st.rank {
         RankMode::Chain => {
             for c in &chains {
-                let first = cands.iter().filter(|x| x.app == c.root.app).map(|x| x.at_ms).min().unwrap_or(c.root.at_ms);
-                let e = per_app.entry(c.root.app).or_insert_with(|| Ranked { app: c.root.app_name.clone(), score: f64::MIN, first_ms: first, chain: None, precedent: None, explains: vec![] });
+                let e = per_app.entry(c.root.app).or_insert_with(|| {
+                    let first = cands.iter().filter(|x| x.app == c.root.app).map(|x| x.at_ms).min().unwrap_or(c.root.at_ms);
+                    Ranked { app: c.root.app_name.clone(), score: f64::MIN, first_ms: first, chain: None, precedent: None, explains: vec![] }
+                });
                 if c.confidence > e.score {
                     e.score = c.confidence;
                     e.chain = Some(c.clone());
@@ -769,15 +794,21 @@ fn explain(apps: &mut Vec<Ranked>, precedent_weight: f64) {
         if c.root.severity < EXPLAINING_SEVERITY {
             continue;
         }
-        let path: Vec<&Signal> = std::iter::once(&c.root).chain(&c.links).collect();
+        let path: Vec<&Signal> = c.events().collect();
+        // Where the run of events on the application the next link leaves begins.
+        let mut run = 0;
         for k in 1..path.len() {
             let (from, to) = (path[k - 1], path[k]);
             if to.app == from.app {
                 continue;
             }
-            if c.scores[k - 1].time < 1.0 {
+            // An anomaly of that application at least EXPLAINING_SEVERITY strong must still be
+            // under way when the next one starts; a point in time never is, even at the same
+            // millisecond, and a weaker episode it led to does not carry the explanation.
+            if !path[run..k].iter().any(|e| e.severity >= EXPLAINING_SEVERITY && to.at_ms < e.until_ms) {
                 break;
             }
+            run = k;
             if to.app != c.root.app && first.get(&to.app).is_some_and(|&at| to.at_ms <= at) && !r.explains.contains(&to.app_name) {
                 r.explains.push(to.app_name.clone());
             }
@@ -797,6 +828,12 @@ fn explain(apps: &mut Vec<Ranked>, precedent_weight: f64) {
         if !moved {
             break;
         }
+    }
+    // What a stronger accepted precedent kept above it, it no longer claims to explain.
+    let mut above: FxHashSet<String> = FxHashSet::default();
+    for r in apps.iter_mut() {
+        r.explains.retain(|e| !above.contains(e));
+        above.insert(r.app.clone());
     }
 }
 
@@ -825,7 +862,7 @@ fn quantize(x: f64) -> i64 {
 
 /// Distinct applications a chain passes through.
 fn breadth(c: &Chain) -> usize {
-    std::iter::once(&c.root).chain(&c.links).map(|s| s.app).collect::<FxHashSet<_>>().len()
+    c.events().map(|s| s.app).collect::<FxHashSet<_>>().len()
 }
 
 #[cfg(all(test, unix))]
@@ -908,7 +945,7 @@ mod tests {
         let ledger = sig(3, "ledger-db", "METRIC_ANOMALY", 600, 1000, 0.8);
         let payments = sig(2, "payments-api", "METRIC_ANOMALY", 650, 1000, 1.0);
         let deploy = sig(4, "fx-api", "DEPLOYMENT", 500, 500, 0.25);
-        let mut apps = vec![ranked(vec![payments.clone()]), ranked(vec![ledger.clone(), payments.clone()]), ranked(vec![deploy, payments.clone()])];
+        let mut apps = vec![ranked(vec![payments.clone()]), ranked(vec![ledger, payments.clone()]), ranked(vec![deploy, payments.clone()])];
         assert!(apps[0].score > apps[1].score);
         super::explain(&mut apps, 0.0);
         let order: Vec<(&str, Vec<String>)> = apps.iter().map(|r| (r.app.as_str(), r.explains.clone())).collect();
@@ -920,6 +957,34 @@ mod tests {
             super::explain(&mut apps, 0.0);
             assert_eq!((apps[0].app.as_str(), apps[1].explains.len()), ("payments-api", 0));
         }
+        // Nor does one that ended, through a point event of its own at the caller's first moment.
+        let ended = sig(3, "ledger-db", "METRIC_ANOMALY", 600, 610, 0.8);
+        let log = sig(3, "ledger-db", "LOG_ERROR", 1000, 1000, 0.8);
+        let late = sig(2, "payments-api", "METRIC_ANOMALY", 1000, 1400, 1.0);
+        let mut apps = vec![ranked(vec![late.clone()]), ranked(vec![ended, log, late])];
+        super::explain(&mut apps, 0.0);
+        assert_eq!((apps[0].app.as_str(), apps[1].explains.len()), ("payments-api", 0));
+        // Nor through a weak episode it led to that is still under way.
+        let ended = sig(3, "ledger-db", "METRIC_ANOMALY", 0, 10, 0.8);
+        let weak = sig(3, "ledger-db", "LOG_ERROR", 10, 1100, 0.25);
+        let late = sig(2, "payments-api", "METRIC_ANOMALY", 980, 1400, 1.0);
+        let mut apps = vec![ranked(vec![late.clone()]), ranked(vec![ended, weak, late])];
+        super::explain(&mut apps, 0.0);
+        assert_eq!((apps[0].app.as_str(), apps[1].explains.len()), ("payments-api", 0));
+        // A strong anomaly still under way carries it through a point event of its own.
+        let strong = sig(3, "ledger-db", "METRIC_ANOMALY", 600, 1000, 0.8);
+        let log = sig(3, "ledger-db", "LOG_ERROR", 700, 700, 0.8);
+        let mut apps = vec![ranked(vec![payments.clone()]), ranked(vec![strong, log, payments.clone()])];
+        super::explain(&mut apps, 0.0);
+        assert_eq!((apps[0].app.as_str(), apps[0].explains.clone()), ("ledger-db", vec!["payments-api".to_owned()]));
+        // An application a stronger accepted precedent keeps above it is not one it explains.
+        let ledger = sig(3, "ledger-db", "METRIC_ANOMALY", 600, 1000, 0.8);
+        let mut held = ranked(vec![payments.clone()]);
+        held.precedent = Some(super::PastRoot { incident: "INC-0".into(), similarity: 1.0, app: "payments-api".into(), signal: String::new(), evidence: vec![] });
+        let mut apps = vec![held, ranked(vec![ledger, payments.clone()])];
+        super::explain(&mut apps, 0.1);
+        let order: Vec<(&str, usize)> = apps.iter().map(|r| (r.app.as_str(), r.explains.len())).collect();
+        assert_eq!(order, [("payments-api", 0), ("ledger-db", 0)]);
     }
 
     #[test]

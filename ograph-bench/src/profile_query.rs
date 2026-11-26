@@ -28,6 +28,3 @@ fn main() -> anyhow::Result<()> {
     println!("{runs} runs, {n} rows, {:.3} ms per run", t.elapsed().as_secs_f64() * 1e3 / runs as f64);
     Ok(())
 }
-
-#[allow(dead_code)]
-fn explain() {}

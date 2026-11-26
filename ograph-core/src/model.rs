@@ -25,8 +25,8 @@ pub enum Extraction {
     Human { who: String },
 }
 
-/// An entity. Applications and teams must resolve against the catalog; other classes (vendors,
-/// news subjects) may be minted from a name.
+/// An entity: an IRI, or the name of an application or team, which the gateway resolves against
+/// the catalog.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EntityRef {
     Known(NamedNode),

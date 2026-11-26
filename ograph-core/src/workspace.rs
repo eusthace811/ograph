@@ -2,6 +2,7 @@
 //! (copied in by `init`, so they are versioned with the data), and the model cache.
 
 use crate::correlate::{self, Settings};
+use anyhow::Context;
 use crate::enrich::{self, Ctx, Detect, Source};
 use crate::gateway::{self, Outcome};
 use crate::llm::{Llm, LlmConfig};
@@ -50,7 +51,7 @@ impl VerdictPolicy {
     }
 
     /// The evidence a verdict records, or why the policy refuses it.
-    pub fn admit(&self, snap: &crate::store::Snapshot, evidence: &[String]) -> anyhow::Result<Vec<String>> {
+    fn admit(&self, snap: &crate::store::Snapshot, evidence: &[String]) -> anyhow::Result<Vec<String>> {
         let given: Vec<String> = evidence.iter().map(|e| e.trim()).filter(|e| !e.is_empty()).map(str::to_owned).collect();
         let shown = || if given.is_empty() { "no --evidence was given".to_owned() } else { format!("the evidence given was {}", given.iter().map(|e| format!("{e:?}")).collect::<Vec<_>>().join(", ")) };
         anyhow::ensure!(!self.require_evidence || !given.is_empty(), "verdict not recorded: [verdict] require_evidence is set and no --evidence was given");
@@ -122,6 +123,16 @@ pub struct Workspace {
     pub store: Store,
 }
 
+/// `.ograph/<name>`, or `default` when there is no such file. Any other failure to read it is
+/// an error: a workspace must not run on the built-in ontology because its own is unreadable.
+pub fn read_setting(dir: &Path, name: &str, default: &str) -> anyhow::Result<String> {
+    let path = dir.join(name);
+    match std::fs::read_to_string(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(default.to_owned()),
+        r => r.with_context(|| path.display().to_string()),
+    }
+}
+
 pub fn find(start: &Path) -> Option<PathBuf> {
     let mut d = Some(start);
     while let Some(x) = d {
@@ -134,7 +145,8 @@ pub fn find(start: &Path) -> Option<PathBuf> {
 }
 
 /// The file under `.ograph/` that holds when the last full harvest started, in Unix ms, on its
-/// first line, then the files it read, one per line relative to the workspace root.
+/// first line, then the files it read, one per line relative to the workspace root, each with its
+/// modification time in Unix ms and its size, tab-separated, as they were when it began.
 pub const HARVESTED: &str = "harvested";
 
 pub use crate::store::now_ms;
@@ -144,7 +156,10 @@ pub fn when_ms(s: &str) -> anyhow::Result<i64> {
     if let Some(ms) = term::instant_millis(s) {
         return Ok(ms);
     }
-    let ago = crate::query::duration_s(s).map_err(|_| anyhow::anyhow!("{s:?} is not a time: write an xsd:dateTime with a zone, such as 2026-11-25T09:30:00Z, or how long ago, such as 90m or 2d"))?;
+    // A well-formed duration keeps its own error (`longer than a century`); anything else is told
+    // both forms it may take.
+    let duration_like = s.starts_with(|c: char| c.is_ascii_digit()) && !s.contains(['-', ':', 'T']);
+    let ago = crate::query::duration_s(s).map_err(|e| if duration_like { e } else { anyhow::anyhow!("{s:?} is not a time: write an xsd:dateTime with a zone, such as 2026-11-25T09:30:00Z, or how long ago, such as 90m or 2d") })?;
     Ok(now_ms() - ago * 1000)
 }
 
@@ -173,12 +188,15 @@ impl Workspace {
     fn open_with(root: &Path, read_only: bool) -> anyhow::Result<Self> {
         let dir = root.join(".ograph");
         anyhow::ensure!(dir.is_dir(), "no .ograph/ in {}; run `ograph init`", root.display());
-        let config: Config = toml::from_str(&std::fs::read_to_string(dir.join("config.toml"))?)?;
+        let config_path = dir.join("config.toml");
+        let config: Config = std::fs::read_to_string(&config_path)
+            .map_err(anyhow::Error::from)
+            .and_then(|t| Ok(toml::from_str(&t)?))
+            .with_context(|| config_path.display().to_string())?;
         config.correlation.check()?;
         config.verdict.patterns()?;
         config.incidents.merge.check()?;
-        let read = |n: &str, d: &str| std::fs::read_to_string(dir.join(n)).unwrap_or_else(|_| d.to_owned());
-        let ontology = Ontology::load(&read("ontology.ttl", crate::ontology::DEFAULT_TTL), &read("shapes.ttl", crate::ontology::DEFAULT_SHAPES))?;
+        let ontology = Ontology::load(&read_setting(&dir, "ontology.ttl", crate::ontology::DEFAULT_TTL)?, &read_setting(&dir, "shapes.ttl", crate::ontology::DEFAULT_SHAPES)?)?;
         let path = dir.join("store.redb");
         // A store from before the history tables cannot be read until an open has added them.
         let store = match read_only.then(|| Store::open_read_only(&path)) {
@@ -230,13 +248,13 @@ impl Workspace {
     }
 
     /// Every configured `code` repository, as an absolute path.
-    pub fn code_repos(&self) -> Vec<PathBuf> {
+    fn code_repos(&self) -> Vec<PathBuf> {
         self.config.sources.iter().filter(|s| matches!(s, Source::Code { .. })).map(|s| self.root.join(s.path())).collect()
     }
 
     /// The repositories whose operations files and history ogrep can read: every `catalog` and
     /// `code` source, in configuration order.
-    pub fn service_repos(&self) -> Vec<PathBuf> {
+    fn service_repos(&self) -> Vec<PathBuf> {
         let mut out: Vec<PathBuf> = Vec::new();
         for s in self.config.sources.iter().filter(|s| matches!(s, Source::Catalog { .. } | Source::Code { .. })) {
             let p = self.root.join(s.path());
@@ -325,7 +343,7 @@ impl Workspace {
             self.prune(&owned, &kept, &kept_below)?;
             for batch in batches {
                 let t = std::time::Instant::now();
-                let o = gateway::submit_with(&self.store, &self.ontology, &batch, now_ms(), false, &mut catalog)?;
+                let o = gateway::submit_with(&self.store, &self.ontology, &batch, now_ms(), &mut catalog)?;
                 progress(&o, t.elapsed().as_secs_f64());
                 out.push(o);
             }
@@ -336,9 +354,8 @@ impl Workspace {
             out.push(o);
         }
         self.prune(&chains, &kept, &kept_below)?;
-        self.store.flush()?;
         if let Some(read) = read {
-            let lines: Vec<String> = std::iter::once(started.to_string()).chain(read.into_iter().map(|(f, _)| f)).collect();
+            let lines: Vec<String> = std::iter::once(started.to_string()).chain(read.iter().map(crate::status::marker_line)).collect();
             std::fs::write(self.dir.join(HARVESTED), lines.join("\n") + "\n")?;
         }
         Ok(out)
@@ -430,28 +447,28 @@ impl Workspace {
         }
         drop(snap);
         if !stale.is_empty() {
-            self.store.transact_with(false, |tx| stale.into_iter().try_for_each(|g| tx.clear_graph(g).map(drop)))?;
+            self.store.transact(|tx| stale.into_iter().try_for_each(|g| tx.clear_graph(g).map(drop)))?;
         }
         Ok(())
     }
 
-    /// Writes the chains of every incident, one correlation batch per incident, non-durably:
-    /// the caller flushes.
+    /// Writes the chains of every incident, one correlation batch per incident.
     fn correlate_all(&self) -> anyhow::Result<Vec<(Outcome, Batch)>> {
         let snap = self.store.snapshot()?;
         let (Ok(ids), Some(c)) = (correlate::Ids::new(&snap), snap.iri(inc::INCIDENT)?) else { return Ok(vec![]) };
         let incidents = snap.subjects(ids.ty, c)?;
         let mut batches = Vec::new();
+        let mut sigs = crate::query::Signatures::default();
         for i in incidents {
             // Stored chains carry ranks, not marks, so the past is read only when it can move a rank.
             let st = &self.config.correlation;
-            let past = if st.precedent_weight > 0.0 { crate::query::past(&snap, &ids, i, st)? } else { vec![] };
+            let past = if st.precedent_weight > 0.0 { crate::query::past(&snap, &ids, i, st, &mut sigs)? } else { vec![] };
             let Ok(a) = correlate::analyze(&snap, &ids, i, st, &past) else { continue };
             batches.push(chain_batch(&a, st));
         }
         drop(snap);
         let mut catalog = None;
-        batches.into_iter().map(|b| Ok((gateway::submit_with(&self.store, &self.ontology, &b, now_ms(), false, &mut catalog)?, b))).collect()
+        batches.into_iter().map(|b| Ok((gateway::submit_with(&self.store, &self.ontology, &b, now_ms(), &mut catalog)?, b))).collect()
     }
 
     /// Records a human verdict on a chain. The verdict keeps what it judged (the chain's
@@ -540,7 +557,7 @@ impl Workspace {
             }
         }
         let n = history.len() + 1;
-        let v = known("verdict", &if n == 1 { local.clone() } else { format!("{local}-v{n}") });
+        let v = known("verdict", &if n == 1 { local } else { format!("{local}-v{n}") });
         if let (Some(oxrdf::Term::NamedNode(p)), EntityRef::Known(next)) = (previous, &v) {
             b.add(EntityRef::Known(p), rca::SUPERSEDED_BY, obj(next.clone()), &ev, &m);
         }
@@ -639,7 +656,7 @@ pub fn resolve_iri(s: &str) -> String {
 }
 
 /// The best chain of each of the first `max` ranked applications as a correlation batch.
-pub fn chain_batch(a: &correlate::Analysis, st: &Settings) -> Batch {
+fn chain_batch(a: &correlate::Analysis, st: &Settings) -> Batch {
     let local = a.incident.rsplit('/').next().unwrap_or("inc").to_owned();
     let mut b = Batch::new("correlation", &local, "correlator-v1");
     let m = Extraction::Rule { extractor: "correlator-v1".into() };
@@ -758,13 +775,13 @@ pub(crate) mod tests {
         harvest(&root, None);
         assert_eq!(violations(&root), 0);
         let ws = Workspace::open(&root).unwrap();
-        let similar = crate::query::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5).unwrap();
+        let similar = crate::query::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5, &mut Default::default()).unwrap();
         assert_eq!(similar.iter().map(|s| (s.incident.as_str(), s.cause_apps.clone())).collect::<Vec<_>>(), [("id:inc/inc-1", vec!["ledger-db".to_owned()])]);
     }
 
     fn similar_to(root: &Path, incident: &str) -> Vec<(String, f64)> {
         let ws = Workspace::open(root).unwrap();
-        crate::query::similar(&ws.store.snapshot().unwrap(), incident, &ws.config.correlation, 5).unwrap().into_iter().map(|s| (s.incident, s.similarity)).collect()
+        crate::query::similar(&ws.store.snapshot().unwrap(), incident, &ws.config.correlation, 5, &mut Default::default()).unwrap().into_iter().map(|s| (s.incident, s.similarity)).collect()
     }
 
     fn incidents(rows: &[(&str, &str, i64, &str)]) -> String {
@@ -951,7 +968,7 @@ pub(crate) mod tests {
         let ws = Workspace::open(&root).unwrap();
         let snap = ws.store.snapshot().unwrap();
         let ids = crate::correlate::Ids::new(&snap).unwrap();
-        let a = crate::query::chains(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation).unwrap();
+        let a = crate::query::chains(&snap, &ids, crate::query::lookup(&snap, "INC-1").unwrap(), &ws.config.correlation, &mut Default::default()).unwrap();
         let printed: Vec<Vec<String>> = a.apps.iter().enumerate().map(|(k, r)| vec![crate::vocab::compact(&r.chain.as_ref().unwrap().id), (k + 1).to_string()]).collect();
         assert_eq!(printed.len(), 2);
         assert_eq!(sparql(&root, "SELECT ?c ?r WHERE { ?c corr:rank ?r } ORDER BY ?r"), printed);
@@ -996,7 +1013,7 @@ pub(crate) mod tests {
         let rank1 = sparql(&root, "SELECT ?c WHERE { ?c corr:rank 1 ; corr:leadsTo [ inc:id \"INC-1\" ] }")[0][0].clone();
         ws.verdict(&rank1, true, "oncall", &["PM-1".into()]).unwrap();
 
-        let u = crate::query::uses(&ws.store, &ws.ontology, st, "db.json").unwrap();
+        let u = crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, st, "db.json").unwrap();
         assert_eq!(u.graphs, ["g:harvest/alerts/db.json"]);
         let events: Vec<_> = u.events.iter().map(|e| (e.app.as_deref(), e.signal.as_str(), e.record.as_deref())).collect();
         assert_eq!(events, [(Some("ledger-db"), "ALERT", Some("db.json#1"))]);
@@ -1008,19 +1025,19 @@ pub(crate) mod tests {
         assert_eq!(verdicts, [(rank1.as_str(), "accepted", "oncall")]);
 
         // INC-1 is stated in both incident files, so it stays without one; INC-2 only in more.json.
-        let u = crate::query::uses(&ws.store, &ws.ontology, st, "more.json").unwrap();
+        let u = crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, st, "more.json").unwrap();
         assert_eq!(u.shared, ["id:inc/inc-1"]);
         assert_eq!(u.events.iter().map(|e| e.node.as_str()).collect::<Vec<_>>(), ["id:inc/inc-2"]);
         let inc1: Vec<_> = u.facts.iter().filter(|f| f.subject == "id:inc/inc-1").map(|f| (f.predicate.as_str(), f.object.as_str(), f.also_in.is_empty())).collect();
         assert_eq!(inc1, [("evt:sourceRecord", "more.json#1", true), ("inc:title", "Checkout down", true)]);
         assert!(u.chains.iter().all(|c| c.incident == "INC-2"));
 
-        let u = crate::query::uses(&ws.store, &ws.ontology, st, "incidents.json#1").unwrap();
+        let u = crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, st, "incidents.json#1").unwrap();
         // Without its service and time, INC-1 is quarantined, so it goes with its chains.
         assert!(u.shared.is_empty());
         assert_eq!(u.events.iter().map(|e| e.node.as_str()).collect::<Vec<_>>(), ["id:inc/inc-1"]);
         assert_eq!(u.chains.iter().map(|c| (c.change, c.incident.as_str())).collect::<Vec<_>>(), [("gone", "INC-1"), ("gone", "INC-1")]);
-        assert!(crate::query::uses(&ws.store, &ws.ontology, st, "nothing.json").unwrap().facts.is_empty());
+        assert!(crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, st, "nothing.json").unwrap().facts.is_empty());
     }
 
     #[test]
@@ -1067,7 +1084,7 @@ pub(crate) mod tests {
         let during = "SELECT ?a WHERE { ?a evt:during ?i }";
         assert_eq!(sparql(&root, during).len(), 1);
         let ws = Workspace::open(&root).unwrap();
-        let u = crate::query::uses(&ws.store, &ws.ontology, &ws.config.correlation, "more.json").unwrap();
+        let u = crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, &ws.config.correlation, "more.json").unwrap();
         drop(ws);
         let elsewhere: Vec<_> = u.facts.iter().filter(|f| f.because.is_some()).map(|f| (f.predicate.as_str(), f.object.as_str(), f.graph.as_str())).collect();
         assert_eq!(elsewhere, [("evt:during", "id:inc/inc-10", "g:harvest/discussions/ops.json")]);
@@ -1087,7 +1104,7 @@ pub(crate) mod tests {
         ]);
         harvest(&root, None);
         let ws = Workspace::open(&root).unwrap();
-        let u = crate::query::uses(&ws.store, &ws.ontology, &ws.config.correlation, "inc-b.json").unwrap();
+        let u = crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, &ws.config.correlation, "inc-b.json").unwrap();
         drop(ws);
         let only: Vec<_> = u.facts.iter().filter(|f| f.subject == "id:inc/inc-9" && f.also_in.is_empty() && f.because.is_none()).map(|f| (f.predicate.as_str(), f.object.as_str())).collect();
         assert_eq!(only, [("evt:at", "2026-11-22T23:26:40Z"), ("evt:on", "id:app/checkout"), ("evt:sourceRecord", "inc-b.json#1")]);
@@ -1124,14 +1141,14 @@ pub(crate) mod tests {
         let thread_a = format!("id:thread/ops-{}-000100", T - 300);
         let thread_b = format!("id:thread/ops-{}-000100", T - 200);
 
-        let u = crate::query::uses(&ws.store, &ws.ontology, st, "ops.json#1").unwrap();
+        let u = crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, st, "ops.json#1").unwrap();
         let types: Vec<_> = u.facts.iter().filter(|f| f.predicate == "rdf:type").map(|f| (f.subject.as_str(), f.object.as_str())).collect();
         assert!(types.contains(&(thread_a.as_str(), "disc:Thread")), "{types:?}");
         assert!(u.shared.is_empty());
         let quarantined: Vec<_> = u.quarantined.iter().map(|q| q.fact.as_str()).collect();
         assert_eq!(quarantined, [format!("{thread_a} disc:about ops:Application?\"billingx\"")]);
 
-        let u = crate::query::uses(&ws.store, &ws.ontology, st, "ops.json#3").unwrap();
+        let u = crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, st, "ops.json#3").unwrap();
         assert_eq!(u.shared, [thread_b.as_str()]);
         assert!(u.quarantined.is_empty());
         assert_eq!(u.warnings, [format!("{thread_b} keeps its other messages; without this one its text, and so the model's answers on it, change in ways this answer does not predict")]);
@@ -1147,7 +1164,7 @@ pub(crate) mod tests {
         let old: Vec<[crate::term::Id; 4]> = snap.quads([None, Some(rp), None], crate::store::GraphSel::AnyNamed).map(Result::unwrap).filter(|q| crate::correlate::literal(&snap, q[3]).is_some_and(|g| g.contains("/incidents/"))).collect();
         drop(snap);
         ws.store.transact(|tx| tx.remove(old)).unwrap();
-        let u = crate::query::uses(&ws.store, &ws.ontology, &ws.config.correlation, "more.json").unwrap();
+        let u = crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, &ws.config.correlation, "more.json").unwrap();
         assert!(u.facts.is_empty());
         assert_eq!(u.warnings, ["g:harvest/incidents/all names no evt:sourceRecord, so its incidents cannot be traced to their files; harvest once to record them"]);
     }
@@ -1217,7 +1234,7 @@ pub(crate) mod tests {
         harvest(&root, None);
         let ws = Workspace::open(&root).unwrap();
         let key = crate::query::source_key(&root, &root.join("sub"), "..");
-        let u = crate::query::uses(&ws.store, &ws.ontology, &ws.config.correlation, &key).unwrap();
+        let u = crate::query::uses(&ws.store.snapshot().unwrap(), &ws.ontology, &ws.config.correlation, &key).unwrap();
         assert_eq!(u.graphs, ["g:harvest/catalog/", "g:harvest/alerts/alerts.json", "g:harvest/incidents/all"]);
     }
 
@@ -1227,7 +1244,7 @@ pub(crate) mod tests {
         std::fs::write(root.join("incidents.json"), format!(r#"[{{"id":"INC-1","service":"checkout","opened":{T}}},{{"id":"INC-2","service":"checkout","opened":{}}}]"#, T + 86_400)).unwrap();
         harvest(&root, None);
         let ws = Workspace::open(&root).unwrap();
-        let similar = |ws: &Workspace| crate::query::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5).unwrap().into_iter().map(|s| s.cause_apps).collect::<Vec<_>>();
+        let similar = |ws: &Workspace| crate::query::similar(&ws.store.snapshot().unwrap(), "INC-2", &ws.config.correlation, 5, &mut Default::default()).unwrap().into_iter().map(|s| s.cause_apps).collect::<Vec<_>>();
         ws.verdict("id:chain/inc-1-1", true, "oncall", &[]).unwrap();
         assert_eq!(similar(&ws), [vec!["ledger-db".to_owned()]]);
         ws.verdict("id:chain/inc-1-1", false, "oncall", &[]).unwrap();
@@ -1687,7 +1704,7 @@ pub(crate) mod tests {
         let ids = crate::correlate::Ids::new(&snap).unwrap();
         let chains = crate::correlate::analyze(&snap, &ids, crate::query::lookup(&snap, "INC-10").unwrap(), &ws.config.correlation, &[]).unwrap();
         assert_eq!(chains.apps.iter().map(|a| a.chain.as_ref().unwrap().root.kind.as_str()).collect::<Vec<_>>(), ["ALERT"]);
-        let similar = crate::query::similar(&snap, "INC-11", &ws.config.correlation, 5).unwrap();
+        let similar = crate::query::similar(&snap, "INC-11", &ws.config.correlation, 5, &mut Default::default()).unwrap();
         assert_eq!(similar[0].mitigations, ["ROLLBACK checkout at 2026-11-22T22:25:00Z: rolled back checkout"]);
     }
 
@@ -1709,13 +1726,14 @@ pub(crate) mod tests {
         let root = two_chains();
         let ranked = sparql(&root, "SELECT ?c WHERE { ?c corr:rank ?r } ORDER BY ?r");
         let (first, second) = (&ranked[0][0], &ranked[1][0]);
-        let text = format!("1. ledger-db {first}\nINC-1 and INC-9 on payments-api, ledger-service and id:app/checkout\n{second} is rank 1\nid:chain/inc-1-0123456789abcdef and id:chain/inc-1-2\n");
+        let text = format!("1. ledger-db {first}\nINC-1 and INC-9 (and INC-9F) on payments-api, ledger-service and id:app/checkout\n{second} is rank 1\nid:chain/inc-1-0123456789abcdef and id:chain/inc-1-2\n");
         let s = |k: &str, c: &str, st: &str| (k.to_owned(), c.to_owned(), st.to_owned());
         assert_eq!(cite(&root, &text), [
             s("App", "ledger-db", "Present"),
             s("Chain", first, "Present"),
             s("Incident", "INC-1", "Present"),
             s("Incident", "INC-9", "Unknown"),
+            s("Incident", "INC-9F", "Unknown"),
             s("App", "payments-api", "Present"),
             s("App", "ledger-service", "Unknown"),
             s("App", "id:app/checkout", "Present"),
@@ -1741,10 +1759,77 @@ pub(crate) mod tests {
         let status = |text: &str| cite(&root, text).into_iter().filter(|c| c.0 == "Chain").map(|c| (c.1, c.2)).collect::<Vec<_>>();
         let s = |c: &str, st: &str| (c.to_owned(), st.to_owned());
         assert_eq!(status(&format!("3. Check {first}")), [s(first, "Present")]);
+        // As a SPARQL query writes it: `/` and `.` escaped.
+        let escaped = first.replace("id:chain/", "id:chain\\/").replace('.', "\\.");
+        assert_eq!(status(&format!("SELECT ?p WHERE {{ {escaped} ?p ?o }}")), [s(first, "Present")]);
         assert_eq!(status(&format!("{first} is rank 1 and {second} is rank 2")), [s(first, "Present"), s(second, "Present")]);
+        assert_eq!(status(&format!("{first} is ranked 2")), [s(first, "Stale")]);
+        assert_eq!(status(&format!("{first} (ranked #2)")), [s(first, "Stale")]);
+        assert_eq!(status(&format!("{first} is ranked 1")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first} was ranked 2 before the deploy and is now ranked 1.")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first} was rank 2 before the deploy and is now ranked 1.")), [s(first, "Present")]);
         assert_eq!(status(&format!("rank 1: {first}, rank 1: {second}")), [s(first, "Present"), s(second, "Stale")]);
         assert_eq!(status(&format!("{first} (rank 2), then {second}")), [s(first, "Stale"), s(second, "Present")]);
         assert_eq!(status(&format!("{second}, rank 2: {first}")), [s(second, "Present"), s(first, "Stale")]);
+        // The rank after the first chain is its own, not the next one's too.
+        assert_eq!(status(&format!("{first} is rank 1, {second} was ruled out")), [s(first, "Present"), s(second, "Present")]);
+        // A rank before a chain is still its own, at the start of a line or after another chain's.
+        assert_eq!(status(&format!("Rank 2 is {first}")), [s(first, "Stale")]);
+        assert_eq!(status(&format!("{first} (rank 1), rank 1: {second}")), [s(first, "Present"), s(second, "Stale")]);
+        assert_eq!(status(&format!("{first} is rank 1; rank 1 is {second}")), [s(first, "Present"), s(second, "Stale")]);
+        // Only a chain takes a rank, and a rank that introduces the next chain is that chain's.
+        assert_eq!(status(&format!("For id:app/ledger-db, rank 2 is {first}")), [s(first, "Stale")]);
+        assert_eq!(status(&format!("{second}, rank 1 is {first}")), [s(second, "Present"), s(first, "Present")]);
+        assert_eq!(status(&format!("{second}, rank 2 = {first}")), [s(second, "Present"), s(first, "Stale")]);
+        assert_eq!(status(&format!("The rank 2 chain is {first}, rank 2 is {second}")), [s(first, "Stale"), s(second, "Present")]);
+        // A dash separates list items; the rank before it stays with its chain.
+        assert_eq!(status(&format!("- {first} is rank 1 - {second} is rank 2")), [s(first, "Present"), s(second, "Present")]);
+        // Markdown, as agents write it.
+        assert_eq!(status(&format!("1. `{first}` — rank 2, `{second}` (rank 2)")), [s(first, "Stale"), s(second, "Present")]);
+        assert_eq!(status(&format!("- **Rank 2**: `{first}`")), [s(first, "Stale")]);
+        assert_eq!(status(&format!("**Rank 2:** `{first}`")), [s(first, "Stale")]);
+        assert_eq!(status(&format!("Previously at rank 2, `{first}` is now **rank 1**")), [s(first, "Present")]);
+        assert_eq!(status(&format!("The rank-2 chain is {first}")), [s(first, "Stale")]);
+        assert_eq!(status(&format!("{first} is rank 2: ledger-db pool saturation")), [s(first, "Stale")]);
+        // A colon points forward only to a chain that follows on the line.
+        assert_eq!(status(&format!("- {first} is rank 2:")), [s(first, "Stale")]);
+        // ...and to a chain that states no rank of its own.
+        assert_eq!(status(&format!("{second} is rank 1: {first} is rank 1")), [s(second, "Stale"), s(first, "Present")]);
+        assert_eq!(status(&format!("{first} is rank 1: {second} follows it")), [s(first, "Present"), s(second, "Present")]);
+        assert_eq!(status(&format!("{first}, the rank 2 chain is {second}")), [s(first, "Present"), s(second, "Present")]);
+        assert_eq!(status(&format!("{second}, rank 2 is the chain: {first}")), [s(second, "Present"), s(first, "Stale")]);
+        assert_eq!(status(&format!("Rank 1 chain: {first}, rank 2 chain: {second}")), [s(first, "Present"), s(second, "Present")]);
+        assert_eq!(status(&format!("{second}, rank 2 chain is the {first}")), [s(second, "Present"), s(first, "Stale")]);
+        assert_eq!(status(&format!("{second}, rank 2 is: {first}")), [s(second, "Present"), s(first, "Stale")]);
+        assert_eq!(status(&format!("{first} was rank 2 before the reharvest and is now rank 1")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first} was rank 2 (confidence 0.91) and is now rank 1.")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first} is rank 1, and the pool chain was rank 3 but is now rank 2.")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first} was rank 2 before the deploy, and now rank 1 is {second}.")), [s(first, "Stale"), s(second, "Stale")]);
+        assert_eq!(status(&format!("{first} was rank 2 before the deploy and is now rank 1:")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first} was at rank 2 and is now at rank 1")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first} was rank 1, and the payments chain was rank 3 but is now rank 2.")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first} was rank 2 before the Frankfurt failover and is now rank 1")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first} was rank 2 in the old ranking and is now rank 1")), [s(first, "Present")]);
+        // `moved from rank 2 to rank 1` already says the rank it has now.
+        assert_eq!(status(&format!("{first} was moved from rank 2 to rank 1, and another was rank 1 but is now rank 4.")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{second} was rank 2, but now rank 1 is held by {first}")), [s(second, "Present"), s(first, "Present")]);
+        assert_eq!(status(&format!("{first} was rank 2 and is now rank 1, ahead of {second}")), [s(first, "Present"), s(second, "Present")]);
+        assert_eq!(status(&format!("{first} was rank 2 and is now rank 1 isolated from {second}")), [s(first, "Present"), s(second, "Present")]);
+        assert_eq!(status(&format!("{second} was rank 2 and the chain that is now rank 1, {first}")), [s(second, "Present"), s(first, "Present")]);
+        assert_eq!(status(&format!("{second} was rank 2, behind the chain that is now rank 1.")), [s(second, "Present")]);
+        assert_eq!(status(&format!("{second} was rank 2, but now rank 1 is held by the pool chain.")), [s(second, "Present")]);
+        assert_eq!(status(&format!("{second} was rank 2, now rank 1 belongs to {first}")), [s(second, "Present"), s(first, "Present")]);
+        assert_eq!(status(&format!("{second} was rank 2 but is not now rank 1")), [s(second, "Present")]);
+        assert_eq!(status(&format!("{second} was rank 2 but isn't now rank 1")), [s(second, "Present")]);
+        assert_eq!(status(&format!("{first} was rank 2 and now is rank 1")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{second} was rank 2 and isn’t now rank 1")), [s(second, "Present")]);
+        assert_eq!(status(&format!("{first} was rank 2 and is now rank 1: {second} (rank 2) follows")), [s(first, "Present"), s(second, "Present")]);
+        assert_eq!(status(&format!("{first} moved from rank 1 to rank 2")), [s(first, "Stale")]);
+        assert_eq!(status(&format!("| `{first}` | **rank 2** |")), [s(first, "Stale")]);
+        assert_eq!(status(&format!("{first}, not rank 2")), [s(first, "Present")]);
+        // What a chain was is not what it is: only `which is` gives a rank.
+        assert_eq!(status(&format!("{first}, which was rank 2 before the redeploy, is now rank 1")), [s(first, "Present")]);
+        assert_eq!(status(&format!("{first}, which is rank 2")), [s(first, "Stale")]);
     }
 
     #[test]
@@ -1766,6 +1851,38 @@ pub(crate) mod tests {
         assert!(status().note().unwrap().starts_with("ograph: the graph is stale: 1 source files changed since the harvest at "));
         harvest(&root, None);
         assert_eq!(status().note(), None);
+    }
+
+    #[test]
+    fn status_compares_each_file_with_what_the_harvest_read_not_with_the_harvest_time() {
+        let root = fixture("status-stamp", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        let alerts = root.join("alerts.json");
+        let set_mtime = |t: std::time::SystemTime| std::fs::File::options().write(true).open(&alerts).unwrap().set_modified(t).unwrap();
+        let hour = std::time::Duration::from_secs(3600);
+        // A file dated ahead of the clock is read, and is not stale once read.
+        set_mtime(std::time::SystemTime::now() + hour);
+        harvest(&root, None);
+        let changed = || crate::status::status(&Workspace::open(&root).unwrap()).unwrap().changed;
+        assert!(changed().is_empty());
+        // A copy that keeps an older timestamp, as `cp -p` or `rsync -a` do, is still a change.
+        let then = std::fs::metadata(&alerts).unwrap().modified().unwrap() - hour * 2;
+        std::fs::write(&alerts, format!("[{},{}]", alert("ledger-db", "PoolSaturated", T - 600), alert("ledger-db", "Latency", T - 500))).unwrap();
+        set_mtime(then);
+        assert_eq!(changed(), ["alerts.json"]);
+    }
+
+    #[test]
+    fn status_reads_a_marker_that_lists_only_names() {
+        let root = fixture("status-names", &[("alerts", "alerts.json", &format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600)))]);
+        harvest(&root, None);
+        let marker = root.join(".ograph").join(super::HARVESTED);
+        let old: String = std::fs::read_to_string(&marker).unwrap().lines().map(|l| l.split('\t').next().unwrap().to_owned() + "\n").collect();
+        std::fs::write(&marker, old).unwrap();
+        let changed = || crate::status::status(&Workspace::open(&root).unwrap()).unwrap().changed;
+        assert!(changed().is_empty());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(root.join("alerts.json"), format!("[{}]", alert("ledger-db", "PoolSaturated", T - 600))).unwrap();
+        assert_eq!(changed(), ["alerts.json"]);
     }
 
     #[test]

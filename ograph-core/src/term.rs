@@ -62,7 +62,7 @@ fn epoch_value() -> i128 {
 }
 
 /// Builds a UTC dateTime from milliseconds without parsing. `Decimal` is an i128 scaled by 10^18.
-pub fn date_time_from_millis(millis: i64) -> DateTime {
+fn date_time_from_millis(millis: i64) -> DateTime {
     let value = epoch_value() + i128::from(millis) * 1_000_000_000_000_000;
     let mut bytes = [0; 18];
     bytes[0..16].copy_from_slice(&value.to_be_bytes());
@@ -100,6 +100,20 @@ pub fn format_millis(millis: i64) -> String {
     date_time_from_millis(millis).to_string()
 }
 
+/// Whether `v` displays as exactly `text`: the canonical-form check of every literal stored,
+/// done without building the string.
+fn displays_as(v: impl std::fmt::Display, text: &str) -> bool {
+    struct Rest<'a>(&'a str);
+    impl std::fmt::Write for Rest<'_> {
+        fn write_str(&mut self, s: &str) -> std::fmt::Result {
+            self.0 = self.0.strip_prefix(s).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+    let mut rest = Rest(text);
+    std::fmt::write(&mut rest, format_args!("{v}")).is_ok() && rest.0.is_empty()
+}
+
 /// The inline id of a term, when it has one.
 pub fn inline(term: &Term) -> Option<Id> {
     let Term::Literal(l) = term else { return None };
@@ -107,10 +121,10 @@ pub fn inline(term: &Term) -> Option<Id> {
     let value = l.value();
     if dt == xsd::INTEGER {
         let v = i64::from_str(value).ok().filter(|v| v.unsigned_abs() < INT_BIAS as u64)?;
-        (v.to_string() == value).then(|| pack(Kind::Integer, (v + INT_BIAS) as u64))
+        displays_as(v, value).then(|| pack(Kind::Integer, (v + INT_BIAS) as u64))
     } else if dt == xsd::DATE_TIME {
         let m = parse_millis(value)?;
-        (format_millis(m) == value).then(|| time_id(m))
+        displays_as(date_time_from_millis(m), value).then(|| time_id(m))
     } else if dt == xsd::BOOLEAN {
         match value {
             "true" => Some(pack(Kind::Boolean, 1)),
@@ -201,6 +215,21 @@ pub fn hash(bytes: &[u8]) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_literal_in_canonical_form_is_inlined() {
+        let lit = |v: &str, dt| Term::from(oxrdf::Literal::new_typed_literal(v, dt));
+        for v in ["5", "-5", "0"] {
+            assert!(inline(&lit(v, xsd::INTEGER)).is_some(), "{v}");
+        }
+        for v in ["+5", "007", "-0", "5 "] {
+            assert!(inline(&lit(v, xsd::INTEGER)).is_none(), "{v}");
+        }
+        assert!(inline(&lit("2026-11-25T09:30:00Z", xsd::DATE_TIME)).is_some());
+        for v in ["2026-11-25T09:30:00+00:00", "2026-11-25T09:30:00.000Z", "2026-11-25T09:30:00ZZ"] {
+            assert!(inline(&lit(v, xsd::DATE_TIME)).is_none(), "{v}");
+        }
+    }
 
     #[test]
     fn date_times_round_trip_through_inline_ids() {

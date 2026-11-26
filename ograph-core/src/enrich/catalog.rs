@@ -12,13 +12,13 @@ use std::path::{Path, PathBuf};
 /// The files `ogrep --entities` reads in a repository: the YAML and `.env` files among those
 /// ogrep searches, which honours the repository's ignore rules.
 pub fn files(root: &Path, path: &Path) -> Vec<PathBuf> {
-    let dir = if path.is_absolute() { path.to_owned() } else { root.join(path) };
+    let dir = root.join(path);
     let ops = |name: &str| name.ends_with(".yaml") || name.ends_with(".yml") || name.ends_with(".env");
     ogrep::files(&dir).iter().map(|l| dir.join(l)).filter(|p| p.file_name().is_some_and(|n| ops(&n.to_string_lossy()))).collect()
 }
 
 pub fn harvest(root: &Path, path: &Path, inferred: bool) -> Batch {
-    let dir = if path.is_absolute() { path.to_owned() } else { root.join(path) };
+    let dir = root.join(path);
     let key = super::rel(root, &dir);
     let mut b = Batch::new("catalog", &key, "ogrep-entities");
     let read = match ogrep::dated_entities(&dir) {

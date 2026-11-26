@@ -62,11 +62,11 @@ impl Llm {
         Self { config, cache_path, cache: Mutex::new(cache) }
     }
 
-    pub fn key(&self, prompt: &str, input: &str) -> String {
+    fn key(&self, prompt: &str, input: &str) -> String {
         hash(&format!("{}\u{0}{}\u{0}{}", self.config.model, hash(prompt), input))
     }
 
-    pub fn cached(&self, key: &str) -> Option<String> {
+    fn cached(&self, key: &str) -> Option<String> {
         self.cache.lock().unwrap().get(key).cloned()
     }
 
@@ -175,30 +175,31 @@ impl Llm {
 
     /// Runs `ask` over many inputs with `parallel` workers, keeping input order.
     pub fn ask_all(&self, prompt: &str, inputs: &[String]) -> Vec<anyhow::Result<String>> {
-        let next = std::sync::atomic::AtomicUsize::new(0);
-        let slots: Vec<Mutex<Option<anyhow::Result<String>>>> = inputs.iter().map(|_| Mutex::new(None)).collect();
-        std::thread::scope(|s| {
-            for _ in 0..self.config.parallel.max(1) {
-                s.spawn(|| loop {
-                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    if i >= inputs.len() {
-                        break;
-                    }
-                    *slots[i].lock().unwrap() = Some(self.ask(prompt, &inputs[i]));
-                });
-            }
-        });
-        slots.into_iter().map(|m| m.into_inner().unwrap().unwrap()).collect()
+        crate::ordered_map(inputs, self.config.parallel, |input| self.ask(prompt, input))
     }
 }
 
-/// The first JSON object in a model answer (models sometimes wrap it in prose or fences).
+/// The first JSON object in a model answer (models sometimes wrap it in prose or fences). A brace
+/// in the prose (`{category}`, `{ is`) is not taken for one, and a balanced span that is not
+/// JSON is skipped whole, so an object inside a malformed one is never taken for the answer.
 pub fn first_json(answer: &str) -> Option<serde_json::Value> {
-    let start = answer.find('{')?;
-    let mut depth = 0;
-    let mut in_str = false;
-    let mut esc = false;
-    for (i, c) in answer[start..].char_indices() {
+    let mut rest = answer;
+    loop {
+        // An object opens with `{"` or `{}`; a brace in the prose (`{ is`, `{category}`) does not.
+        let start = rest.match_indices('{').map(|(i, _)| i).find(|&i| rest[i + 1..].trim_start().starts_with(['"', '}']))?;
+        rest = &rest[start..];
+        let span = balanced(rest)?;
+        if let Ok(v) = serde_json::from_str(span) {
+            return Some(v);
+        }
+        rest = &rest[span.len()..];
+    }
+}
+
+/// The prefix of `s`, which starts with `{`, up to its matching `}`.
+fn balanced(s: &str) -> Option<&str> {
+    let (mut depth, mut in_str, mut esc) = (0, false, false);
+    for (i, c) in s.char_indices() {
         match c {
             _ if esc => esc = false,
             '\\' if in_str => esc = true,
@@ -207,7 +208,7 @@ pub fn first_json(answer: &str) -> Option<serde_json::Value> {
             '}' if !in_str => {
                 depth -= 1;
                 if depth == 0 {
-                    return serde_json::from_str(&answer[start..start + i + 1]).ok();
+                    return Some(&s[..=i]);
                 }
             }
             _ => {}
@@ -219,15 +220,36 @@ pub fn first_json(answer: &str) -> Option<serde_json::Value> {
 /// True when `quote` appears in `text` word for word, ignoring case and runs of whitespace.
 /// Model answers that cite their source are checked with this before any fact is proposed.
 pub fn quoted(text: &str, quote: &str) -> bool {
-    let squash = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
-    let q = squash(quote.trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace()));
+    let q = squash_quote(quote);
     q.len() >= 3 && squash(text).contains(&q)
+}
+
+/// Lower case, with each run of whitespace one space.
+pub(crate) fn squash(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+/// A quote as [`quoted`] compares it: squashed, without the quote marks around it.
+pub(crate) fn squash_quote(quote: &str) -> String {
+    squash(quote.trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace()))
 }
 
 // These tests use shell scripts as stand-ins for the model command.
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_first_json_object_skips_braces_in_the_prose_but_not_into_a_bad_object() {
+        let v = |s: &str| first_json(s).map(|v| v.to_string());
+        assert_eq!(v(r#"use {category}: {"category":"db"}"#).as_deref(), Some(r#"{"category":"db"}"#));
+        assert_eq!(v("```json\n{\"a\": \"}\"}\n```").as_deref(), Some(r#"{"a":"}"}"#));
+        assert_eq!(v(r#"{"a": {"b": 1}, oops}"#), None);
+        assert_eq!(v("no object {"), None);
+        assert_eq!(v(r#"{"a": {"b": 1}"#), None);
+        assert_eq!(v(r#"Note: a brace { is unmatched. {"category":"db"}"#).as_deref(), Some(r#"{"category":"db"}"#));
+        assert_eq!(v(r#"It said "hi. {"category":"db"}"#).as_deref(), Some(r#"{"category":"db"}"#));
+    }
 
     #[test]
     fn answer_larger_than_a_pipe_buffer_arrives() {

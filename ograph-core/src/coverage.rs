@@ -57,10 +57,7 @@ const META: &str = "https://ograph.dev/meta#";
 
 /// Parses a declined.ttl. Every declined term must say who declined it.
 pub fn declines(ttl: &str) -> anyhow::Result<Vec<Decline>> {
-    let mut g = oxrdf::Graph::new();
-    for t in oxttl::TurtleParser::new().for_slice(ttl) {
-        g.insert(&t?);
-    }
+    let g = crate::ontology::parse(ttl)?;
     let p = |l: &str| oxrdf::NamedNode::new_unchecked(format!("{META}{l}"));
     let (declined, by, question) = (p("declined"), p("by"), p("question"));
     let text = |s: oxrdf::NamedOrBlankNodeRef<'_>, q: &oxrdf::NamedNode| -> Vec<String> {
@@ -112,14 +109,20 @@ pub fn decline(report: &mut [Coverage], declines: &[Decline]) {
     }
 }
 
+/// What a gap would be: `value`, `property` or `class` (whatever case the model wrote its kind
+/// in), and the name `proposals` writes it under (a value's own text).
+fn term(need: &Need) -> (&'static str, String) {
+    match need.kind.to_lowercase().as_str() {
+        "value" => ("value", need.text.to_lowercase()),
+        "property" => ("property", camel(&need.text, false)),
+        _ => ("class", camel(&need.text, true)),
+    }
+}
+
 /// The IRI `proposals` gives a gap, or `None` for a vocabulary value.
 fn proposed_name(need: &Need) -> Option<String> {
-    let name = match need.kind.as_str() {
-        "value" => return None,
-        "property" => camel(&need.text, false),
-        _ => camel(&need.text, true),
-    };
-    (!name.is_empty()).then(|| format!("{}{name}", vocab::ops::NS))
+    let (kind, name) = term(need);
+    (kind != "value" && !name.is_empty()).then(|| format!("{}{name}", vocab::ops::NS))
 }
 
 fn expand(name: &str) -> String {
@@ -130,13 +133,7 @@ fn expand(name: &str) -> String {
 }
 
 pub fn prompt(ont: &Ontology) -> String {
-    let comment = |iri: &str| {
-        let s = oxrdf::NamedNode::new_unchecked(iri);
-        match ont.graph.object_for_subject_predicate(&s, oxrdf::vocab::rdfs::COMMENT) {
-            Some(oxrdf::TermRef::Literal(l)) => format!(": {}", l.value()),
-            _ => String::new(),
-        }
-    };
+    let comment = |iri: &str| ont.comment(iri).map(|c| format!(": {c}")).unwrap_or_default();
     let mut p = String::from(
         "You check whether an operations knowledge graph's ontology can represent a question. The ontology declares:\n\nClasses:\n",
     );
@@ -248,10 +245,15 @@ fn camel(text: &str, upper_first: bool) -> String {
 /// Proposed additions as Turtle, one term per distinct gap, each commented with the questions
 /// that need it. Nothing here is loaded until a person edits it into the ontology.
 pub fn proposals(report: &[Coverage]) -> String {
-    let mut terms: std::collections::BTreeMap<(String, String), Vec<&str>> = std::collections::BTreeMap::new();
+    // One entry per term written: spellings that give the same name ("error rate", "error-rate")
+    // are one term. A value has no name, so its text is its key.
+    let mut terms: std::collections::BTreeMap<(&str, String), Vec<&str>> = std::collections::BTreeMap::new();
     for c in report {
         for g in &c.gaps {
-            terms.entry((g.kind.clone(), g.text.to_lowercase())).or_default().push(&c.question);
+            let qs = terms.entry(term(g)).or_default();
+            if !qs.contains(&c.question.as_str()) {
+                qs.push(&c.question);
+            }
         }
     }
     let mut out = String::from(
@@ -260,14 +262,14 @@ pub fn proposals(report: &[Coverage]) -> String {
          # `ops:Name og:declined \"why\" ; og:by \"who\" ; og:question \"...\" .` to .ograph/declined.ttl.\n\
          @prefix ops: <https://ograph.dev/ops#> .\n@prefix owl: <http://www.w3.org/2002/07/owl#> .\n@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n\n",
     );
-    for ((kind, text), qs) in terms {
-        let (name, ty) = match kind.as_str() {
-            "property" => (camel(&text, false), "owl:DatatypeProperty"),
+    for ((kind, name), qs) in terms {
+        let ty = match kind {
+            "property" => "owl:DatatypeProperty",
             "value" => {
-                out.push_str(&format!("# value \"{text}\" for a closed vocabulary, needed by: {}\n\n", qs.join(" | ")));
+                out.push_str(&format!("# value \"{name}\" for a closed vocabulary, needed by: {}\n\n", qs.join(" | ")));
                 continue;
             }
-            _ => (camel(&text, true), "owl:Class"),
+            _ => "owl:Class",
         };
         if name.is_empty() {
             continue;
@@ -302,6 +304,23 @@ ops:Revenue og:declined "Finance owns it." ; og:by "ana" .
     fn asked(question: &str, gaps: &[(&str, &str)]) -> Coverage {
         let gaps = gaps.iter().map(|(t, k)| Need { text: (*t).into(), kind: (*k).into(), name: None }).collect();
         Coverage { question: question.into(), covered: vec![], gaps, notes: vec![], failed: None, declined: vec![] }
+    }
+
+    #[test]
+    fn a_declined_gap_stays_declined_whatever_the_case_of_its_kind() {
+        let mut report = [asked("q1", &[("error rate", "Property")])];
+        let d = Decline { term: format!("{}errorRate", vocab::ops::NS), by: "ops".into(), reason: "no".into(), questions: vec![] };
+        decline(&mut report, &[d]);
+        assert!(report[0].gaps.is_empty() && report[0].declined.len() == 1, "{:?}", report[0].gaps);
+    }
+
+    #[test]
+    fn spellings_of_one_term_are_proposed_once() {
+        let report = [asked("q1", &[("error rate", "property"), ("latency", "class")]), asked("q2", &[("error-rate", "property"), ("Latency", "Class")]), asked("q1", &[("Error Rate", "property")])];
+        let p = proposals(&report);
+        assert_eq!(p.matches("ops:errorRate a owl:DatatypeProperty").count(), 1, "{p}");
+        assert_eq!(p.matches("ops:Latency a owl:Class").count(), 1, "{p}");
+        assert!(p.contains(r#"needed by \"q1\", \"q2\""#), "{p}");
     }
 
     #[test]

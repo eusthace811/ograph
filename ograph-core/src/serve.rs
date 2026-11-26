@@ -32,7 +32,7 @@ pub fn tools() -> Value {
         {"name": "uses", "description": "What depends on a source file, a directory of them or one record (FILE#n), for when a source turns out to be wrong: its facts and the other sources that also state each one, the events and incidents only it states, the chains that would go, be relinked, move or enter without it (with incident and rank), the current verdicts on chains that would go or be relinked, and its quarantined proposals. Paths are relative to the workspace root.",
          "inputSchema": s(json!({"source": {"type": "string"}}), &["source"])},
         {"name": "news", "description": "News that mentions vendors our applications use, with the affected applications and processes.",
-         "inputSchema": s(json!({"since": {"type": "string", "description": "only the last DURATION, like 7d (default: all of it)"}}), &[])},
+         "inputSchema": s(json!({"since": {"type": "string", "description": "only news since then: a dateTime with a zone, or how long ago, like 7d (default: all of it)"}}), &[])},
         {"name": "sparql", "description": "Run a read-only SPARQL query. Prefixes ops: evt: inc: disc: corr: rca: harv: id: g: rdf: rdfs: xsd: are predeclared; the default graph is the union of all harvests. A class or property the ontology does not declare is rejected with the nearest declared name.",
          "inputSchema": s(json!({"query": {"type": "string"}, "limit": {"type": "integer"}}), &["query"])},
         {"name": "resolve", "description": "Application names, aliases or IRIs, at most 5, to catalog applications by the harvest's own matching rules: resolved (exact, or a typo the harvest would accept), ambiguous (close to a catalog name but a sibling of it, or tied with another), or unresolved, each with its rationale and the closest candidates. Use it before you name an application you have not seen in a tool answer.",
@@ -67,14 +67,14 @@ pub fn resource_templates() -> Value {
 
 pub fn read_resource(ws: &Workspace, uri: &str) -> anyhow::Result<Value> {
     let (mime, text) = match uri {
-        "ograph://ontology" => ("text/turtle", std::fs::read_to_string(ws.dir.join("ontology.ttl")).unwrap_or_else(|_| crate::ontology::DEFAULT_TTL.to_owned())),
+        "ograph://ontology" => ("text/turtle", crate::workspace::read_setting(&ws.dir, "ontology.ttl", crate::ontology::DEFAULT_TTL)?),
         "ograph://incidents" => ("application/json", serde_json::to_string(&incidents(&ws.store.snapshot()?)?)?),
         _ => {
             let id = uri.strip_prefix("ograph://incident/").filter(|id| !id.is_empty()).ok_or_else(|| anyhow::anyhow!("unknown resource {uri}"))?;
             let at = |m: &str, p: Value| call(ws, m, &p).map_err(|e| e.context(format!("{m} for {id}")));
             let before = at("before", json!({"incident": id}))?;
             let chains = at("chains", json!({"incident": id}))?;
-            let top = chains.pointer("/apps/0/app").or_else(|| chains.pointer("/analysis/apps/0/app")).or(before.get("app")).and_then(Value::as_str).unwrap_or_default().to_owned();
+            let top = chains.pointer("/apps/0/app").or(before.get("app")).and_then(Value::as_str).unwrap_or_default().to_owned();
             let doc = json!({"before": before, "chains": chains, "similar": at("similar", json!({"incident": id}))?, "blast": at("blast", json!({"app": top}))?});
             ("application/json", doc.to_string())
         }
@@ -173,22 +173,22 @@ pub fn call(ws: &Workspace, method: &str, p: &Value) -> anyhow::Result<Value> {
             if p.get("rank").and_then(Value::as_str) == Some("propagation") {
                 st.rank = RankMode::Propagation;
             }
-            let mut a = query::chains(&snap, &ids, query::lookup(&snap, arg(p, "incident")?)?, &st)?;
+            let mut a = query::chains(&snap, &ids, query::lookup(&snap, arg(p, "incident")?)?, &st, &mut Default::default())?;
             let (suspects, _) = ws.fallback_suspects(&snap, &a, arg(p, "incident")?, &st);
             a.apps.truncate(5);
             if suspects.is_empty() { serde_json::to_value(a)? } else { serde_json::to_value(query::Chains { analysis: a, suspects, shift: None })? }
         }
         "suspects" => serde_json::to_value(ws.suspects(&snap, arg(p, "target")?, p.get("since").and_then(Value::as_str), &ws.config.correlation)?.0)?,
         "blast" => serde_json::to_value(query::blast(&snap, arg(p, "app")?, 8, None)?)?,
-        "similar" => serde_json::to_value(query::similar(&snap, arg(p, "incident")?, &ws.config.correlation, 5)?)?,
+        "similar" => serde_json::to_value(query::similar(&snap, arg(p, "incident")?, &ws.config.correlation, 5, &mut Default::default())?)?,
         "code" => serde_json::to_value(ws.code(&snap, arg(p, "incident")?, p.get("top").and_then(Value::as_u64).unwrap_or(5) as usize)?)?,
         "why" => serde_json::to_value(query::why(&snap, arg(p, "node")?, Some(ws.config.correlation.window_s))?)?,
         "uses" => {
             let root = std::env::current_dir()?.join(&ws.root);
-            serde_json::to_value(query::uses(&ws.store, &ws.ontology, &ws.config.correlation, &query::source_key(&root, &root, arg(p, "source")?))?)?
+            serde_json::to_value(query::uses(&snap, &ws.ontology, &ws.config.correlation, &query::source_key(&root, &root, arg(p, "source")?))?)?
         }
         "news" => {
-            let since = p.get("since").and_then(Value::as_str).map(|d| query::duration_s(d).map(|d| crate::workspace::now_ms() - d * 1000)).transpose()?;
+            let since = p.get("since").and_then(Value::as_str).map(crate::workspace::when_ms).transpose()?;
             serde_json::to_value(query::news(&snap, since)?)?
         }
         "sparql" => {
@@ -306,6 +306,12 @@ pub fn run(ws: Workspace, addr: &str, mcp: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Whether MCP offers the tool `name`. `call` also serves JSON-RPC methods such as `harvest`,
+/// which an MCP client, told that only `verdict` writes, must not reach.
+fn listed(name: &str) -> bool {
+    tools().as_array().is_some_and(|t| t.iter().any(|t| t["name"] == name))
+}
+
 /// MCP over stdio: initialize, tools, resources with one template, and one prompt.
 fn mcp_stdio(ws: &Workspace) -> anyhow::Result<()> {
     let stdin = std::io::stdin();
@@ -326,7 +332,8 @@ fn mcp_stdio(ws: &Workspace) -> anyhow::Result<()> {
             "tools/call" => {
                 let p = &req["params"];
                 let name = p.get("name").and_then(Value::as_str).unwrap_or("");
-                Ok(match call(ws, name, p.get("arguments").unwrap_or(&Value::Null)) {
+                let answer = if listed(name) { call(ws, name, p.get("arguments").unwrap_or(&Value::Null)) } else { Err(anyhow::anyhow!("unknown tool {name}")) };
+                Ok(match answer {
                     Ok(v) => json!({"content": [{"type": "text", "text": v.to_string()}]}),
                     Err(e) => json!({"content": [{"type": "text", "text": format!("{e:#}")}], "isError": true}),
                 })
@@ -354,6 +361,7 @@ mod tests {
         let writers: Vec<&str> = hints.iter().filter(|h| !h.1).map(|h| h.0.as_str()).collect();
         assert_eq!(writers, ["verdict"]);
         assert_eq!(hints.len(), 13);
+        assert!(listed("before") && listed("verdict") && !listed("harvest") && !listed("tools"));
     }
 
     #[test]

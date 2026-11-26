@@ -130,13 +130,9 @@ impl Store {
         Ok(f)
     }
 
+    /// Every commit is durable: redb refuses non-durable commits on a file shared between
+    /// processes (see [`Store::open`]).
     pub fn transact<R>(&self, f: impl FnOnce(&mut Tx<'_>) -> Result<R>) -> Result<R> {
-        self.transact_with(true, f)
-    }
-
-    /// Every commit is durable whatever `durable` says: redb refuses non-durable commits on a
-    /// file shared between processes (see [`Store::open`]).
-    pub fn transact_with<R>(&self, _durable: bool, f: impl FnOnce(&mut Tx<'_>) -> Result<R>) -> Result<R> {
         self.transact_at(now_ms(), f)
     }
 
@@ -152,11 +148,6 @@ impl Store {
         };
         txn.commit()?;
         Ok(out)
-    }
-
-    /// Nothing to do: every commit is durable (see [`Store::transact_with`]).
-    pub fn flush(&self) -> Result<()> {
-        Ok(())
     }
 
     pub fn snapshot(&self) -> Result<Snapshot> {
@@ -286,14 +277,6 @@ impl<'t> Tx<'t> {
         Ok(id)
     }
 
-    pub fn term(&self, id: Id) -> Result<Term> {
-        if let Some(t) = term::inline_term(id) {
-            return Ok(t);
-        }
-        let bytes = self.id2term.get(id)?.ok_or_else(|| corrupted(format!("id {id} has no term")))?;
-        Ok(term::decode(bytes.value()))
-    }
-
     fn union_objects(&self, s: Id, p: Id) -> Result<Vec<Id>> {
         self.union[0].range([s, p, 0]..=[s, p, Id::MAX])?.map(|r| Ok(r?.0.value()[2])).collect()
     }
@@ -304,11 +287,11 @@ impl<'t> Tx<'t> {
         quads.dedup();
         let mut fresh = Vec::with_capacity(quads.len());
         for q in quads {
-            if self.named[0].get(permute(&NAMED_ORDER[0], &q))?.is_none() {
+            if self.named[0].insert(permute(&NAMED_ORDER[0], &q), ())?.is_none() {
                 fresh.push(q);
             }
         }
-        for (table, order) in self.named.iter_mut().zip(&NAMED_ORDER) {
+        for (table, order) in self.named.iter_mut().zip(&NAMED_ORDER).skip(1) {
             let mut keys: Vec<[Id; 4]> = fresh.iter().map(|q| permute(order, q)).collect();
             keys.sort_unstable();
             for k in keys {
@@ -423,7 +406,11 @@ impl<'t> Tx<'t> {
                 Some(at) => at,
                 None => match born.get(&g) {
                     Some(&at) => at,
-                    None => *born.entry(g).or_insert(self.born.get(g)?.map_or(0, |v| v.value())),
+                    None => {
+                        let at = self.born.get(g)?.map_or(0, |v| v.value());
+                        born.insert(g, at);
+                        at
+                    }
                 },
             };
             self.history.insert([g, s, p, o, since as u64], self.now)?;
@@ -836,6 +823,8 @@ impl Snapshot {
                     Err(e) => Some(Err(e)),
                 }
             })),
+            // Bound positions that lead spog: one range there, in the order the union would give.
+            GraphSel::AnyNamed if spo[0].is_some() && (spo[1].is_some() || spo[2].is_none()) => scan(&self.named[1..], &NAMED_ORDER[1..], pattern),
             GraphSel::AnyNamed => Box::new(scan(&self.union, &UNION_ORDER, [spo[0], spo[1], spo[2], None]).flat_map(move |q| {
                 let it: QuadIter<'_> = match q {
                     Ok([s, p, o, _]) => scan(&self.named[1..], &NAMED_ORDER[1..], [Some(s), Some(p), Some(o), None]),
@@ -858,8 +847,7 @@ impl Snapshot {
             return Ok(Some(id));
         }
         let bytes = term::encode(term);
-        let Some(id) = self.hash2id.get(term::hash(&bytes))?.map(|v| v.value()) else { return Ok(None) };
-        Ok(Some(id))
+        Ok(self.hash2id.get(term::hash(&bytes))?.map(|v| v.value()))
     }
 
     pub fn iri(&self, iri: &str) -> Result<Option<Id>> {
@@ -888,7 +876,6 @@ impl Snapshot {
         self.quads([None, Some(p), Some(o)], GraphSel::Union).map(|q| q.map(|q| q[0])).collect()
     }
 
-
     /// Events on `app` at `[from, to]`, in time order, as `(time id, event)`.
     pub fn events_on(&self, app: Id, from: Id, to: Id) -> Result<Vec<(Id, Id)>> {
         // The time index describes the store now, so an earlier view reads the facts instead.
@@ -915,6 +902,13 @@ impl Snapshot {
             let (k, v) = r?;
             Ok((k.value(), v.value()))
         }).collect()
+    }
+
+    pub fn has_graph(&self, g: Id) -> Result<bool> {
+        Ok(match &self.as_of {
+            Some(a) => a.graphs.iter().any(|&(x, _)| x == g),
+            None => self.graphs.get(g)?.is_some(),
+        })
     }
 
     pub fn graphs_of(&self, spo: [Id; 3]) -> Result<Vec<Id>> {

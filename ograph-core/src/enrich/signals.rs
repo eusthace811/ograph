@@ -178,17 +178,17 @@ pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<(Batch, Vec
     type Lines = Vec<(i64, usize, bool)>;
     let mut per: BTreeMap<String, (Drain, Lines, Vec<String>)> = BTreeMap::new();
     for line in text.lines() {
-        let (svc, t, msg, level) = if line.trim_start().starts_with('{') {
+        // Borrowed where the line allows: a message is copied only to be kept.
+        let (svc, t, msg, level): (Cow<str>, i64, Cow<str>, Option<Cow<str>>) = if line.trim_start().starts_with('{') {
             let Ok(f) = json_fields(line, ["ts", "timestamp", "time", "service", "container_name", "app", "message", "msg", "log", "level", "severity"]) else { continue };
             let Some(t) = f[0..3].iter().flatten().find_map(|v| raw_time(v)) else { continue };
-            let svc = first_str(&f[3..6]).map_or_else(|| stem.clone(), Cow::into_owned);
-            (svc, t, first_str(&f[6..9]).map(Cow::into_owned).unwrap_or_default(), first_str(&f[9..11]).map(|l| l.to_lowercase()))
+            (first_str(&f[3..6]).unwrap_or(Cow::Borrowed(&stem)), t, first_str(&f[6..9]).unwrap_or_default(), first_str(&f[9..11]))
         } else {
             let (Some(t), rest) = super::drain::leading_timestamp(line) else { continue };
-            (stem.clone(), t * 1000, rest.to_owned(), None)
+            (Cow::Borrowed(&stem), t * 1000, Cow::Borrowed(rest), None)
         };
-        let errorish = level.as_deref().is_some_and(|l| matches!(l, "error" | "err" | "fatal" | "critical" | "warn" | "warning")) || error_like().is_match(&msg);
-        let entry = per.entry(svc).or_default();
+        let errorish = level.is_some_and(|l| ["error", "err", "fatal", "critical", "warn", "warning"].iter().any(|k| l.eq_ignore_ascii_case(k))) || error_like().is_match(&msg);
+        let entry = per.entry(svc.into_owned()).or_default();
         let Some(idx) = entry.0.add(&msg) else { continue };
         entry.1.push((t, idx, errorish));
         if locate {
@@ -196,12 +196,12 @@ pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<(Batch, Vec
                 entry.2.resize(idx + 1, String::new());
             }
             if entry.2[idx].is_empty() {
-                entry.2[idx] = msg;
+                entry.2[idx] = msg.into_owned();
             }
         }
     }
-    let m = Extraction::Rule { extractor: "drain-burst".into() };
-    let new_m = Extraction::Rule { extractor: "drain-new-message".into() };
+    let (m, new_m) = (Extraction::Rule { extractor: "drain-burst".into() }, Extraction::Rule { extractor: "drain-new-message".into() });
+    let (log_burst, new_message) = (("log", "LOG_ERROR", &m), ("log-new", "LOG_NEW", &new_m));
     let mut fired = Vec::new();
     for (svc, (drain, lines, examples)) in per {
         let Some(t0) = lines.iter().map(|l| l.0).min() else { continue };
@@ -218,6 +218,17 @@ pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<(Batch, Vec
         }
         for (idx, minutes) in buckets {
             let text = drain.templates.get(idx).map(|t| t.text()).unwrap_or_default();
+            let example = examples.get(idx).filter(|x| !x.trim().is_empty());
+            // One LOG_ERROR event of a kind at `first`, and a burst to locate in the code.
+            let mut emit = |(prefix, signal, m): (&str, &'static str, &Extraction), severity: &'static str, value: Option<f64>, count: usize, first: i64| {
+                let ev = b.record(format!("{key}@{first}"));
+                let s = known("ev", &format!("{prefix}/{}/{}/{first}", slug(&svc), &hex::encode(crate::gateway::sha2_hash(&text))[..12]));
+                let e = Event { class: evt::LOG_ERROR, on: &svc, at: first, signal, severity, value };
+                event(&mut b, &s, e, [(evt::TEMPLATE, lit(text.chars().take(300).collect::<String>())), (evt::COUNT, lit(Literal::from(count as i64)))], &ev, m);
+                if let Some(example) = example {
+                    fired.push(Burst { event: s, evidence: ev, template: text.clone(), example: example.clone() });
+                }
+            };
             let mut fired_until = i64::MIN;
             let mut bursts: Vec<i64> = Vec::new();
             for (&minute, &(count, first)) in &minutes {
@@ -230,14 +241,7 @@ pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<(Batch, Vec
                 fired_until = minute + 5;
                 bursts.push(minute);
                 let ratio = count as f64 / prior.max(0.2);
-                let ev = b.record(format!("{key}@{}", first));
-                let s = known("ev", &format!("log/{}/{}/{first}", slug(&svc), &hex::encode(crate::gateway::sha2_hash(&text))[..12]));
-                let e = Event { class: evt::LOG_ERROR, on: &svc, at: first, signal: "LOG_ERROR", severity: severity(strength(ratio * 5.0)), value: Some(ratio * 5.0) };
-                let details = [(evt::TEMPLATE, lit(text.chars().take(300).collect::<String>())), (evt::COUNT, lit(Literal::from(count as i64)))];
-                event(&mut b, &s, e, details, &ev, &m);
-                if let Some(example) = examples.get(idx).filter(|x| !x.trim().is_empty()) {
-                    fired.push(Burst { event: s, evidence: ev, template: text.clone(), example: example.clone() });
-                }
+                emit(log_burst, severity(strength(ratio * 5.0)), Some(ratio * 5.0), count, first);
             }
             // A message the service never wrote before: one or two error lines are too few
             // for a burst, and they are often the first sign of a change. A burst in the same
@@ -248,14 +252,7 @@ pub fn logs(path: &Path, key: &str, ctx: &Ctx<'_>) -> anyhow::Result<(Batch, Vec
                 continue;
             }
             let count: usize = minutes.range(minute..=minute + 5).map(|(_, x)| x.0).sum();
-            let ev = b.record(format!("{key}@{}", first));
-            let s = known("ev", &format!("log-new/{}/{}/{first}", slug(&svc), &hex::encode(crate::gateway::sha2_hash(&text))[..12]));
-            let e = Event { class: evt::LOG_ERROR, on: &svc, at: first, signal: "LOG_NEW", severity: "SEV4", value: None };
-            let details = [(evt::TEMPLATE, lit(text.chars().take(300).collect::<String>())), (evt::COUNT, lit(Literal::from(count as i64)))];
-            event(&mut b, &s, e, details, &ev, &new_m);
-            if let Some(example) = examples.get(idx).filter(|x| !x.trim().is_empty()) {
-                fired.push(Burst { event: s, evidence: ev, template: text.clone(), example: example.clone() });
-            }
+            emit(new_message, "SEV4", None, count, first);
         }
     }
     Ok((b, fired))
@@ -322,7 +319,7 @@ fn locate(ctx: &Ctx<'_>, bursts: &[Burst]) -> (Vec<Option<String>>, Vec<String>)
                 }
             }
             Err(e) => {
-                let stop = matches!(e, ogrep::Failure::NotRunnable(_));
+                let stop = e.stops_all();
                 notes.push(e.to_string());
                 if stop {
                     break;
@@ -365,10 +362,7 @@ pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
         let f = json_fields(record, keys)?;
         let (Some(svc), Some(start)) = (first_str(&f[0..2]), f[2..4].iter().flatten().find_map(|v| raw_time(v))) else { continue };
         let dur = f[4..6].iter().flatten().find_map(|v| raw_f64(v).or_else(|| raw_str(v)?.parse().ok())).unwrap_or(0.0);
-        let error = f[6].or(f[7]).is_some_and(|v| match raw_str(v) {
-            Some(s) => matches!(s.to_lowercase().as_str(), "error" | "2" | "status_code_error"),
-            None => serde_json::from_str::<i64>(v.get()).is_ok_and(|n| n == 2 || n >= 400),
-        });
+        let error = f[6].or(f[7]).is_some_and(span_failed);
         let trace = first_str(&f[12..14]);
         if let Some(id) = first_str(&f[8..10]) {
             by_id.insert((trace.clone(), id), spans.len());
@@ -445,9 +439,31 @@ pub fn traces(path: &Path, key: &str, d: &Detect) -> anyhow::Result<Batch> {
     Ok(b)
 }
 
+/// A span status that says it failed: OpenTelemetry's ERROR (`2`, `error`, `STATUS_CODE_ERROR`)
+/// or an HTTP status of 400 and above, written as a number or as a string.
+fn span_failed(v: &RawValue) -> bool {
+    let code = match raw_str(v) {
+        Some(s) if matches!(s.to_lowercase().as_str(), "error" | "status_code_error") => return true,
+        Some(s) => s.trim().parse::<i64>().ok(),
+        None => serde_json::from_str::<i64>(v.get()).ok(),
+    };
+    code.is_some_and(|n| n == 2 || n >= 400)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_span_is_told_by_its_status_as_a_number_or_a_string() {
+        let failed = |s: &str| super::span_failed(&serde_json::value::RawValue::from_string(s.to_owned()).unwrap());
+        for yes in ["500", "\"500\"", "2", "\"2\"", "\"error\"", "\"STATUS_CODE_ERROR\"", "404"] {
+            assert!(failed(yes), "{yes}");
+        }
+        for no in ["200", "\"200\"", "0", "\"ok\"", "\"unset\""] {
+            assert!(!failed(no), "{no}");
+        }
+    }
 
     #[test]
     fn a_spike_in_minute_samples_is_an_episode() {

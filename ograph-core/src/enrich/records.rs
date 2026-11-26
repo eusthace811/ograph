@@ -3,7 +3,7 @@
 //! counting from 1 (an array element, or a non-blank JSON line).
 
 use super::{Ctx, Event, EvidenceRef, app, dt, event, json_records, ogrep, parse_time, rel, str_field};
-use crate::model::{Batch, Confidence, EntityRef, Extraction, Object, entity, known, lit, obj, slug};
+use crate::model::{Batch, EntityRef, Extraction, Object, entity, known, lit, obj, slug};
 use crate::vocab::{RDF_TYPE, evt, inc, ops};
 use oxrdf::NamedNode;
 use serde::Deserialize;
@@ -130,7 +130,7 @@ pub fn incidents(files: &[(PathBuf, String, bool)], mut degraded: Vec<String>, c
     let mut kept: HashMap<(&str, &str), usize> = HashMap::new();
     // Values outside a closed vocabulary take no part in the merge; each goes to the gateway,
     // which quarantines it for that reason.
-    let mut invalid: Vec<(usize, &str)> = Vec::new();
+    let mut invalid: std::collections::HashSet<(usize, &str)> = std::collections::HashSet::new();
     let valid = |n: usize, p: &str| match (ctx.ontology.vocabulary(p), &value(n, p).unwrap().object) {
         (Some(v), Object::Literal(l)) => v.iter().any(|x| x.value == l.value()),
         _ => true,
@@ -214,12 +214,7 @@ fn fault_prompt(ont: &crate::ontology::Ontology) -> String {
         "You classify the fault an incident title states. Reply with one JSON object and nothing else:\n\
          {\"fault_class\": <one value>, \"quote\": <the words of the title that state the fault, copied exactly, or null>, \"confidence\": <0 to 1>}\n\nAllowed fault_class values:\n",
     );
-    for t in ont.vocabulary(inc::FAULT_CLASS).unwrap_or_default() {
-        match &t.definition {
-            Some(d) => p.push_str(&format!("- {}: {d}\n", t.value)),
-            None => p.push_str(&format!("- {}\n", t.value)),
-        }
-    }
+    super::push_vocabulary(&mut p, ont, inc::FAULT_CLASS);
     p.push_str("\nUse only these values. When the title names only a symptom (errors, slow, down) and not the kind of fault, answer UNKNOWN with quote null; do not guess. The title:\n");
     p
 }
@@ -240,10 +235,10 @@ fn fault_classes(b: &mut Batch, ctx: &Ctx<'_>, titles: Vec<(EntityRef, EvidenceR
     let texts: Vec<String> = titles.iter().map(|t| t.2.clone()).collect();
     let valid = ctx.ontology.vocabulary(inc::FAULT_CLASS).unwrap_or_default();
     for ((node, ev, title), answer) in titles.into_iter().zip(llm.ask_all(&p, &texts)) {
-        let v = match answer.map(|a| crate::llm::first_json(&a).ok_or(a)) {
+        let v = match answer.map(|a| super::model_json(&a)) {
             Ok(Ok(v)) => v,
-            Ok(Err(a)) => {
-                b.degraded.push(format!("model answer was not JSON: {}", a.chars().take(80).collect::<String>()));
+            Ok(Err(note)) => {
+                b.degraded.push(note);
                 continue;
             }
             Err(e) => {
@@ -252,7 +247,7 @@ fn fault_classes(b: &mut Batch, ctx: &Ctx<'_>, titles: Vec<(EntityRef, EvidenceR
             }
         };
         let Some(c) = str_field(&v, &["fault_class"]) else { continue };
-        let confidence = v.get("confidence").and_then(|c| c.as_f64()).and_then(Confidence::new).unwrap_or(Confidence::new(0.0).unwrap());
+        let confidence = super::stated_confidence(&v);
         let m = Extraction::Llm { model: llm.config.model.clone(), prompt_hash: prompt_hash.clone(), confidence };
         let stated = str_field(&v, &["quote"]).is_some_and(|q| crate::llm::quoted(&title, q));
         let known = valid.iter().any(|t| t.value == c);

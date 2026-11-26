@@ -1,6 +1,7 @@
 //! `ograph`: an ontology-driven observability knowledge graph on the command line.
 //! Exit codes follow ogrep: 0 found something, 1 found nothing, 2 error.
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use ograph_core::correlate::{self, RankMode};
 use ograph_core::query;
@@ -104,6 +105,7 @@ enum Cmd {
     },
     /// News that mentions vendors our applications use (Q4)
     News {
+        /// Only news since then: a dateTime with a zone, or how long ago (90m, 7d)
         #[arg(long)]
         since: Option<String>,
     },
@@ -276,11 +278,8 @@ fn print_suspects(suspects: &[query::Suspect]) {
 }
 
 /// `st` with each `--set key=value` applied; a value that is not JSON is a string.
-fn with_sets(st: correlate::Settings, set: &[String]) -> anyhow::Result<correlate::Settings> {
-    if set.is_empty() {
-        return Ok(st);
-    }
-    let mut v = serde_json::to_value(&st)?;
+fn with_sets(st: &correlate::Settings, set: &[String]) -> anyhow::Result<correlate::Settings> {
+    let mut v = serde_json::to_value(st)?;
     for kv in set {
         let (k, val) = kv.split_once('=').ok_or_else(|| anyhow::anyhow!("--set wants key=value"))?;
         anyhow::ensure!(v.get(k).is_some(), "--set: no setting {k}");
@@ -292,6 +291,16 @@ fn with_sets(st: correlate::Settings, set: &[String]) -> anyhow::Result<correlat
 }
 
 fn main() -> ExitCode {
+    // `ograph ... | head`: a reader that stops early is no error, but println! panics on the
+    // closed pipe. End quietly instead. Harvest writes its progress with writeln and goes on.
+    let report = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let p = info.payload();
+        if p.downcast_ref::<String>().map(String::as_str).or_else(|| p.downcast_ref::<&str>().copied()).is_some_and(|m| m.starts_with("failed printing to stdout") && m.contains("Broken pipe")) {
+            std::process::exit(0);
+        }
+        report(info)
+    }));
     let cli = Cli::parse();
     match run(cli) {
         Ok(true) => ExitCode::SUCCESS,
@@ -315,7 +324,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         Some(r) => r,
         None => workspace::find(&cwd).ok_or_else(|| anyhow::anyhow!("no .ograph/ here or above; run `ograph init`"))?,
     };
-    let ws = if matches!(cli.cmd, Cmd::Status | Cmd::Uses { .. }) { Workspace::open_reading(&root)? } else { Workspace::open(&root)? };
+    // Only these write the store; every other command opens it without marking the file.
+    let writes = matches!(cli.cmd, Cmd::Harvest { .. } | Cmd::Verdict { .. } | Cmd::Compact | Cmd::Serve { .. });
+    let ws = if writes { Workspace::open(&root)? } else { Workspace::open_reading(&root)? };
     let json = cli.json;
     match cli.cmd {
         Cmd::Init => unreachable!(),
@@ -388,9 +399,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             if let Some(w) = window {
                 st.window_s = query::duration_s(&w)?;
             }
-            let st = with_sets(st, &set)?;
+            let st = with_sets(&st, &set)?;
             let i = query::lookup(&snap, &incident)?;
-            let mut a = query::chains(&snap, &ids, i, &st)?;
+            let mut a = query::chains(&snap, &ids, i, &st, &mut Default::default())?;
             let (suspects, degraded) = ws.fallback_suspects(&snap, &a, &incident, &st);
             a.apps.truncate(top);
             let shift = match &since {
@@ -410,12 +421,12 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                         println!("     {}:{} was accepted as the cause of {} (similarity {:.3}{gain}): {}", p.app, p.signal, p.incident, p.similarity, p.evidence.join("; "));
                     }
                     if let Some(c) = &r.chain {
-                        let path: Vec<String> = std::iter::once(&c.root).chain(&c.links).map(|s| format!("{}:{}", s.app_name, s.kind)).collect();
+                        let path: Vec<String> = c.events().map(|s| format!("{}:{}", s.app_name, s.kind)).collect();
                         println!("     {} {:.2}: {} -> incident", ograph_core::vocab::compact(&c.id), c.confidence, path.join(" -> "));
                         for l in &c.scores {
                             println!("       {:.2}  {} -> {}  ({})", l.score, l.from, l.to, link_basis(l));
                         }
-                        for sig in std::iter::once(&c.root).chain(&c.links) {
+                        for sig in c.events() {
                             if let Some(ch) = &sig.chronic {
                                 println!("       chronic {}:{}: {ch}", sig.app_name, sig.kind);
                             }
@@ -428,20 +439,16 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 print_withheld(&a.withheld);
             };
             warn(&degraded);
-            if suspects.is_empty() && shift.is_none() {
-                print(json, &a, human);
-            } else {
-                print(json, &query::Chains { analysis: a, suspects, shift }, |c| {
-                    human(&c.analysis);
-                    if !c.suspects.is_empty() {
-                        println!("no application ranked from telemetry; these come from the dependency graph and recent commits, not from telemetry:");
-                        print_suspects(&c.suspects);
-                    }
-                    if let Some(s) = &c.shift {
-                        print_shift(s);
-                    }
-                });
-            }
+            print(json, &query::Chains { analysis: a, suspects, shift }, |c| {
+                human(&c.analysis);
+                if !c.suspects.is_empty() {
+                    println!("no application ranked from telemetry; these come from the dependency graph and recent commits, not from telemetry:");
+                    print_suspects(&c.suspects);
+                }
+                if let Some(s) = &c.shift {
+                    print_shift(s);
+                }
+            });
             Ok(found)
         }
         Cmd::Suspects { target, since } => {
@@ -453,7 +460,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         }
         Cmd::Similar { incident, top } => {
             let snap = ws.store.snapshot()?;
-            let v = query::similar(&snap, &incident, &ws.config.correlation, top)?;
+            let v = query::similar(&snap, &incident, &ws.config.correlation, top, &mut Default::default())?;
             let found = !v.is_empty();
             print(json, &v, |v| {
                 for s in v {
@@ -514,7 +521,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         }
         Cmd::News { since } => {
             let snap = ws.store.snapshot()?;
-            let since = since.map(|s| query::duration_s(&s).map(|d| workspace::now_ms() - d * 1000)).transpose()?;
+            let since = since.as_deref().map(workspace::when_ms).transpose()?;
             let v = query::news(&snap, since)?;
             let found = !v.is_empty();
             print(json, &v, |v| {
@@ -554,7 +561,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             Ok(!p.facts.is_empty())
         }
         Cmd::Uses { source } => {
-            let u = query::uses(&ws.store, &ws.ontology, &ws.config.correlation, &query::source_key(&ws.root, &cwd, &source))?;
+            let u = query::uses(&ws.store.snapshot()?, &ws.ontology, &ws.config.correlation, &query::source_key(&ws.root, &cwd, &source))?;
             for w in &u.warnings {
                 eprintln!("warning: {w}");
             }
@@ -589,7 +596,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         }
         Cmd::Replay { set } => {
             let snap = ws.store.snapshot()?;
-            let st = with_sets(ws.config.correlation.clone(), &set)?;
+            let st = with_sets(&ws.config.correlation, &set)?;
             let r = query::replay(&snap, &st, &ws.config.correlation)?;
             print(json, &r, |r| {
                 let incidents: std::collections::BTreeSet<&str> = r.verdicts.iter().map(|v| v.incident.as_str()).collect();
@@ -630,7 +637,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             Ok(r.results.iter().any(|m| m.status == query::MentionStatus::Resolved))
         }
         Cmd::CiteCheck { file } => {
-            let text = if file.as_os_str() == "-" { std::io::read_to_string(std::io::stdin())? } else { std::fs::read_to_string(&file)? };
+            let text = if file.as_os_str() == "-" { std::io::read_to_string(std::io::stdin())? } else { std::fs::read_to_string(&file).with_context(|| file.display().to_string())? };
             let snap = ws.store.snapshot()?;
             let c = ograph_core::cite::check(&snap, &text)?;
             print(json, &c, |c| {
@@ -718,7 +725,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         Cmd::Export { out } => {
             let snap = ws.store.snapshot()?;
             let path = out.unwrap_or_else(|| ws.dir.join("export.trig"));
-            let n = ograph_core::export::trig(&snap, &path)?;
+            let n = ograph_core::export::trig(&snap, &path).with_context(|| path.display().to_string())?;
             print(json, &serde_json::json!({"quads": n, "path": path}), |_| println!("wrote {n} quads to {}", path.display()));
             Ok(n > 0)
         }
@@ -726,17 +733,17 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
             if action == "coverage" {
                 let file = other.ok_or_else(|| anyhow::anyhow!("ontology coverage needs a file of questions, one per line"))?;
                 let llm = ws.llm().ok_or_else(|| anyhow::anyhow!("ontology coverage needs a model: add [llm.extract] to .ograph/config.toml"))?;
-                let questions: Vec<String> = std::fs::read_to_string(file)?.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_owned).collect();
+                let questions: Vec<String> = std::fs::read_to_string(&file).with_context(|| file.display().to_string())?.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_owned).collect();
                 let catalog = ograph_core::gateway::Catalog::from_snapshot(&ws.store.snapshot()?, None)?;
                 let is_entity = |t: &str| matches!(catalog.resolve(ograph_core::vocab::ops::APPLICATION, t), ograph_core::gateway::Resolution::Exact(_));
                 let mut report = ograph_core::coverage::report(&ws.ontology, &llm, &questions, is_entity);
                 let declined = ws.dir.join("declined.ttl");
                 if declined.exists() {
-                    let d = ograph_core::coverage::declines(&std::fs::read_to_string(&declined)?).map_err(|e| e.context(declined.display().to_string()))?;
+                    let d = ograph_core::coverage::declines(&std::fs::read_to_string(&declined).with_context(|| declined.display().to_string())?).map_err(|e| e.context(declined.display().to_string()))?;
                     ograph_core::coverage::decline(&mut report, &d);
                 }
                 let path = out.unwrap_or_else(|| ws.dir.join("proposed.ttl"));
-                std::fs::write(&path, ograph_core::coverage::proposals(&report))?;
+                std::fs::write(&path, ograph_core::coverage::proposals(&report)).with_context(|| path.display().to_string())?;
                 let gaps = report.iter().filter(|c| !c.gaps.is_empty() || c.failed.is_some()).count();
                 print(json, &report, |r| {
                     for c in r {
@@ -775,8 +782,8 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 anyhow::ensure!(other.is_some() || shapes.is_some(), "ontology diff needs the newer ontology.ttl, --shapes FILE, or both");
                 let read = |p: Option<PathBuf>, name: &str, default: &str| -> anyhow::Result<String> {
                     match p {
-                        Some(p) => Ok(std::fs::read_to_string(p)?),
-                        None => Ok(std::fs::read_to_string(ws.dir.join(name)).unwrap_or_else(|_| default.to_owned())),
+                        Some(p) => std::fs::read_to_string(&p).with_context(|| p.display().to_string()),
+                        None => workspace::read_setting(&ws.dir, name, default),
                     }
                 };
                 let newer = ograph_core::ontology::Ontology::load(&read(other, "ontology.ttl", ograph_core::ontology::DEFAULT_TTL)?, &read(shapes, "shapes.ttl", ograph_core::ontology::DEFAULT_SHAPES)?)?;
@@ -814,7 +821,7 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
         Cmd::Lab { out } => {
             let snap = ws.store.snapshot()?;
             let path = out.unwrap_or_else(|| ws.dir.join("lab.html"));
-            std::fs::write(&path, ograph_core::lab::page(&snap, &ws.config.correlation)?)?;
+            std::fs::write(&path, ograph_core::lab::page(&snap, &ws.config.correlation)?).with_context(|| path.display().to_string())?;
             print(json, &path, |p| println!("wrote {}", p.display()));
             Ok(true)
         }

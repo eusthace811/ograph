@@ -44,7 +44,7 @@ pub struct Ontology {
     pub version: String,
 }
 
-fn parse(ttl: &str) -> anyhow::Result<Graph> {
+pub(crate) fn parse(ttl: &str) -> anyhow::Result<Graph> {
     let mut g = Graph::new();
     for t in oxttl::TurtleParser::new().for_slice(ttl) {
         g.insert(&t?);
@@ -130,6 +130,7 @@ impl Ontology {
         let derived = ont.derived_shapes();
         ont.derived = derived.len();
         ont.shapes = Shapes::parse(&parse(shapes_ttl)?).after(derived);
+        anyhow::ensure!(ont.shapes.problems.is_empty(), "shapes.ttl: {}", ont.shapes.problems.join("; "));
         Ok(ont)
     }
 
@@ -194,7 +195,7 @@ impl Ontology {
         &self.shapes.shapes[self.derived..]
     }
 
-    fn comment(&self, iri: &str) -> Option<String> {
+    pub(crate) fn comment(&self, iri: &str) -> Option<String> {
         match self.graph.object_for_subject_predicate(NamedNode::new_unchecked(iri).as_ref(), rdfs::COMMENT) {
             Some(oxrdf::TermRef::Literal(l)) => Some(l.value().to_owned()),
             _ => None,
@@ -314,17 +315,12 @@ impl Ontology {
         problems
     }
 
-    /// `class` and every class it is a subclass of, or `None` when it is not declared.
-    fn closure(&self, class: &str) -> Option<&BTreeSet<String>> {
-        self.classes.get(class)
-    }
-
     /// Whether every value `old` admits, `new` admits too: a superclass, or no constraint at all.
     fn widens(&self, old: Option<&str>, new: Option<&str>) -> bool {
         match (old, new) {
             (_, None) => true,
             (None, Some(_)) => false,
-            (Some(o), Some(n)) => o == n || self.closure(o).is_some_and(|c| c.contains(n)),
+            (Some(o), Some(n)) => o == n || self.classes.get(o).is_some_and(|c| c.contains(n)),
         }
     }
 

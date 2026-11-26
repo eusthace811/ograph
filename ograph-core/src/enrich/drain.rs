@@ -3,7 +3,7 @@
 use rustc_hash::FxHashMap;
 
 /// Share of token positions that must agree for a line to join a template.
-pub const SIMILARITY: f64 = 0.5;
+const SIMILARITY: f64 = 0.5;
 /// How masked and generalised positions are shown.
 const WILDCARD: &str = "<*>";
 
@@ -39,7 +39,6 @@ impl Template {
         let shown: Vec<&str> = self.tokens.iter().map(Token::as_str).collect();
         shown.join(" ")
     }
-
 }
 
 /// Seconds since the epoch for a leading ISO 8601 timestamp, and the rest of
@@ -80,12 +79,39 @@ pub fn leading_timestamp(line: &str) -> (Option<i64>, &str) {
         }
     }
     let mut offset = 0i64;
+    // `17:30:00 +0530 INFO`: after one space only a full offset that ends the line or comes
+    // before a capitalised word (a zone or a level), so `-1000 rows dropped` stays message text.
+    let digit = |i: usize| b.get(i).is_some_and(u8::is_ascii_digit);
+    let full = if (2..6).all(|k| digit(end + k)) {
+        Some(end + 6)
+    } else if digit(end + 2) && digit(end + 3) && b.get(end + 4) == Some(&b':') && digit(end + 5) && digit(end + 6) {
+        Some(end + 7)
+    } else {
+        None
+    };
+    let then = |i: usize| match b.get(i) {
+        None | Some(b']') => true,
+        Some(b' ') => b.get(i + 1).is_some_and(|c| c.is_ascii_uppercase() || *c == b'['),
+        _ => false,
+    };
+    if b.get(end) == Some(&b' ') && matches!(b.get(end + 1), Some(b'+' | b'-')) && full.is_some_and(then) {
+        end += 1;
+    }
     match b.get(end) {
         Some(b'Z') => end += 1,
-        Some(&c) if (c == b'+' || c == b'-') && b.len() >= end + 6 && b[end + 3] == b':' => {
-            if let (Some(oh), Some(om)) = (digits(end + 1..end + 3), digits(end + 4..end + 6)) {
-                offset = (oh * 3600 + om * 60) * if c == b'+' { 1 } else { -1 };
-                end += 6;
+        // +HH:MM, +HHMM (logback's Z) or +HH.
+        Some(&c) if c == b'+' || c == b'-' => {
+            let sign = if c == b'+' { 1 } else { -1 };
+            // Only an offset that exists: `-2024 rows` is message text.
+            if let Some(oh) = digits(end + 1..end + 3).filter(|&h| h <= 14) {
+                let colon = b.get(end + 3) == Some(&b':');
+                let m = end + 3 + usize::from(colon);
+                match digits(m..m + 2) {
+                    Some(om) if om < 60 => (offset, end) = ((oh * 3600 + om * 60) * sign, m + 2),
+                    Some(_) => {}
+                    None if !colon => (offset, end) = (oh * 3600 * sign, end + 3),
+                    None => {}
+                }
             }
         }
         _ => {}
@@ -228,5 +254,30 @@ impl Drain {
 
     fn word_id(&self, w: &str) -> u32 {
         self.vocab.get(w).copied().unwrap_or(UNKNOWN)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::leading_timestamp;
+
+    #[test]
+    fn a_leading_timestamp_takes_its_offset_in_any_iso_form() {
+        let utc = leading_timestamp("2024-03-01T12:00:00Z msg").0;
+        assert_eq!(utc, Some(1_709_294_400));
+        for line in ["2024-03-01T17:30:00+05:30 msg", "2024-03-01T17:30:00+0530 msg", "[2024-03-01 17:30:00.123+0530] msg"] {
+            assert_eq!(leading_timestamp(line), (utc, "msg"), "{line}");
+        }
+        assert_eq!(leading_timestamp("2024-03-01T07:00:00-05 msg"), (utc, "msg"));
+        assert_eq!(leading_timestamp("2024-03-01T12:00:00 -request msg"), (utc, "-request msg"));
+        // After a space only a full offset counts: a count or a size is message text.
+        assert_eq!(leading_timestamp("2024-03-01 17:30:00 +0530 INFO msg"), (utc, "INFO msg"));
+        assert_eq!(leading_timestamp("2024-03-01 07:00:00 -05:00"), (utc, ""));
+        assert_eq!(leading_timestamp("2024-03-01 12:00:00 -1000 rows dropped"), (utc, "-1000 rows dropped"));
+        assert_eq!(leading_timestamp("[2024-03-01 17:30:00 +0530] INFO msg"), (utc, "INFO msg"));
+        assert_eq!(leading_timestamp("2024-03-01 12:00:00 -10 items"), (utc, "-10 items"));
+        assert_eq!(leading_timestamp("2024-03-01 12:00:00 -12345 bytes"), (utc, "-12345 bytes"));
+        assert_eq!(leading_timestamp("2024-03-01 12:00:00 -2024 rows"), (utc, "-2024 rows"));
+        assert_eq!(leading_timestamp("2024-03-01T12:00:00+9999 msg"), (utc, "+9999 msg"));
     }
 }
