@@ -29,7 +29,7 @@ This copies Netflix's own choice, QuipuDB, an "RDF graph database, a distributed
 | Candidate | Verdict | Deciding evidence |
 |---|---|---|
 | HelixDB | Rejected | v3 is a 723K-line rewrite on a forked SlateDB that compiles C. It has no RDF, SHACL or named graphs. `crates/metrics` still declares AGPL-3.0, and embedded mode sends telemetry by default |
-| open-ontologies | Source of ideas | One author, 100K lines, git-patched Oxigraph plus RocksDB. Port its ideas: a three-valued SHACL verdict ("skipped constraint means no verdict"), the closed-vocabulary check for LLM output, ontology `plan` and `diff`, and bitemporal named graphs. Phase 12 built the recording-time half of the last one as a history of removed quads, not as versioned graphs (`docs/EVIDENCE.md`, lane G); the valid-time half is not built |
+| open-ontologies | Source of ideas | One author, 100K lines, git-patched Oxigraph plus RocksDB. Port its ideas: a three-valued SHACL verdict ("skipped constraint means no verdict"), the closed-vocabulary check for LLM output, ontology `plan` and `diff`, and bitemporal named graphs. Phase 12 built the recording-time half of the last one as a history of removed quads, not as versioned graphs (`docs/EVIDENCE.md`, lane G). Phase 13 built valid time for dependency edges only: each has a start (`ops:validFrom`), not an end (lane O) |
 | TrustGraph | Source of ideas | Python platform on Pulsar and Cassandra. Its extraction design is worth copying: show the LLM only the relevant slice of the ontology, let code mint IRIs, reject on domain and range. Its validator drops rejected facts silently, so we record every rejection |
 | Apache AGE | Optional sink, not the engine | On the same data the hybrid answers W2 in 0.28 ms warm and 5.3 ms on a new connection, against 0.10 ms in process on redb. Cypher variable-length paths never finished on the hub app, and Cypher writes have open lost-write bugs (#2491, #2494, #2485, #2620) |
 | Apache HugeGraph | Rejected | Slower than AGE on every workload. It needs a 2 GB heap and 10 s to start, has had no release since 2025-11, and has an open data-loss bug (#2258) |
@@ -251,6 +251,32 @@ Decisions the evidence changed:
 - **Phase 9 ported five ideas from NVIDIA auto-ontology, and the evidence cut two of the planned parts.**
   - Co-occurring events do not confirm a model-proposed dependency. They scored 0.18 precision on RCAEval against a 0.14 base rate. Only catalog and trace edges count.
   - No model reads runbooks for aliases. With a quote check it still added a false alias and found no true one the phrases missed.
+
+## Phase 13 status (2026-11-26)
+
+Phase 13 ran as lanes, each with a gate written before its code, then merged and gated again on one build (`docs/EVIDENCE.md`, Phase 13).
+
+Shipped and on by default:
+
+- **`ograph chains INC --since T`** (lane H). It ranks the incident at T and now, and when the order differs it names each source file that moved it, tested by ranking again without its change (`needed`) and with only its change (`enough`). The gate named exactly the touched file in 30 of 30 moved steps and nothing in 36 unmoved ones.
+- **`ograph uses PATH[#n]`** (lane R), also an MCP and JSON-RPC tool. It lists the facts, chains and verdicts a file or record feeds. Its predictions matched a real delete and re-harvest with precision and recall 1.000 on facts, chains and verdicts.
+- **Dated dependencies** (lane O, ontology 1.4). ogrep `--entities --dated` gives each dependency the commit since which the repository has held it, stored as `ops:validFrom`. `before`, `chains`, the lab and `blast --at` follow it only for a time at or after that date, and `withheld` lists the ones skipped. A dependency that came in the commit that declared its service gets no date. Dating costs 1.3 to 1.9 s per catalog harvest on two real repositories, under the 5 s set before the code.
+- **Operator actions from chat** (lane V). `actions` defaults to `true` on `discussions` sources after the C1 accuracy gate passed and the thread categories stayed 48 of 48 with actions on.
+- **`chronic` marking** (lane T). An event whose series fired at least twice in the correlation window before the incident is marked as likely background in `before`, `chains`, `why`, the lab and the MCP tools. It changes no score or rank. The MCP agent on Haiku went from 0.34 to 0.77 on held-out RCAEval cases, and from 0.60 to 0.79 on the distractor suite.
+- **`own_degradation`** (lane X). A known pair holds only within one application, and an application ranks above the applications its chain `explains`. It first shipped off: on held-out seed 9001 it was 3 better and 0 worse, p = 0.25. On a fresh 150-case distractor suite, generated after its gate was written, it was 29 better and 0 worse (p = 3.7e-09), with RCAEval rank 1 identical on 90 of 90, so it is now on. `own_degradation = false` restores the old ranking.
+- **Benchmark tooling** (lanes S and U). `skill_coverage.py` checks that the skill covers every command and that its examples run. `examples/distractors/` generates labeled incidents with one planted distractor each, run by `distractor_eval.py`. `misled_by.py` finds the first tool output that showed an agent its wrong answer. `agent_rca_eval.py --runner claude` runs the agent arms in headless Claude Code.
+
+Kept off:
+
+- **`known_apps`** (lane P), the catalog names a chat thread may mean. Round 1 recovered 11 of 12 refused mentions but lost precision (0.977 to 0.938) by priming the model on plain words. Round 2 never ran, because the model was out of quota. It works only with `actions = false`.
+
+Dropped:
+
+- **Ambiguous-name tie-breaking from context** (lane N). A census found 0 ties on the demo, the 90 RCAEval cases and the gateway gate, so there was nothing for the rule to settle. Nothing was built.
+- **`sparse` marking** (lane W, branch `lane-w-sparse`). It fixed the planted sparse distractor for both agent arms, but the skill arm lost on real data: 153/172 against 162/169 on RCAEval held-out cases and misses, 13 worse and 2 better (p = 0.007).
+- **The rank-1 agent guidance** (lane S). Its gate did not finish before the usage limit, so the merge reverted it to the earlier wording.
+
+Unchanged across the phase: RCAEval chain AC@1 0.93 and similar-incident top-1 0.92 (82/89).
 
 ## Open decisions
 

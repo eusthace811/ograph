@@ -2,7 +2,7 @@
 
 ograph builds an ontology-driven observability knowledge graph and queries it from the command line, in the way Netflix's "Ontology-Driven Observability" describes. It works the same way on a laptop and on a corporate network.
 
-- **Ingest.** It reads your catalog, deployments, config changes, commits, alerts, incidents, logs, metrics, traces, error reports, chat threads and news.
+- **Ingest.** It reads your catalog, deployments, config changes, commits, alerts, incidents, logs, metrics, traces, error reports, chat threads (with the operator actions they report) and news.
 - **The gateway.** Every proposed fact passes a validation gateway against the ontology before it is stored.
 - **The store.** Facts go into a pure-Rust quad store on redb.
 - **Questions.** It answers four investigation questions on native indexes.
@@ -38,6 +38,9 @@ ograph suspects INC-5377           # likely causes from dependencies and recent 
 ograph why id:inc/inc-4120         # provenance of every fact about a node
 ograph changes --since 2d          # what the sources state differently now than two days ago
 ograph chains INC-5377 --known-at 2d   # the answer the store gave then; also on before, blast, sparql
+ograph chains INC-5377 --since 2d      # which source files moved the ranking since then
+ograph uses alerts.json            # the facts, chains and verdicts a source file feeds
+ograph blast ledger-db --at INC-5377   # only through dependencies that held when it opened
 ograph verdict id:chain/inc-4120-1 accept --evidence PM-4120 --by oncall   # the chain ranked 1 now
 ograph sparql 'SELECT ?app WHERE { ?app ops:dependsOn+ id:app\/ledger-db }'
 ograph lab                         # one HTML page over the whole graph
@@ -55,6 +58,9 @@ ograph lab                         # one HTML page over the whole graph
 - **Each source file is one named graph.** Incidents share one, so an incident's fields merge across files. Re-harvesting writes only the difference.
 - **The questions run on native indexes.** A per-application time index answers "what happened before", and the dependency index answers "what does this affect". SPARQL, through Oxigraph's `spareval`, covers everything else.
 - **Correlation follows Netflix's published rule.** Known causal pairs carry a 0.9 prior. Other pairs score `time_proximity * 0.6 + severity * 0.4`, and chains under 0.6 are discarded. The window is 30 minutes. A chain is a hypothesis until someone records a verdict.
+- **A cascade ranks under its start.** A known pair holds only within one application, and an application ranks above the applications its chain `explains`: those whose own chains are a later part of its cascade. `own_degradation = false` restores the earlier ranking.
+- **Background is marked, not hidden.** An event whose series fired at least twice in the 30 minutes before the incident carries `chronic`, as likely background, in `before`, `chains`, `why`, the lab and the MCP tools. The mark changes no rank.
+- **Dependencies have dates.** ogrep dates each dependency by the catalog commit that added it (`ops:validFrom`). Correlation does not follow one added after an incident opened, and lists it under `withheld`.
 - **A model proposes, and data confirms.** A model-proposed dependency needs a catalog or trace edge behind it. A thread label needs a quote from the thread, or it becomes UNKNOWN. Aliases come only from phrases that state them outright.
 - **Models run through `pi`.** ograph holds no credentials. Answers are cached by content hash, so a re-harvest makes no model calls.
 
@@ -63,6 +69,8 @@ ograph lab                         # one HTML page over the whole graph
 | Check | Result |
 |---|---|
 | Root cause on RCAEval RE2-OB (90 labeled failures), held-out reps | AC@1 0.93, AC@3 0.98, Avg@5 0.98 (network loss 0.80, delay 0.87). The published numbers are TORAI 0.83/0.95/0.93, CIRCA 0.67/0.89/0.85 and BARO 0.67/0.82/0.80 |
+| Chain rank 1 on a fresh 150-case distractor suite (`examples/distractors`) | 143/150 with `own_degradation`, against 114/150 without: 29 better and 0 worse (p = 3.7e-09). RCAEval rank 1 identical on 90 of 90 |
+| An agent with ograph's MCP tools on Haiku, 55 held-out RCAEval cases, 3 runs each | 127/165 (0.77) with `chronic` marking, against 56/165 (0.34) without; better on 36 cases, worse on 2 |
 | Similar past incident shares the root cause | 0.92 top-1 (82 of 89) and 0.98 on the held-out reps (59 of 60), 0.94 top-3, against about 0.20 by chance |
 | SPARQL correctness against Oxigraph in memory | 0 mismatches over 41 queries on 3.5 M quads |
 | W2, the 10 minutes before an incident | 0.003 ms native, 0.16 ms SPARQL, 0.10 ms Oxigraph |
@@ -86,7 +94,8 @@ Every number comes from a script in `scripts/eval/` or a binary in `ograph-bench
 | `ograph-cli/` | The `ograph` binary |
 | `ograph-bench/` | `store_bench`, `gateway_eval`, `confirm_eval`, `shacl_case`, `purekg_bench` and `profile_query` |
 | `ontology/` | `ograph.ttl` (classes, properties, closed vocabularies with definitions) and `shapes.ttl` |
-| `scripts/eval/` | The RCAEval export and scoring, the similar-incident eval, the model, alias and coverage gates, and the SHACL suite runner |
+| `scripts/eval/` | The RCAEval export and scoring, the similar-incident eval, the model, alias and coverage gates, and the SHACL suite runner. `agent_rca_eval.py` runs agents on labeled incidents in pi or, with `--runner claude`, in headless Claude Code; `distractor_eval.py` runs and scores the distractor suite; `misled_by.py` finds the tool output that first showed each wrong answer |
 | `skills/ograph/` | The agent skill: `SKILL.md` and task references (investigation, verdicts, SPARQL, sources, data quality, serving, ontology) |
 | `scripts/agent/` | The pi extension, its tool instructions, the installer and the contract test |
 | `examples/demo/` | A deterministic demo company for the four questions |
+| `examples/distractors/` | `generate.py` writes 35 labeled incidents, each with one planted distractor: a chronic series, a deploy on a healthy service, an early downstream alert, a sparse series, or precedents with another root |

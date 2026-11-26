@@ -85,6 +85,13 @@ path = "exports/deploys"
 Other kinds: `ownership`, `docs`, `config_changes`, `code`, `logs`, `metrics`, `traces`, `errors`,
 `discussions`, `news`. Their formats are in `docs/REFERENCE.md`, "Input formats".
 
+With a model (`[llm.extract]`), a `discussions` source also reads operator actions from chat:
+rollbacks, restarts, scaling, failovers, flag and config changes that someone says they did.
+Each needs a quote from its message, and takes that message's time. `before` lists them as
+`OPERATOR_ACTION`, and `similar` lists them under a past incident's mitigations. Correlation
+leaves them out. Actions are on by default; `actions = false` on the source turns them off.
+The first harvest with them on asks the model once more about every thread of that source.
+
 Harvest and check the result:
 
 ```bash
@@ -109,6 +116,32 @@ ograph blast ledger-db                  # dependents, business processes, open i
 ograph why id:ev/alert-ledger-db-ledgerpoolsaturated-1795385980000   # where a fact came from
 ```
 
+Two marks change how to read these answers:
+
+- **`chronic`.** In `before` and `chains`, an event whose series (same application, signal and
+  metric or log template) fired at least twice in the 30 minutes before the incident is marked
+  as likely background:
+
+  ```
+    -  5.7 min  series-db        METRIC_ANOMALY  sev 0.05  id:ev/metric-series-db-gc-pause-1762276503000
+                   chronic: series-db gc-pause fired 4 times in the 30 min before the incident: likely background, not a new fault
+  ```
+
+  A series that keeps firing is not the start of this fault, however early or strong it is.
+  The mark does not change any rank; look past it for the first event that is not chronic.
+- **`explains`.** In `chains`, an application whose anomaly came first and was still under way
+  when another application's began ranks above it, even with a lower score:
+
+  ```
+    1. firmware-api           score 0.975
+       explains alarm-api, device-hub: its anomaly came first and was still under way when theirs began, so it ranks above them
+  ```
+
+  The explained applications' chains are the later part of the same cascade. A known pair such
+  as deployment to errors also counts only within one application, so a deploy on a healthy
+  service no longer outranks the service that degraded. This is `own_degradation`, on by
+  default; `--set own_degradation=false` shows the ranking without it.
+
 Read `chains` as suggestions. When a person confirms the cause, record it with the chain id
 that `chains` printed:
 
@@ -119,6 +152,20 @@ ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept --evidence PM-5377 --by
 From then on, `similar` shows that cause for any incident that looks like this one.
 
 For vendor news: `ograph news --since 7d`.
+
+**Dependencies have dates.** With an ogrep newer than 0.3.0, each dependency the catalog
+repository gained after its service was declared is dated by the commit that added it.
+`before` and `chains` do not follow a dependency added after the incident opened, and say so:
+
+```
+  not followed: checkout -> search-api, added to the repository at 2026-11-26T10:01:58Z, after the incident opened
+```
+
+`--json` lists them under `withheld`. For the blast radius as it was when the incident opened:
+
+```bash
+ograph blast ledger-db --at INC-5377    # or an xsd:dateTime with a zone, or how long ago (2d)
+```
 
 ## 5. Point ograph at your code
 
@@ -185,6 +232,39 @@ ograph serve --addr 127.0.0.1:7474
 settings, and answers JSON-RPC on that address. A scheduled `ograph harvest` (cron, CI) works
 too. Both can run while people and agents query.
 
+**Before you fix or remove a source file**, ask what rests on it:
+
+```bash
+ograph uses alerts.json             # a file, or a directory of them
+ograph uses incidents.json#4        # one record, as evt:sourceRecord names it
+```
+
+It lists the file's facts, the events and incidents only it states, the chains that would go,
+be relinked or move, and the verdicts on them. Check those verdicts again after the change. To
+take a file out, delete it and remove its `[[source]]` entry if that entry names it.
+
+**After a harvest, when rank 1 is not what it was**, ask which file moved it. Note the time
+before you harvest:
+
+```bash
+T=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+ograph harvest
+ograph chains INC-5377 --top 3 --since "$T"
+```
+
+```
+since 2026-11-26T10:01:14Z: the ranking moved; source files changed: 1
+  then  1. ledger-db 0.944  2. payments-api 0.930  3. checkout 0.900
+  now   1. ledger-db 0.944  2. payments-api 0.930  3. orders-api 0.910
+  g:harvest/alerts/alerts.json [alerts]: taking it back alone changes the ranking now, and it alone changes the ranking then
+```
+
+Here an alert on orders-api was added to `alerts.json`. Each file named was tested by ranking
+again without its change (`needed`) and with only its change (`enough`), so it is the reason,
+not a guess. A file that changed but is not named did not move the ranking. `ograph changes
+--since "$T"` shows what changed in it. T must fall inside the store's history, which starts at
+its first harvest.
+
 ## 8. Use it from an agent
 
 **Any agent with a shell.** Install the skill in `skills/ograph/`, which teaches the commands,
@@ -201,8 +281,8 @@ confirms):
 full harvest or incidents have chains but no verdict, and nothing otherwise.
 
 **MCP clients.** Point them at `ograph serve --mcp --root /path/to/workspace`. The tools are
-`before`, `chains`, `blast`, `similar`, `code`, `suspects`, `why`, `news`, `sparql`, `resolve`,
-`cite_check` and `verdict`. The resources are `ograph://ontology`, `ograph://incidents` and
+`before`, `chains`, `blast`, `similar`, `code`, `suspects`, `why`, `uses`, `news`, `sparql`,
+`resolve`, `cite_check` and `verdict`. They pass on the `chronic` and `explains` marks. The resources are `ograph://ontology`, `ograph://incidents` and
 `ograph://incident/{id}`, and the prompt `investigate` carries the investigation order.
 
 **pi.** `python3 scripts/agent/install.py --bin "$(which ograph)" --root /path/to/workspace --out ~/.pi/agent/extensions/ograph.ts`.
@@ -231,6 +311,7 @@ ograph ontology diff new.ttl    # before changing the ontology: BREAKING lines a
 | `the ontology declares no X (did you mean Y?)` | A misspelled name in a SPARQL query |
 | `verdict not recorded: the ontology refuses ...` | `.ograph/ontology.ttl` is older than the binary. Run `ograph ontology check` and update it |
 | `DEGRADED: ogrep ...` on a `code`, `logs` or `errors` line | ogrep could not answer for a code repository. The events are kept without code locations. Check that the path is a git repository and that `ogrep` runs there, then harvest again |
+| `DEGRADED: catalog: dependencies carry no date` | ogrep 0.3.0 or older cannot date dependencies, so each holds at every time. Everything else works. An ogrep release after 0.3.0 dates them |
 | `DEGRADED: ogrep not runnable` on the catalog line, and almost everything quarantined | `ogrep` is not on `PATH`; install it (section 1) or set `OGRAPH_OGREP`, then harvest again |
 | Windows: `running pi` fails in a harvest with `[llm.extract]` | npm installs pi as `pi.cmd`, which Windows starts only through `cmd`. Begin the command with `"cmd", "/C", "pi", ...` |
 | Windows: `./x install` says ograph.exe is still running | Stop `ograph serve` (Ctrl-C), or `taskkill //IM ograph.exe //F` |

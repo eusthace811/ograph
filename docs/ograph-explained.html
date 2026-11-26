@@ -616,6 +616,17 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
     <figcaption><b>Figure 5.</b> The nine events, one row per service. The blue line is the chain ograph ranks first. Note the deploy of payments-api four minutes before the incident. It is the suspect most people would grab, and it is not on the chain: the trouble had started on ledger-db three minutes earlier.</figcaption>
   </figure>
 
+  <p>Not every early event is a lead. When the same series fired again and again before an incident, ograph marks its events <code>chronic</code>: likely background, not the start of this fault. No demo event is chronic. In one of the generated test incidents, a database&rsquo;s garbage-collection pauses look like this:</p>
+
+  <div class="term glass wide">
+    <header>examples/distractors, one generated incident</header>
+<pre><span class="p">$</span> ograph before INC-7055 --window 30m
+  -  5.7 min  series-db        METRIC_ANOMALY  sev 0.05  id:ev/metric-series-db-gc-pause-1762276503000
+                 <span class="h">chronic: series-db gc-pause fired 4 times in the 30 min before the incident: likely background, not a new fault</span></pre>
+  </div>
+
+  <p>The mark changes no ranking. It tells the person or agent reading the list to look past that series, however early or strong it is.</p>
+
   <h3>Second: which of these is the likely cause?</h3>
   <p><code>ograph chains INC-5377</code> links events into chains that follow the dependency graph, scores each chain, and ranks them.</p>
 
@@ -633,6 +644,18 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
     <code class="formula">score = time_proximity &times; 0.6 + severity &times; 0.4</code>
     Chains scoring under 0.6 are dropped. ograph looks back 30 minutes.
   </div>
+
+  <p>Two more rules keep a cascade in order. A known pair, such as a deployment followed by errors, counts only within one service, so a deploy on a healthy service does not get the high weight for its neighbour&rsquo;s errors. And a service whose trouble came first, and was still going when another service&rsquo;s began, ranks above that service. Its chain <code>explains</code> the other one, whose own chain is just the later part of the same cascade:</p>
+
+  <div class="term glass wide">
+    <header>examples/distractors, one generated incident</header>
+<pre><span class="p">$</span> ograph chains INC-7377 --top 2
+  1. firmware-api           score 0.975
+     <span class="h">explains alarm-api, device-hub</span>: its anomaly came first and was still under way when theirs began, so it ranks above them
+  2. alarm-api              score 0.996</pre>
+  </div>
+
+  <p>firmware-api is the true cause there, and it ranks first despite the lower score. This setting is <code>own_degradation</code>, on by default.</p>
 
   <h3>Third: how far does it spread?</h3>
   <p><code>ograph blast ledger-db</code> walks the dependency links backwards from the failing service.</p>
@@ -687,10 +710,11 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
     <header>examples/demo</header>
 <pre><span class="p">$</span> ograph similar INC-5377
   0.599  id:inc/inc-4120 on payments-api at 2026-11-01T22:26:40Z
-         causes: []  mitigations: [<span class="h">raised ledger-db connection pool to 200</span>]</pre>
+         causes: []  mitigations: [<span class="h">raised ledger-db connection pool to 200</span>;
+         CONFIG ledger-db at 2026-11-01T22:33:40Z: raised the ledger-db connection pool to 200]</pre>
   </div>
 
-  <p>The fix that worked last time is right there. The cause list is empty, though, and that is deliberate.</p>
+  <p>The fix that worked last time is right there. The second mitigation came from the incident&rsquo;s chat thread: a language model read that an operator raised the pool, and ograph kept it only with the quoted message and that message&rsquo;s time. The cause list is empty, though, and that is deliberate.</p>
 
   <h3>A chain is a guess until a person says otherwise</h3>
   <p>ograph never promotes its own ranking to a fact. A cause is recorded only when a person confirms it with a <strong>verdict</strong>, citing their evidence. From then on, the graph remembers.</p>
@@ -710,6 +734,12 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
 <pre><span class="p">$</span> ograph verdict id:chain/inc-5377-a7370ff7d4358525 accept \
     --evidence PM-5377 --by "jane (oncall)"</pre>
   </div>
+  <h3>When the sources change</h3>
+  <ul class="plain">
+    <li><strong>A source turns out to be wrong.</strong> <code>ograph uses alerts.json</code> lists the facts that file gave, and the chains and verdicts that rest on them.</li>
+    <li><strong>The top answer moved after a harvest.</strong> <code>ograph chains INC-5377 --since T</code> ranks the incident as it was at time T and as it is now, and names the source file that moved it. Each file is tested by ranking again, so the name is computed, not guessed.</li>
+    <li><strong>A dependency is newer than the incident.</strong> ograph dates each dependency by the catalog commit that added it, and does not follow one added after the incident opened. <code>ograph blast ledger-db --at INC-5377</code> gives the blast radius as it was then.</li>
+  </ul>
   <p class="deeper">Going deeper: <a href="ograph-internals.html#correlation">how chains are searched and scored, link by link</a></p>
 </section>
 
@@ -755,6 +785,8 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
         <tr><th>Query answers match Oxigraph</th><td>0 mismatches over 41 queries on 3.5 million facts</td></tr>
         <tr><th>W3C test suite for shape rules (SHACL Core)</th><td>98 of 98</td></tr>
         <tr><th>An AI agent writing its own queries about the demo</th><td>64 of 66 correct</td></tr>
+        <tr><th>Generated incidents, each with a planted distractor: the top-ranked cause is right</th><td>143 of 150 with the cascade rule (<code>own_degradation</code>), against 114 of 150 without it. 29 better and 0 worse</td></tr>
+        <tr><th>An AI agent using ograph&rsquo;s MCP tools on held-out benchmark cases (Haiku)</th><td>0.77 with <code>chronic</code> marking, against 0.34 without it</td></tr>
         <tr><th>Build</th><td>Pure Rust, no C compiler. 8 seconds from clean, 10 MB program</td></tr>
       </tbody>
     </table>
@@ -772,6 +804,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
     <li><strong>The headline score comes from one benchmark</strong> of an 11-service demo system. Six of the 90 cases are still missed, and network faults are harder: 0.80 for packet loss and 0.87 for delay.</li>
     <li><strong>One ranking rule was written after studying all 90 cases,</strong> so the held-back cases are a weaker check for that rule than for the rest.</li>
     <li><strong>The language-model checks are small.</strong> Sixteen chat threads and 21 questions, labelled by the author. They are smoke tests.</li>
+    <li><strong>A one-off spike on a flat series still misleads.</strong> A series that is zero almost all the time reaches full strength on any change, without repeating, so it is not <code>chronic</code>. A mark for it was tried and dropped: it hurt an agent on the real benchmark.</li>
     <li><strong>More signals did not always help.</strong> On this benchmark, adding log and trace episodes to metrics brought a little noise.</li>
   </ul>
 </section>
@@ -795,7 +828,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
   </div>
 
   <p>Where downloaded programs are not allowed, <code>./x install</code> builds from source with Rust 1.85 or newer, including behind a private crate registry on a corporate network.</p>
-  <p>AI agents can use it three ways: a skill for any agent with a shell (<code>./x install-skill</code>), an MCP server with eight tools (<code>ograph serve --mcp</code>), and an extension for pi. The <a href="https://github.com/eusthace811/ograph/blob/main/docs/GUIDE.md">guide</a> covers setting up your own workspace.</p>
+  <p>AI agents can use it three ways: a skill for any agent with a shell (<code>./x install-skill</code>), an MCP server with thirteen tools (<code>ograph serve --mcp</code>), and an extension for pi. The <a href="https://github.com/eusthace811/ograph/blob/main/docs/GUIDE.md">guide</a> covers setting up your own workspace.</p>
 </section>
 
 <!-- ================= glossary ================= -->
@@ -810,6 +843,8 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
     <dt>Quarantine</dt><dd>Where refused facts are kept, each with the reason it was refused.</dd>
     <dt>Chain</dt><dd>A candidate explanation: a sequence of events leading to an incident. Always a hypothesis.</dd>
     <dt>Verdict</dt><dd>A person&rsquo;s recorded decision to accept or reject a chain, with their evidence.</dd>
+    <dt>Chronic</dt><dd>A mark on an event whose series kept firing before the incident: likely background, not the start of the fault.</dd>
+    <dt>Explains</dt><dd>Said of a service whose trouble came first and was still going when another&rsquo;s began. It ranks above the services it explains.</dd>
     <dt>Blast radius</dt><dd>Everything that depends on a failing service, directly or indirectly.</dd>
     <dt>SPARQL</dt><dd>The standard query language for knowledge graphs. Roughly, SQL for linked facts.</dd>
     <dt>SHACL</dt><dd>A standard way to write rules such as &ldquo;every event has exactly one time&rdquo;.</dd>
@@ -830,7 +865,7 @@ footer { margin-top: 72px; padding-top: 20px; border-top: 1px solid var(--hair);
 
 </main>
 
-<footer>ograph is MIT licensed. Figures 2 and 4 to 8 use the demo company in <code>examples/demo</code>; its services and incidents are invented.</footer>
+<footer>ograph is MIT licensed. Figures 2 and 4 to 8 use the demo company in <code>examples/demo</code>; the <code>chronic</code> and <code>explains</code> outputs come from incidents <code>examples/distractors</code> generates. All their services and incidents are invented.</footer>
 
 </div>
 </body>
