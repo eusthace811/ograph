@@ -402,6 +402,9 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 println!("{} on {} at {}: {} candidate events", ograph_core::vocab::compact(&a.incident), a.app, ograph_core::term::format_millis(a.at_ms), a.candidates);
                 for (k, r) in a.apps.iter().enumerate() {
                     println!("  {}. {:<22} score {:.3}", k + 1, r.app, r.score);
+                    if !r.explains.is_empty() {
+                        println!("     explains {}: its anomaly came first and was still under way when theirs began, so it ranks above them", r.explains.join(", "));
+                    }
                     if let Some(p) = &r.precedent {
                         let gain = if st.precedent_weight == 0.0 { String::new() } else { format!(", score {:+.3}", st.precedent_weight * p.similarity) };
                         println!("     {}:{} was accepted as the cause of {} (similarity {:.3}{gain}): {}", p.app, p.signal, p.incident, p.similarity, p.evidence.join("; "));

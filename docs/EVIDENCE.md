@@ -1174,3 +1174,19 @@ On Haiku the MCP agent named redis on 54 of 90 runs: redis's disk series is flat
 Wrong answers naming a chronic application fell from 101 to 15 (mcp) and from 57 to 0 (skill). Cost $2.95 against $2.90 per binary; the lane spent $6.96. Verdict: KEEP.
 
 Lane T, second check on the distractor suite (docs/evidence/chronic-distractors.txt, gate committed before the run): PASS. mcp 0.60 -> 0.79 (better on 10 of 35 cases, worse on 0, p = 0.002), skill 0.92 -> 0.93, chains rank 1 identical. The sparse distractor still fools mcp (0.10): a series that saturates severity without repeating is not chronic, and is the next fix.
+
+## Phase 13, lane X: deploy ranking (`deploy-ranking.txt`, `deploy-ranking/`)
+
+On the distractor suite (seed 2026) chains rank 1 scored 4 of 7 deploy cases. The planted deployment never ranked first. Two things showed up. First, the known pair `DEPLOYMENT -> LOG_ERROR` applied across a dependency, so a deployment on a healthy callee linked at 0.9 to its caller's errors and its chain scored within 0.02 of the true root. Second, the real cause of the misses was suffix bias: a caller's chain is the later part of the root's chain, and the geometric mean scores it higher because it leaves out the root's own link. `[correlation] own_degradation` addresses both. A known pair holds within one application only. An application ranks above every application its chain `explains`: one it reaches no later than that application's own best chain begins, through anomalies still under way, from a root of at least SEV2. The gate was committed before the code (594bea0).
+
+| Gate | Result |
+|---|---|
+| 1. Seed 9001 (held out) chains rank 1 | 32/35 against 29/35; better 3, worse 0, p = 0.25: not significant |
+| 2. Per type | no type worse (deploy 5 -> 6, alert 5 -> 6, precedent 5 -> 6) |
+| 3. RCAEval chain AC@1 | 0.93, rank 1 identical on 90/90, no flip |
+| 3. similar, demo, replay | 0.92; rank 1 identical; 0 disagreements, replay_gate 207/207 |
+| 3. SHACL, SPARQL, lab, uses, `chains --since`, chain_scores, precedent, skill_coverage, tests, clippy | all pass |
+| 4. Haiku seed 9001, mcp / skill | 0.81 against 0.81; 0.93 against 0.88 |
+
+Dev (seed 2026): 24/35 -> 31/35. Cost $2.32. Verdict: KEEP-OFF. The setting defaults to `false`. `--set own_degradation=true` on `chains` or `replay` turns it on.
+
