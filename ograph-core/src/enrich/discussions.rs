@@ -326,15 +326,19 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
     // config"). Of irregular pasts only those unlike their present are read.
     let quoted = words(&q);
     let verb = quoted.iter().position(|w| !SUBJECTS.contains(&w.as_str()) && !matches!(w.as_str(), "i'd" | "we'd" | "just" | "already" | "also" | "then"));
-    // "have to restart X" is still to come, and so is an action a plan word opens ("planned to
-    // roll back X", "suggested rolling back X").
+    // "have to restart X" is still to come. After an opening plan word the action's verb is
+    // its first cue word ("planned to roll back X" plans; "just wanted to let you know we rolled
+    // back X" reports).
     let past = verb.is_some_and(|i| {
         let opens = format!("{} ", quoted[i..].join(" "));
-        !PAST_OR_PLAN.iter().any(|p| opens.starts_with(&format!("{p} ")))
-            && match quoted[i].as_str() {
-                "have" | "has" | "had" | "we've" => quoted.get(i + 1).is_none_or(|w| w != "to"),
-                w => is_past(w),
-            }
+        if PAST_OR_PLAN.iter().any(|p| opens.starts_with(&format!("{p} "))) {
+            let cues = CUES.iter().find(|(k, _)| *k == kind).map_or(&[][..], |(_, c)| c);
+            return quoted[i + 1..].iter().find(|w| cues.iter().any(|c| c.split(' ').next().is_some_and(|stem| w.starts_with(stem)))).is_some_and(|w| is_past(w));
+        }
+        match quoted[i].as_str() {
+            "have" | "has" | "had" | "we've" => quoted.get(i + 1).is_none_or(|w| w != "to"),
+            w => is_past(w),
+        }
     });
     if opens_question && sentence_end.is_some_and(|i| msg[i..].starts_with('?')) {
         return Some("is a question");
@@ -511,6 +515,8 @@ mod tests {
             ("I'd planned to roll back checkout", "I'd planned to roll back checkout", Some("is a proposal or a plan")),
             ("dana suggested rolling back checkout", "suggested rolling back checkout", Some("is a proposal or a plan")),
             ("I'd asked to roll back checkout", "asked to roll back checkout", Some("is a proposal or a plan")),
+            ("just wanted to let you know we rolled back checkout", "just wanted to let you know we rolled back checkout", None),
+            ("wanted to give an update, we restarted payments-api", "wanted to give an update, we restarted payments-api", None),
             ("ok but did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("hey did anyone restart payments-api, or should I?", "restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
