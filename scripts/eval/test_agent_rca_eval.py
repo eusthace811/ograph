@@ -3,7 +3,7 @@
 planted leaks, and the harness end to end with stand-in arms.
 
 Usage: python3 scripts/eval/test_agent_rca_eval.py [--bin target/release/ograph]"""
-import contextlib, io, json, os, pathlib, subprocess, sys, tempfile, types, unittest
+import contextlib, io, json, os, pathlib, shutil, subprocess, sys, tempfile, types, unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import agent_rca_eval as h
@@ -157,6 +157,29 @@ class EndToEnd(unittest.TestCase):
         self.harness()
         self.assertEqual(len(self.calls), 4, "finished runs are not repeated")
         self.assertFalse(list((self.root / "work" / "runs").iterdir()), "each run's workspace is removed")
+
+    def test_an_out_directory_in_use_by_another_run_is_refused(self):
+        import fcntl
+        (self.root / "out").mkdir()
+        with open(self.root / "out" / ".lock", "w") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaises(SystemExit) as e: self.harness()
+        self.assertIn("another agent_rca_eval run is writing", str(e.exception))
+        self.assertEqual(self.calls, [], "nothing runs")
+
+    def test_rows_of_another_binary_are_not_resumed(self):
+        self.harness()
+        other = self.root / "other-ograph"; shutil.copy(BIN, other); other.write_bytes(other.read_bytes() + b"\0")
+        out = io.StringIO()
+        with self.assertRaises(SystemExit) as e, contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            h.main(["--bin", str(other), "--cases", str(self.root / "cases"), "--sample", "2", "--runs", "2", "--out", str(self.root / "out"),
+                    "--work", str(self.root / "work"), "--arms", "cart,chains"])
+        self.assertIn("the rows of arm cart, chains in", str(e.exception))
+        self.assertEqual(len(self.calls), 4, "no run of the other binary")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            h.main(["--bin", str(other), "--cases", str(self.root / "cases"), "--sample", "2", "--runs", "1", "--out", str(self.root / "out"),
+                    "--work", str(self.root / "work"), "--arms", "absent"])
+        self.assertEqual(len(self.calls), 4, "an arm no other binary wrote may share the directory")
 
     def test_a_usage_limit_stops_the_model_arms_after_one_call(self):
         fake = self.root / "fakebin"; fake.mkdir()

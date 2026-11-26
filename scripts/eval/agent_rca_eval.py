@@ -45,7 +45,9 @@ Usage:
   agent_rca_eval.py --mirror-cases data/rcaeval-cases target/rcaeval-ref
       (a writable copy of the cases by symlink, to run rcaeval_score.py for --reference)
 
-Rows already in OUT/runs.jsonl are kept and not rerun, unless they are errors or --fresh is set.
+Rows already in OUT/runs.jsonl are kept and not rerun, unless they are errors or --fresh is set. Each arm's rows
+belong to one binary (OUT/binaries.json), and OUT to one run at a time (a lock on OUT/.lock): a second run at
+once, or an arm whose rows another binary wrote, is refused.
 A run the provider refuses for its usage limit stops the model arms; rerun later to finish."""
 import argparse, collections, concurrent.futures, dataclasses, itertools, json, math, os, pathlib, random, re, shutil, statistics, subprocess, sys, tempfile, threading, time, uuid
 
@@ -753,6 +755,17 @@ def main(argv=None):
         else: arms.append(arm)
     out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
     log = out / "runs.jsonl"
+    import fcntl, hashlib
+    lock = open(out / ".lock", "w")
+    try: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError: raise SystemExit(f"another agent_rca_eval run is writing {out}: give each run its own --out")
+    stamp, digest = out / "binaries.json", hashlib.sha256(pathlib.Path(a.bin).read_bytes()).hexdigest()
+    by_arm = json.loads(stamp.read_text()) if stamp.exists() and not a.fresh else {}
+    if log.exists() and not a.report_only:
+        clash = sorted(arm.name for arm in arms if by_arm.get(arm.name, digest) != digest)
+        if clash: raise SystemExit(f"the rows of arm {', '.join(clash)} in {log} were written by another binary ({by_arm[clash[0]][:12]}, not {digest[:12]}): give this binary its own --out or its own --guidance label, or pass --fresh")
+    if not a.report_only:
+        by_arm.update({arm.name: digest for arm in arms}); stamp.write_text(json.dumps(by_arm, indent=1, sort_keys=True) + "\n")
     wanted = {(c.key, arm.name, n) for c in cases for arm in arms for n in range(1, a.runs + 1)}
     done = {}
     if log.exists() and not a.fresh:
