@@ -744,7 +744,7 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
         RankMode::Propagation => apps.sort_by(|a, b| b.score.total_cmp(&a.score).then(a.first_ms.cmp(&b.first_ms)).then(a.app.cmp(&b.app))),
     }
     if st.own_degradation && st.rank == RankMode::Chain {
-        explain(&mut apps);
+        explain(&mut apps, st.precedent_weight);
     }
     let withheld = if st.ignore_dependencies { vec![] } else { withheld(s, ids, app, st.depth, t)? };
     Ok(Analysis { incident: incident_iri, app: app_name(s, ids, app), at_ms: t, candidates: cands.len(), apps, withheld })
@@ -756,8 +756,11 @@ pub fn analyze(s: &Snapshot, ids: &Ids, incident: Id, st: &Settings, past: &[Pas
 pub const EXPLAINING_SEVERITY: f64 = 0.5;
 
 /// Fills [`Ranked::explains`] and moves each application above every one it explains, keeping
-/// the order otherwise. A change explains nothing: it is a point in time, never under way.
-fn explain(apps: &mut Vec<Ranked>) {
+/// the order otherwise. A change explains nothing: it is a point in time, never under way. An
+/// accepted cause outweighs the order of anomalies: an application whose precedent gains more
+/// (`precedent_weight` above 0) is not moved below one that explains it.
+fn explain(apps: &mut Vec<Ranked>, precedent_weight: f64) {
+    let gain = |r: &Ranked| precedent_weight * r.precedent.as_ref().map_or(0.0, |p| p.similarity);
     let first: FxHashMap<Id, i64> = apps.iter().filter_map(|r| r.chain.as_ref()).map(|c| (c.root.app, c.root.at_ms)).collect();
     for r in apps.iter_mut() {
         let Some(c) = &r.chain else { continue };
@@ -783,7 +786,7 @@ fn explain(apps: &mut Vec<Ranked>) {
     for _ in 0..apps.len() * 2 {
         let mut moved = false;
         for x in 0..apps.len() {
-            let Some(y) = (0..x).find(|&y| apps[x].explains.contains(&apps[y].app)) else { continue };
+            let Some(y) = (0..x).find(|&y| apps[x].explains.contains(&apps[y].app) && gain(&apps[y]) <= gain(&apps[x])) else { continue };
             let r = apps.remove(x);
             apps.insert(y, r);
             moved = true;
@@ -904,14 +907,14 @@ mod tests {
         let deploy = sig(4, "fx-api", "DEPLOYMENT", 500, 500, 0.25);
         let mut apps = vec![ranked(vec![payments.clone()]), ranked(vec![ledger.clone(), payments.clone()]), ranked(vec![deploy, payments.clone()])];
         assert!(apps[0].score > apps[1].score);
-        super::explain(&mut apps);
+        super::explain(&mut apps, 0.0);
         let order: Vec<(&str, Vec<String>)> = apps.iter().map(|r| (r.app.as_str(), r.explains.clone())).collect();
         // The deployment is a point in time, never under way when payments-api degrades.
         assert_eq!(order, [("ledger-db", vec!["payments-api".to_owned()]), ("payments-api", vec![]), ("fx-api", vec![])]);
         // An anomaly weaker than SEV2 explains nothing, and neither does one that ended first.
         for weak in [sig(3, "ledger-db", "METRIC_ANOMALY", 600, 1000, 0.3), sig(3, "ledger-db", "METRIC_ANOMALY", 600, 610, 0.8)] {
             let mut apps = vec![ranked(vec![payments.clone()]), ranked(vec![weak, payments.clone()])];
-            super::explain(&mut apps);
+            super::explain(&mut apps, 0.0);
             assert_eq!((apps[0].app.as_str(), apps[1].explains.len()), ("payments-api", 0));
         }
     }

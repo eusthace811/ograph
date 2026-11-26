@@ -59,6 +59,7 @@ The `[correlation]` keys `--set` takes (and `chains --set`, which ranks once wit
 | `prop_weights` | [0.4, 0.5, 0.1, 0.0] | propagation: strength, chain, spread, onset |
 | `signature_window_s` | 900 | the window `similar` compares |
 | `precedent_weight` | 0.0 | added to a root's score, times similarity, when a similar past incident's accepted cause has its application and signal |
+| `own_degradation` | true | a known pair holds within one application, and a root ranks above the applications its chain `explains`; false ranks as before |
 | `depth` | 4 | dependency hops in scope |
 | `max_chains` | 10 | ranked applications whose chains a harvest stores |
 
