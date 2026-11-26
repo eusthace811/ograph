@@ -325,8 +325,13 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         // The tense is the verb's, which opens the action ("rolled back X", "we just added
         // replicas"), not a later name's ("restart shared-cache") or adjective's ("apply the
         // updated config"). Of irregular pasts only those unlike their present are read.
-        let verb = words(&q).into_iter().map(|w| w.to_lowercase()).find(|w| !SUBJECTS.contains(&w.as_str()) && !matches!(w.as_str(), "just" | "already" | "also" | "then"));
-        let past = verb.is_some_and(|w| w.ends_with("ed") || matches!(w.as_str(), "have" | "has" | "had" | "we've" | "spun" | "took" | "brought" | "made" | "gave" | "ran" | "moved"));
+        let quoted: Vec<String> = words(&q).into_iter().map(|w| w.to_lowercase()).collect();
+        let verb = quoted.iter().position(|w| !SUBJECTS.contains(&w.as_str()) && !matches!(w.as_str(), "just" | "already" | "also" | "then"));
+        // "have to restart X" is still to come.
+        let past = verb.is_some_and(|i| match quoted[i].as_str() {
+            "have" | "has" | "had" | "we've" => quoted.get(i + 1).is_none_or(|w| w != "to"),
+            w => w.ends_with("ed") || matches!(w, "spun" | "took" | "brought" | "made" | "gave" | "ran" | "moved"),
+        });
         let follows = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "after" | "since" | "when") || now_that(&before, i)).map_or(0, |i| i + 1);
         let reports = past && follows > 0 && !before[follows..].iter().any(|w| ASKS.contains(&w.as_str()));
         if q.ends_with('?') || !reports && (!aside || before.iter().any(|w| ASKS.contains(&w.as_str()))) {
@@ -347,11 +352,12 @@ fn not_done(message: &str, quote: &str, kind: &str) -> Option<&'static str> {
         }
     }
     // What comes before `so` or `because` is the reason ("it would not recover so we restarted
-    // X"), as is what comes before "now that" ("should be fine now that we rolled back X"), and
-    // "can confirm" reports; none makes the action a plan. Nothing else cuts it: "we
+    // X"), as is what comes before "now that" ("should be fine now that we rolled back X"); a
+    // hedge before `but` ("not sure if related but we rolled back X") is an aside, and "can
+    // confirm" reports; none makes the action a plan. Nothing else cuts it: "we
     // should check logs and restart X", "I suggest that we restart X" and "I'll post when we
     // roll back X" still plan.
-    let cause = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "so" | "because" | "since") || now_that(&before, i)).map_or(0, |i| i + 1);
+    let cause = before.iter().enumerate().rposition(|(i, w)| matches!(w.as_str(), "so" | "because" | "since" | "but") || now_that(&before, i)).map_or(0, |i| i + 1);
     let lead = format!(" {} {} ", before[cause..].join(" "), said.join(" ")).replace(" can confirm ", " confirm ").replace(" can see ", " see ");
     if NOT_YET.iter().any(|w| lead.contains(&format!(" {w} "))) {
         return Some("is a proposal or a plan");
@@ -442,6 +448,10 @@ mod tests {
             ("what happens when we add dedicated nodes to orders-api?", "add dedicated nodes to orders-api", Some("is a question")),
             ("did it recover after we just restarted payments-api?", "we just restarted payments-api", None),
             ("did latency drop after we spun up two more pods for orders-api?", "spun up two more pods for orders-api", None),
+            ("not sure if related but we rolled back checkout an hour ago", "rolled back checkout", None),
+            ("maybe unrelated but we restarted payments-api earlier", "restarted payments-api", None),
+            ("we could wait but we should restart payments-api", "restart payments-api", Some("is a proposal or a plan")),
+            ("what do we do when we have to restart payments-api?", "have to restart payments-api", Some("is a question")),
             ("we have restarted payments-api, errors gone?", "restarted payments-api", None),
             ("Had to restart payments-api, anyone know why it leaked?", "restart payments-api", None),
             ("Have restarted payments-api, errors gone?", "restarted payments-api", None),
