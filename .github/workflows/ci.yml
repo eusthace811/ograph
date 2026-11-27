@@ -45,7 +45,7 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: cargo install --locked --git https://github.com/eusthace811/ogrep ogrep-cli
+      - run: cargo install --locked --git https://github.com/eusthace811/ogrep --tag v0.4.1 ogrep-cli
       - run: ./x install "$HOME/.cargo/bin"
       - run: ./x doctor
       - name: Harvest the demo and ask the four questions
